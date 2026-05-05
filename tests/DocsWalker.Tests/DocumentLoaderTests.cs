@@ -29,13 +29,14 @@ public class DocumentLoaderTests
     [Fact]
     public void Load_RealDocs_TotalNodeCount_Matches_SequenceTxt()
     {
+        // Инвариант: sequence.txt — последний выданный id; число узлов в графе
+        // совпадает с этим значением (никакого id ещё не было удалено в реальных docs/).
+        // Тест переживает добавление новых узлов в docs/ — не зависит от конкретного значения.
         var (graph, _) = Load();
-        // sequence.txt = 68 после миграции. Узлов в графе должно быть ровно 68.
-        Assert.Equal(68, graph.NodeCount);
-
         var sequenceText = File.ReadAllText(
             Path.Combine(TestPaths.DocsRoot, ".docswalker", "sequence.txt"));
-        Assert.Equal(68, int.Parse(sequenceText.Trim()));
+        var sequence = int.Parse(sequenceText.Trim());
+        Assert.Equal(sequence, graph.NodeCount);
     }
 
     [Fact]

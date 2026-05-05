@@ -110,26 +110,27 @@ public class TransactionTests
         var write = new WriteApi(ctx);
 
         var schemaBefore = File.ReadAllText(env.SchemaPath);
-        var seqBefore = File.ReadAllText(env.SequencePath);
+        var sequenceBefore = int.Parse(File.ReadAllText(env.SequencePath).Trim());
+        var expectedId = sequenceBefore + 1;
 
         var ops = new WriteOp[]
         {
             new CreateNodeOp(ParentId: 1, TypeName: "section", Title: "TMP", Name: null,
                              Body: new JsonObject { ["statements"] = new JsonArray { (JsonNode)"одно" } }),
-            // Узел будет создан с id=69 (sequence стартует с 68).
-            new DeleteNodeOp(Id: 69),
+            // Узел получает id = sequenceBefore + 1; затем удаляем его.
+            new DeleteNodeOp(Id: expectedId),
         };
         var result = write.Apply(ops);
         Assert.Equal(2, result.OpResults.Count);
 
         // sequence.txt всё равно сместилась на +1 — id монотонен.
-        Assert.Equal("69", File.ReadAllText(env.SequencePath).Trim());
+        Assert.Equal(expectedId.ToString(), File.ReadAllText(env.SequencePath).Trim());
         // schema не менялась.
         Assert.Equal(schemaBefore, File.ReadAllText(env.SchemaPath));
 
-        // Узел id=69 в графе отсутствует.
+        // Удалённый узел в графе отсутствует.
         var schema = SchemaLoader.LoadSchema(env.SchemaPath);
         var graph = DocumentLoader.Load(env.DocsRoot, schema).Graph;
-        Assert.Null(graph.GetById(69));
+        Assert.Null(graph.GetById(expectedId));
     }
 }

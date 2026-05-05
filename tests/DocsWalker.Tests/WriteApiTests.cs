@@ -13,6 +13,8 @@ public class WriteApiTests
         using var env = new WriteTestEnvironment();
         var apiBefore = LoadGraph(env);
         var docId = apiBefore.GetDocumentByTitle("DocsWalker")!.Id;
+        var sequenceBefore = int.Parse(File.ReadAllText(env.SequencePath).Trim());
+        var expectedId = sequenceBefore + 1;
 
         var ctx = WriteContext.FromRoot(env.Root);
         var write = new WriteApi(ctx);
@@ -30,7 +32,7 @@ public class WriteApiTests
         Assert.Single(result.OpResults);
         var data = result.OpResults[0].Data;
         var newId = data["id"]!.GetValue<int>();
-        Assert.Equal(69, newId);
+        Assert.Equal(expectedId, newId);
 
         // Проверяем, что граф после перезагрузки содержит новый узел.
         var apiAfter = LoadGraph(env);
@@ -40,14 +42,16 @@ public class WriteApiTests
         Assert.Equal("TEST", newSection.Title);
         Assert.Equal(docId, newSection.ParentId);
 
-        // sequence.txt обновился до 69.
-        Assert.Equal("69", File.ReadAllText(env.SequencePath).Trim());
+        // sequence.txt обновился до expectedId.
+        Assert.Equal(expectedId.ToString(), File.ReadAllText(env.SequencePath).Trim());
     }
 
     [Fact]
     public void CreateNode_Definition_UnderSection_UpdatesParentChildrenBlock()
     {
         using var env = new WriteTestEnvironment();
+        var sequenceBefore = int.Parse(File.ReadAllText(env.SequencePath).Trim());
+        var expectedId = sequenceBefore + 1;
 
         // Section "Уровни схемы" (id=4) содержит definitions [5, 6].
         var ctx = WriteContext.FromRoot(env.Root);
@@ -60,7 +64,7 @@ public class WriteApiTests
             Body: new JsonObject { ["value"] = "содержание" });
         var result = write.ApplyOne(op);
         var newId = result.OpResults[0].Data["id"]!.GetValue<int>();
-        Assert.Equal(69, newId);
+        Assert.Equal(expectedId, newId);
 
         var graph = LoadGraph(env);
         var section = graph.GetById(4)!;

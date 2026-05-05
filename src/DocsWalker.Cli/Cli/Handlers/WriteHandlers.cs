@@ -97,16 +97,21 @@ internal static class WriteHandlers
         return RunMany(root, ops);
     }
 
-    private static int Run(string root, WriteOp op) => RunMany(root, new[] { op });
+    private static int Run(string root, WriteOp op) => RunCore(root, new[] { op }, transaction: false);
 
-    private static int RunMany(string root, IReadOnlyList<WriteOp> ops)
+    private static int RunMany(string root, IReadOnlyList<WriteOp> ops) =>
+        RunCore(root, ops, transaction: true);
+
+    private static int RunCore(string root, IReadOnlyList<WriteOp> ops, bool transaction)
     {
         try
         {
             var ctx = WriteContext.FromRoot(root);
             var api = new WriteApi(ctx);
             var result = api.Apply(ops);
-            Output.WriteSuccess(WriteResultToJson(result));
+            Output.WriteSuccess(transaction
+                ? TransactionResultToJson(result)
+                : SingleResultToJson(result));
             return 0;
         }
         catch (WriteValidationException ex)
@@ -152,19 +157,34 @@ internal static class WriteHandlers
             "body должен быть JSON-объектом.");
     }
 
-    private static JsonObject WriteResultToJson(WriteResult result)
+    /// <summary>
+    /// Для одиночных write-команд (`create-node`, `update-node` и т. д.) поле `result`
+    /// содержит данные единственной операции напрямую — без обёрток `operations[0].data`.
+    /// </summary>
+    private static JsonNode SingleResultToJson(WriteResult result)
+    {
+        if (result.OpResults.Count != 1)
+            throw new InvalidOperationException(
+                $"Single-result handler ожидает ровно 1 операцию, получено {result.OpResults.Count}.");
+        return result.OpResults[0].Data.DeepClone();
+    }
+
+    /// <summary>
+    /// Для команды `transaction` — массив объектов формы `{op: имя, ...поля результата}`
+    /// в порядке исходных операций. Поле `op` отличает шейп от одиночной команды и
+    /// позволяет LLM сопоставить элемент массива с входной операцией.
+    /// </summary>
+    private static JsonNode TransactionResultToJson(WriteResult result)
     {
         var arr = new JsonArray();
         foreach (var op in result.OpResults)
         {
-            var obj = new JsonObject
-            {
-                ["op"] = op.Type,
-                ["data"] = op.Data.DeepClone(),
-            };
-            arr.Add((JsonNode?)obj);
+            var flat = new JsonObject { ["op"] = op.Type };
+            foreach (var kv in op.Data)
+                flat[kv.Key] = kv.Value?.DeepClone();
+            arr.Add((JsonNode?)flat);
         }
-        return new JsonObject { ["operations"] = arr };
+        return arr;
     }
 
     private static string FormatValidationMessage(IReadOnlyList<ValidationError> errors)

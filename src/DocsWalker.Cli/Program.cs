@@ -1,6 +1,12 @@
+using System.Text;
 using System.Text.Json;
 using DocsWalker.Cli.Cli;
 using DocsWalker.Cli.Cli.Handlers;
+
+// JSON-вывод DocsWalker — всегда UTF-8 без BOM. На Windows Console.Out по умолчанию
+// использует кодовую страницу консоли (CP866/CP1251), что искажает кириллицу при
+// прямом перехвате stdout/stderr (LLM, CI, файловый редирект). Устанавливаем явно.
+Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
 return Dispatcher.Run(args);
 

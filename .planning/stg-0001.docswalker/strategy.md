@@ -16,3 +16,4 @@
 - [+] (08) sequence-counter
 - [+] (09) write-api-basics
 - [+] (10) write-api-transaction
+- [+] (11) cli-output-format
