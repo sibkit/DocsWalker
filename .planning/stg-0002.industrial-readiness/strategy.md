@@ -63,7 +63,7 @@
 
 Старые `step-axes-*.md` устарели. Удаление — первое действие новой сессии.
 
-- [*] (R1) revert-docs-axes-rewrite — откатить правки docs/{.docswalker/meta-schema.yml, Схема.yml, DocsWalker.yml, Правила оформления.yml} от коммитов `4baa335` / `0f59bd8` / `d7a0158` (axes-* шаги). Цель — вернуться к версии до axes-refactor для чистой переработки под refs-модель. Способ — `git checkout ce3f05e^ -- <files>` или явная правка под содержимое до axes (на выбор реализатора).
+- [+] (R1) revert-docs-axes-rewrite — откатить правки docs/{.docswalker/meta-schema.yml, Схема.yml, DocsWalker.yml, Правила оформления.yml} от коммитов `4baa335` / `0f59bd8` / `d7a0158` (axes-* шаги). Цель — вернуться к версии до axes-refactor для чистой переработки под refs-модель. Способ — `git checkout ce3f05e^ -- <files>` или явная правка под содержимое до axes (на выбор реализатора).
 - [*] (R2) refs-model-meta-schema — переписать `docs/.docswalker/meta-schema.yml` под refs-модель: `type_definition` имеет `name, title_source, text_required, path_targets, out_refs[]`; раздел `axis_definition` уходит; `field_definition` / `block_definition` уходят; `ref_kind` / `ref_direction` уходят. Поднять `meta_schema_version` до 4.
 - [*] (R3) refs-model-schema — переписать `docs/Схема.yml`: убрать тип `field`; добавить типы `statement` / `rule` / `may_rule` / `note` / `llm_hint`; описать out_refs-контракты для `document` / `section` / `definition` / `example` / `folder`; убрать blocks/fields/value_type у типов; убрать раздел axes (если был добавлен).
 - [*] (R4) refs-model-docswalker-doc — переписать `docs/DocsWalker.yml` под новую терминологию (refs/out_refs, без axis); описание API под новую модель; описание атомизации bullets.
