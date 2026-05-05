@@ -1,22 +1,13 @@
-meta_schema_version: 2
+meta_schema_version: 4
 name: DocsWalker Meta-Schema
-description: Описывает форму schema-файла проекта (например, docs/Схема.yml). Schema-файл задаёт типы узлов, типы связей и формы значений документов проекта.
+description: Описывает форму schema-файла проекта (например, docs/Схема.yml). Schema-файл задаёт типы узлов проекта; узлы связаны направленными исходящими связями (out_refs) с явно объявленным контрактом в типе узла-источника.
 primitive_types:
   - string
   - text
-  - identifier
   - bool
-  - integer
   - enum
   - list
-type_kinds:
-  - mapping
-  - single_key_mapping
-  - list
-  - primitive
-  - ref_type
 schema_root:
-  kind: mapping
   description: Корневой объект schema-файла.
   fields:
     - name: description
@@ -32,153 +23,69 @@ schema_root:
     - Дополнительные ключи на корневом уровне не допускаются.
     - Имена типов уникальны в пределах schema-файла.
     - Идентификация schema-файла — по имени файла (см. Правила оформления/Идентификация документа); внутреннего поля schema/document не объявляется.
+    - 'Имя ''root'' зарезервировано: обозначает корневой синглтон ядра DocsWalker (узел с id=0). Не объявляется как тип, но допустимо в path_targets и target_types.'
+    - 'Связь ''path'' — встроенная связь ядра. У каждого узла кроме root она обязательна и cardinality=one. В типах не объявляется через out_refs; её допустимые цели контролируются через path_targets.'
 type_definition:
-  kind: mapping
-  description: Описание одного типа.
+  description: Описание одного типа узла. Тип задаёт, где узел может находиться (path_targets), какие исходящие связи у него допустимы (out_refs) и требуется ли непустой text.
   fields:
     - name: name
       type: string
       required: true
-      description: Имя типа.
-    - name: kind
-      type: enum
-      values:
-        - mapping
-        - single_key_mapping
-        - list
-        - primitive
-        - ref_type
-      required: true
-      description: Категория типа.
+      description: Имя типа (snake_case).
     - name: description
       type: text
       required: false
       description: Назначение типа.
-    - name: node
-      type: bool
-      required: false
-      description: 'Если true — экземпляр типа адресуется DocsWalker как узел и получает уникальный sequence-id. Допустим только при kind в {mapping, single_key_mapping}.'
     - name: title_source
       type: enum
       values:
         - filename
+        - dirname
         - inline_key
-        - field
-      required: false
-      description: 'Откуда узел берёт title: имя файла без расширения, ключ single_key_mapping или значение указанного поля. Задаётся только при node=true.'
-    - name: title_field
-      type: string
-      required: false
-      description: Имя поля, дающего title — задаётся только при title_source=field.
-    - name: title_format
-      type: string
-      required: false
-      description: 'Шаблон title узла в YAML с подстановками {id} и {title}. Задаётся только при title_source=inline_key. Пример: "(#{id}) {title}".'
-    - name: fields
+      required: true
+      description: 'Откуда узел типа берёт title: имя файла без расширения (filename), имя каталога (dirname) или ключ mapping в YAML родителя (inline_key).'
+    - name: text_required
+      type: bool
+      required: true
+      description: 'Обязателен ли непустой text у узла этого типа: у структурных типов (folder, section) — обычно false; у смысловых (statement, rule, definition, note, …) — true.'
+    - name: path_targets
       type: list
-      of: field_definition
-      required: false
-      description: Список полей. Используется только при kind=mapping.
-    - name: key_type
-      type: string
-      required: false
-      description: Тип ключа. Используется только при kind=single_key_mapping.
-    - name: value_type
-      type: string
-      required: false
-      description: Тип значения. Используется только при kind=single_key_mapping.
-    - name: of
-      type: string
-      required: false
-      description: Тип элемента списка. Используется только при kind=list (когда элементы однотипны).
-    - name: blocks
+      of: string
+      required: true
+      description: Имена типов (включая зарезервированное ''root''), которые могут быть на конце встроенной связи path у узла этого типа — то есть где этот узел может располагаться в иерархии. Пустой список запрещён.
+    - name: out_refs
       type: list
-      of: block_definition
+      of: ref_def
       required: false
-      description: Список допустимых блоков. Используется при kind=list или у узла-single_key_mapping, значение которого — список блоков.
-    - name: direction
+      description: Список объявлений исходящих связей (кроме встроенной path). Если опущен — узел типа не имеет дополнительных out_refs.
+  constraints:
+    - 'title_source=inline_key допустим, только если узел типа размещается внутри YAML родителя как ключ mapping (а не как отдельный файл/каталог).'
+    - Имена связей в out_refs уникальны в пределах одного type_definition.
+    - 'Имя ''path'' зарезервировано — не используется в out_refs.'
+ref_def:
+  description: Объявление одной исходящей связи в типе узла-источника.
+  fields:
+    - name: name
+      type: string
+      required: true
+      description: Имя связи (snake_case). Используется как ключ в out_refs узла и как имя параметра API/CLI.
+    - name: target_types
+      type: list
+      of: string
+      required: true
+      description: Имена типов (включая ''root''), на которые может ссылаться эта связь. Пустой список запрещён.
+    - name: cardinality
       type: enum
       values:
-        - child_to_parent
-        - from_to
-      required: false
-      description: Направление связи. Задаётся только при kind=ref_type.
-    - name: system
-      type: bool
-      required: false
-      description: 'Системный тип связи: создаётся и удаляется DocsWalker автоматически, не хранится в YAML явно. Задаётся только при kind=ref_type.'
-    - name: constraints
-      type: list
-      of: string
-      required: false
-      description: Дополнительные правила для типа в человекочитаемой форме.
-  constraints:
-    - Поле fields допустимо только при kind=mapping.
-    - Поле key_type обязательно и допустимо только при kind=single_key_mapping.
-    - 'Поле value_type допустимо только при kind=single_key_mapping. У single_key_mapping значение задаётся либо value_type (скалярное значение), либо blocks (список блоков), но не оба сразу; одно из двух обязательно.'
-    - 'При kind=list задаётся либо of (однотипный список), либо blocks (список блоков), но не оба сразу.'
-    - 'При kind=primitive поля fields, key_type, value_type, of, blocks, node, title_*, direction, system не задаются.'
-    - 'При kind=ref_type поля fields, key_type, value_type, of, blocks, node, title_* не задаются; direction обязательно.'
-    - node=true допустим только при kind=mapping или kind=single_key_mapping.
-    - title_source обязательно при node=true.
-    - title_format задаётся только при title_source=inline_key.
-    - title_field задаётся только при title_source=field.
-field_definition:
-  kind: mapping
-  description: Описание одного поля типа kind=mapping.
-  fields:
-    - name: name
-      type: string
+        - one
+        - many
       required: true
-      description: Имя поля (snake_case).
-    - name: type
-      type: string
-      required: true
-      description: Имя типа из schema-файла или примитива.
-    - name: of
-      type: string
-      required: false
-      description: Тип элемента — указывается только при type=list.
-    - name: values
-      type: list
-      of: string
-      required: false
-      description: Перечень допустимых значений — указывается только при type=enum.
+      description: 'Допустимое число целей связи у одного узла-источника: ровно одна (one) или ноль и более (many).'
     - name: required
       type: bool
       required: true
-      description: Обязательность поля.
-    - name: default
-      type: text
-      required: false
-      description: Значение по умолчанию.
+      description: 'Обязательно ли заполнить связь хотя бы одной целью при создании узла. Для cardinality=one и required=true — ровно одна цель; для cardinality=many и required=true — не менее одной.'
     - name: description
       type: text
       required: false
-      description: Назначение поля.
-  constraints:
-    - Поле default допустимо только при required=false.
-    - Поле of обязательно при type=list.
-    - Поле values обязательно при type=enum.
-block_definition:
-  kind: mapping
-  description: Описание допустимого блока внутри kind=list со смешанными элементами (например, блока section_body).
-  fields:
-    - name: name
-      type: string
-      required: true
-      description: Имя блока (snake_case).
-    - name: of
-      type: string
-      required: true
-      description: Тип элементов блока.
-    - name: required
-      type: bool
-      required: true
-      description: Обязательность блока.
-    - name: description
-      type: text
-      required: false
-      description: Назначение блока.
-  constraints:
-    - В одном носителе не может быть двух блоков с одинаковым name.
+      description: Назначение связи.
