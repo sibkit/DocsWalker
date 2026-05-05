@@ -1,10 +1,56 @@
-description: Описание узлов, связей и форм значений документов проекта DocsWalker. Schema-файл, валидируется по docs/.docswalker/meta-schema.yml и сам валидирует все остальные docs/*.yml.
+description: Описание узлов и осей документов проекта DocsWalker. Schema-файл, валидируется по docs/.docswalker/meta-schema.yml и сам валидирует все остальные docs/*.yml.
+axes:
+  - name: path
+    direction: child_to_parent
+    kind: system
+    cardinality: one
+    description: Структурное отношение «часть-целое». У каждого node-узла (кроме root) есть ровно одно значение path — id родительского узла. Управляется ядром автоматически на основе YAML-вложенности и принадлежности узла файлу/папке. В YAML явно не хранится. Допустимые значения target ограничиваются по типу источника через constraints конкретных типов (см. ниже).
+  - name: ref
+    direction: from_to
+    kind: explicit
+    cardinality: many
+    description: Перекрёстная ссылка одного узла на другой произвольной семантики. Сериализуется в блоке out_refs узла-источника как single_key_mapping {ref: id_цели}.
+  - name: definitions
+    direction: parent_to_child
+    kind: default
+    cardinality: many
+    target_types: [definition]
+    description: Дети-определения в блоке definitions узла-section. Принадлежность узла-definition этому блоку родителя порождает значение оси автоматически.
+  - name: examples
+    direction: parent_to_child
+    kind: default
+    cardinality: many
+    target_types: [example]
+    description: Дети-примеры в блоке examples узла-section. Принадлежность узла-example этому блоку родителя порождает значение оси автоматически.
+  - name: fields
+    direction: parent_to_child
+    kind: default
+    cardinality: many
+    target_types: [field]
+    description: Дети-поля в блоке fields узла-section. Принадлежность узла-field этому блоку родителя порождает значение оси автоматически.
+  - name: content
+    direction: parent_to_child
+    kind: default
+    cardinality: many
+    target_types: [section]
+    description: Дети-разделы в блоке content узла-document. Принадлежность узла-section этому блоку документа порождает значение оси автоматически.
 types:
+  - name: folder
+    kind: mapping
+    node: true
+    title_source: dirname
+    description: Узел-папка. Соответствует подкаталогу docs/. Не имеет YAML-тела; служебный id хранится в docs/.docswalker/folders.yml. Title — имя директории.
+    fields: []
+    must_have_axes: [path]
+    constraints:
+      - Имя папки уникально в пределах её родителя по path (folder или root).
+      - Узел folder имеет path-родителя типа folder либо системный псевдо-узел root.
+      - 'Удаление folder допустимо только если папка пуста: нет дочерних узлов folder и document.'
   - name: document
     kind: mapping
     node: true
     title_source: filename
-    description: Корневой узел YAML-файла docs/. Один файл — один документ. Title документа — имя файла без расширения относительно корня docs/.
+    description: Корневой узел YAML-файла docs/. Один файл — один документ. Title документа — имя файла без расширения.
     fields:
       - name: id
         type: integer
@@ -18,10 +64,12 @@ types:
         type: list
         of: section
         required: true
-        description: Список разделов документа.
+        description: Список разделов документа. Принадлежность раздела этому списку порождает значение default-оси content (см. axes/content).
+    must_have_axes: [path, content]
     constraints:
       - Дополнительные ключи в корневом mapping не допускаются.
-      - Имя файла без расширения уникально в пределах docs/ и служит title документа.
+      - Имя файла без расширения уникально в пределах её родителя по path (folder или root) и служит title документа.
+      - Узел document имеет path-родителя типа folder либо системный псевдо-узел root.
   - name: section
     kind: single_key_mapping
     node: true
@@ -33,44 +81,57 @@ types:
       - name: statements
         of: text
         required: false
-        description: Утверждения о предмете раздела.
+        role: default_axis
+        description: Утверждения о предмете раздела. (Этот блок не имеет дочерних узлов и не порождает default-оси несмотря на role; элементы блока — текст, не узлы. См. constraints раздела.)
       - name: rules
         of: text
         required: false
+        role: default_axis
         description: Правила раздела. Модальность (обязательная или запрещающая) выражается формулировкой текста.
       - name: may_rules
         of: text
         required: false
+        role: default_axis
         description: Допускающие правила.
       - name: notes
         of: text
         required: false
+        role: default_axis
         description: Заметки.
       - name: definitions
         of: definition
         required: false
-        description: Определения терминов. Каждый элемент — узел; принадлежность к блоку порождает связь по умолчанию типа "definitions" от section к definition.
+        role: default_axis
+        description: Определения терминов. Принадлежность узла-definition этому блоку порождает значение default-оси definitions (см. axes/definitions).
       - name: examples
         of: example
         required: false
-        description: Примеры. Каждый элемент — узел; принадлежность к блоку порождает связь по умолчанию типа "examples".
+        role: default_axis
+        description: Примеры. Принадлежность узла-example этому блоку порождает значение default-оси examples (см. axes/examples).
       - name: fields
         of: field
         required: false
-        description: Описание полей структурного типа (используется в schema-файле). Каждый элемент — узел; принадлежность к блоку порождает связь по умолчанию типа "fields".
+        role: default_axis
+        description: Описание полей структурного типа (используется в schema-файле). Принадлежность узла-field этому блоку порождает значение default-оси fields (см. axes/fields).
       - name: out_refs
         of: reference
         required: false
-        description: 'Явные перекрёстные связи раздела с другими узлами. Каждая запись — single_key_mapping {имя_ref_type: id_цели}.'
+        role: refs_container
+        description: 'Контейнер значений explicit-осей раздела. Каждая запись — single_key_mapping {имя_explicit-оси: id_цели}.'
       - name: llm
         of: text
         required: false
+        role: default_axis
         description: Указания для LLM, не подлежащие изложению пользователю.
+    must_have_axes: [path]
+    may_have_axes: [definitions, examples, fields, ref]
     constraints:
       - id уникален в пределах docs/.
       - title уникален в пределах document.
       - В одной section не может быть двух блоков с одинаковым name.
       - Внутри section допустимы дополнительные YAML-подразделы, не пересекающиеся с именами блоков и не нарушающие правил оформления.
+      - 'Узел section имеет path-родителя типа document или section.'
+      - 'Текстовые блоки (statements, rules, may_rules, notes, llm) формально объявлены с role=default_axis для единообразия, но их элементы — text, не узлы; default-ось они не порождают.'
   - name: definition
     kind: single_key_mapping
     node: true
@@ -79,8 +140,10 @@ types:
     key_type: string
     value_type: text
     description: Узел-определение внутри section. Ключ — склейка id и определяемого термина, значение — содержание определения.
+    must_have_axes: [path]
     constraints:
       - id уникален в пределах docs/.
+      - Узел definition имеет path-родителя типа section и попадает в его блок definitions.
   - name: example
     kind: single_key_mapping
     node: true
@@ -89,8 +152,10 @@ types:
     key_type: string
     value_type: text
     description: Узел-пример внутри section. Ключ — склейка id и подписи примера, значение — содержимое примера.
+    must_have_axes: [path]
     constraints:
       - id уникален в пределах docs/.
+      - Узел example имеет path-родителя типа section и попадает в его блок examples.
   - name: field
     kind: mapping
     node: true
@@ -131,30 +196,22 @@ types:
         type: text
         required: true
         description: Назначение поля.
+    must_have_axes: [path]
     constraints:
       - id уникален в пределах docs/.
       - default допустим только при required=false.
       - of обязательно при type=list.
       - values обязательно при type=enum.
+      - Узел field имеет path-родителя типа section и попадает в его блок fields.
   - name: reference
     kind: single_key_mapping
     key_type: string
     value_type: integer
-    description: 'Сериализация одной направленной связи в блоке out_refs узла-источника. Ключ — имя ref_type, объявленного в Схеме; значение — id узла-цели.'
+    description: 'Сериализация одного значения explicit-оси в блоке out_refs узла-источника. Ключ — имя explicit-оси, объявленной в секции axes; значение — id узла-цели.'
     constraints:
-      - Ключ должен быть именем существующего ref_type из Схемы (кроме system=true).
+      - Ключ должен быть именем существующей оси из секции axes c kind=explicit.
       - Значение должно быть id существующего узла docs/.
       - Путь и человекочитаемые подсказки в YAML не хранятся; путь к узлу — производная иерархии, доступная через API DocsWalker.
-  - name: path
-    kind: ref_type
-    direction: child_to_parent
-    system: true
-    description: Системная связь узла с его родителем по YAML-вложенности. Производная — в файлах явно не хранится. Создаётся и удаляется DocsWalker автоматически при создании или удалении узла. Не используется в блоках out_refs.
-  - name: ref
-    kind: ref_type
-    direction: from_to
-    system: false
-    description: 'Перекрёстная ссылка одного узла на другой. Сериализуется в блоке out_refs как single_key_mapping {ref: id_цели}.'
   - name: text
     kind: primitive
     description: Текстовое значение. Прозаическая строка любой длины, помещаемая на одной строке YAML.

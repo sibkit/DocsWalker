@@ -211,12 +211,12 @@ field_definition:
     - Поле values обязательно при type=enum.
 block_definition:
   kind: mapping
-  description: Описание допустимого блока внутри kind=list со смешанными элементами (например, блока section_body). Каждый блок порождает default-ось одноимённой формы (kind=default, direction=parent_to_child).
+  description: Описание допустимого блока внутри kind=list со смешанными элементами (например, блока section_body). Блок может быть либо контейнером значений explicit-осей (см. role=refs_container), либо носителем default-оси одноимённой формы (см. role=default_axis).
   fields:
     - name: name
       type: string
       required: true
-      description: Имя блока (snake_case). Совпадает с именем default-оси, порождаемой принадлежностью узла блоку.
+      description: Имя блока (snake_case). Для role=default_axis совпадает с именем default-оси, порождаемой принадлежностью узла блоку.
     - name: of
       type: string
       required: true
@@ -225,10 +225,19 @@ block_definition:
       type: bool
       required: true
       description: Обязательность блока.
+    - name: role
+      type: enum
+      values:
+        - default_axis
+        - refs_container
+      required: false
+      default: default_axis
+      description: 'Назначение блока. default_axis — содержит дочерние узлы; принадлежность ребёнка блоку порождает значение default-оси с именем блока (parent_to_child). refs_container — содержит сериализацию значений explicit-осей (например, блок out_refs); сами по себе значения relations, имя блока не является именем оси.'
     - name: description
       type: text
       required: false
       description: Назначение блока.
   constraints:
     - В одном носителе не может быть двух блоков с одинаковым name.
-    - 'Имя блока попадает в пространство имён осей: имя name должно быть объявлено в секции axes schema-файла как ось с kind=default и direction=parent_to_child.'
+    - 'При role=default_axis имя блока должно быть объявлено в секции axes schema-файла как ось с kind=default и direction=parent_to_child; элементы блока должны быть допустимы по target_types этой оси.'
+    - 'При role=refs_container of должно ссылаться на тип kind=single_key_mapping, описывающий сериализацию одной ссылки (ключ — имя explicit-оси, значение — id цели).'

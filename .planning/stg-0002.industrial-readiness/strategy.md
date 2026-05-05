@@ -12,8 +12,8 @@
 - [+] (02) extra-integrity-checks
 - [+] (03) check-integrity-command
 - [+] move-node
-- [*] axes-meta-schema
-- [*] axes-schema
+- [+] axes-meta-schema
+- [+] axes-schema
 - [*] axes-docswalker-yml
 - [*] axes-core-graph
 - [*] axes-core-create-node
