@@ -41,6 +41,7 @@ internal static class Commands
                 Opt("origin", ParamType.String)),
             Cmd("search",
                 Req("query", ParamType.String)),
+            Cmd("check_integrity"),
 
             // Запись
             Cmd("create_node",

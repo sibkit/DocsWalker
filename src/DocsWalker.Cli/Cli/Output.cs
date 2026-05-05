@@ -22,6 +22,7 @@ internal sealed class ErrorBody
     public required string Code { get; init; }
     public string? Path { get; init; }
     public required string Message { get; init; }
+    public string? Hint { get; init; }
 }
 
 [JsonSourceGenerationOptions(
@@ -56,7 +57,7 @@ internal static class Output
         Console.Out.WriteLine(json);
     }
 
-    public static void WriteError(string code, string? path, string message)
+    public static void WriteError(string code, string? path, string message, string? hint = null)
     {
         var envelope = new ErrorEnvelope
         {
@@ -65,6 +66,7 @@ internal static class Output
                 Code = code,
                 Path = path,
                 Message = message,
+                Hint = hint,
             },
         };
         var json = JsonSerializer.Serialize(envelope, Ctx.ErrorEnvelope);

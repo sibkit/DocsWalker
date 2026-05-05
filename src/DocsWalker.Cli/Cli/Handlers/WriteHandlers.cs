@@ -85,7 +85,7 @@ internal static class WriteHandlers
         }
         catch (WriteApiException ex)
         {
-            Output.WriteError(ex.Code, path: null, ex.Message);
+            Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
             return 1;
         }
         catch (JsonException ex)
@@ -116,12 +116,12 @@ internal static class WriteHandlers
         }
         catch (WriteValidationException ex)
         {
-            Output.WriteError("validation_failed", path: null, FormatValidationMessage(ex.Errors));
+            Output.WriteError("validation_failed", path: null, FormatValidationMessage(ex.Errors), FormatValidationHint(ex.Errors));
             return 1;
         }
         catch (WriteApiException ex)
         {
-            Output.WriteError(ex.Code, path: null, ex.Message);
+            Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
             return 1;
         }
         catch (GraphLoadException ex)
@@ -196,5 +196,18 @@ internal static class WriteHandlers
             return $"[{e.Code}]{loc}{file}: {e.Message}";
         });
         return "Запись отклонена валидатором:\n" + string.Join('\n', lines);
+    }
+
+    /// <summary>
+    /// Сводный hint для validation_failed: первая ненулевая подсказка из списка ошибок.
+    /// Для нескольких ошибок более подробно — каждая ValidationError несёт свой Hint и
+    /// доступна через машинное API; CLI ограничивается короткой пометкой, чтобы LLM не
+    /// читала простыню.
+    /// </summary>
+    private static string? FormatValidationHint(IReadOnlyList<ValidationError> errors)
+    {
+        foreach (var e in errors)
+            if (!string.IsNullOrEmpty(e.Hint)) return e.Hint;
+        return null;
     }
 }

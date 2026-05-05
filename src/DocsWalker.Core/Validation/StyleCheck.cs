@@ -105,6 +105,7 @@ internal static class StyleCheck
         errors.Add(new ValidationError(
             "multiline_value",
             $"Узел id={node.Id}: значение {what} содержит '{marker}' (запрещены переводы строки и табуляции).",
-            node.SourceFile, node.Id));
+            node.SourceFile, node.Id,
+            Hint: "Значения помещаются на одну YAML-строку; разбей длинный текст на несколько элементов блока (массив строк) вместо одного многострочного значения."));
     }
 }

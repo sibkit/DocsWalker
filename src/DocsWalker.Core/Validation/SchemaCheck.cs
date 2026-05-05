@@ -26,7 +26,8 @@ internal static class SchemaCheck
                 errors.Add(new ValidationError(
                     "unknown_type",
                     $"Узел id={node.Id}: тип '{node.TypeName}' не объявлен в Схеме.",
-                    node.SourceFile, node.Id));
+                    node.SourceFile, node.Id,
+                    Hint: "Сверь имя типа со списком из get-schema; уточни структуру через describe-type."));
                 continue;
             }
             if (typeDef is not NodeType nt)
@@ -52,7 +53,8 @@ internal static class SchemaCheck
             errors.Add(new ValidationError(
                 "missing_title",
                 $"Узел id={node.Id} типа '{type.Name}': пустой title.",
-                node.SourceFile, node.Id));
+                node.SourceFile, node.Id,
+                Hint: "Укажи непустой title при создании или patch.title через update-node."));
 
         switch (type.Kind)
         {
@@ -100,7 +102,8 @@ internal static class SchemaCheck
                     errors.Add(new ValidationError(
                         "missing_field",
                         $"Узел id={node.Id} типа '{type.Name}': обязательное поле '{fdef.Name}' отсутствует.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: $"Добавь поле '{fdef.Name}' через update-node patch.fields. Структуру типа смотри в describe-type --name={type.Name}."));
                 continue;
             }
             CheckFieldValue(node, fdef, present[fdef.Name], errors);
@@ -114,7 +117,8 @@ internal static class SchemaCheck
                     errors.Add(new ValidationError(
                         "unknown_field",
                         $"Узел id={node.Id} типа '{type.Name}': неизвестное поле '{fv.Name}'.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: $"Допустимые поля типа '{type.Name}' смотри в describe-type --name={type.Name}."));
             }
         }
     }
@@ -153,7 +157,8 @@ internal static class SchemaCheck
                     errors.Add(new ValidationError(
                         "unknown_block",
                         $"Узел id={node.Id} типа '{type.Name}': неизвестный блок '{block.Name}'.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: $"Допустимые блоки типа '{type.Name}' смотри в describe-type --name={type.Name}."));
             }
         }
 
@@ -165,7 +170,8 @@ internal static class SchemaCheck
                 errors.Add(new ValidationError(
                     "missing_block",
                     $"Узел id={node.Id} типа '{type.Name}': обязательный блок '{bdef.Name}' отсутствует.",
-                    node.SourceFile, node.Id));
+                    node.SourceFile, node.Id,
+                    Hint: $"Добавь блок '{bdef.Name}' через update-node patch.blocks; структуру блока смотри в describe-type --name={type.Name}."));
         }
     }
 
@@ -200,21 +206,24 @@ internal static class SchemaCheck
                     errors.Add(new ValidationError(
                         "invalid_field_value",
                         $"Узел id={node.Id}, поле '{fdef.Name}': ожидался integer, получено '{fv.Scalar}'.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: "Передавай integer-значение JSON-числом (без кавычек) в patch.fields."));
                 break;
             case "bool":
                 if (fv.Scalar != "true" && fv.Scalar != "false")
                     errors.Add(new ValidationError(
                         "invalid_field_value",
                         $"Узел id={node.Id}, поле '{fdef.Name}': ожидался bool, получено '{fv.Scalar}'.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: "Допустимые значения bool — true / false (JSON-литералы, без кавычек)."));
                 break;
             case "enum":
                 if (fdef.Values is not null && !fdef.Values.Contains(fv.Scalar))
                     errors.Add(new ValidationError(
                         "invalid_enum_value",
                         $"Узел id={node.Id}, поле '{fdef.Name}': значение '{fv.Scalar}' не входит в {{{string.Join(", ", fdef.Values)}}}.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: $"Допустимые значения поля '{fdef.Name}': {string.Join(", ", fdef.Values ?? Array.Empty<string>())}."));
                 break;
         }
     }

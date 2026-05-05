@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using DocsWalker.Core.Graph;
+using DocsWalker.Core.Validation;
 using GraphModel = DocsWalker.Core.Graph.Graph;
 
 namespace DocsWalker.Core.Api;
@@ -191,6 +192,33 @@ public static class ReadApiJson
         ["other_title"] = v.OtherTitle,
         ["other_path"] = v.OtherPath,
     };
+
+    /// <summary>
+    /// Сериализация результата check-integrity. Для LLM ключевая часть — массив errors,
+    /// и флаг ok=true (=> errors пуст). Структура каждой ошибки совпадает с error-body
+    /// CLI, за исключением того, что лежит в success-result, а не в error-envelope.
+    /// </summary>
+    public static JsonObject ValidationResultToJson(ValidationResult result)
+    {
+        var arr = new JsonArray();
+        foreach (var e in result.Errors)
+        {
+            var obj = new JsonObject
+            {
+                ["code"] = e.Code,
+                ["message"] = e.Message,
+            };
+            if (e.FilePath is not null) obj["path"] = e.FilePath;
+            if (e.NodeId is int id) obj["node_id"] = id;
+            if (e.Hint is not null) obj["hint"] = e.Hint;
+            arr.Add((JsonNode?)obj);
+        }
+        return new JsonObject
+        {
+            ["ok"] = result.IsValid,
+            ["errors"] = arr,
+        };
+    }
 
     public static JsonArray SearchToJson(IReadOnlyList<SearchHit> hits)
     {

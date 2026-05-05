@@ -21,13 +21,21 @@ public sealed class Validator
         _schema = schema;
     }
 
-    public ValidationResult Validate(GraphModel graph)
+    /// <summary>
+    /// Полный прогон проверок. <paramref name="sequence"/> — текущее значение
+    /// sequence-счётчика (из .docswalker/sequence.txt); если null, проверка
+    /// sequence_underflow пропускается (для совместимости с тестовыми вызовами,
+    /// у которых sequence-файла нет).
+    /// </summary>
+    public ValidationResult Validate(GraphModel graph, int? sequence = null)
     {
         var errors = new List<ValidationError>();
         MetaSchemaCheck.Run(_meta, _schema, errors);
         SchemaCheck.Run(_schema, graph, errors);
         RefsCheck.Run(_schema, graph, errors);
         UniqueCheck.Run(graph, errors);
+        ParentBlockCheck.Run(_schema, graph, errors);
+        SequenceCheck.Run(graph, sequence, errors);
         StyleCheck.Run(_schema, graph, errors);
         return new ValidationResult(errors);
     }

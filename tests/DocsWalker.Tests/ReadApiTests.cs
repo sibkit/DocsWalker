@@ -143,4 +143,18 @@ public class ReadApiTests
         Assert.StartsWith("DocsWalker/", path);
         Assert.EndsWith("узел", path);
     }
+
+    [Fact]
+    public void CheckIntegrity_OnRealDocs_Passes_NoErrors()
+    {
+        var meta = SchemaLoader.LoadMetaSchema(TestPaths.MetaSchemaPath);
+        var schema = SchemaLoader.LoadSchema(TestPaths.SchemaPath);
+        var loaded = DocumentLoader.Load(TestPaths.DocsRoot, schema);
+        var api = new ReadApi(loaded.Graph);
+        var maxId = loaded.Graph.ById.Keys.Max();
+        var result = api.CheckIntegrity(meta, schema, sequence: maxId);
+        Assert.True(result.IsValid,
+            "Реальные docs/ должны проходить check-integrity без ошибок:" + Environment.NewLine +
+            string.Join(Environment.NewLine, result.Errors.Select(e => $"[{e.Code}] {e.Message}")));
+    }
 }

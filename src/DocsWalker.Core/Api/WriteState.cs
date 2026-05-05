@@ -44,7 +44,8 @@ internal sealed class WriteState
         if (t is null)
             throw new WriteApiException(
                 "unknown_type",
-                $"Тип '{name}' не объявлен в Схеме как mapping/single_key_mapping/list.");
+                $"Тип '{name}' не объявлен в Схеме как mapping/single_key_mapping/list.",
+                "Сверь имя типа со списком из get-schema; уточни структуру через describe-type.");
         return t;
     }
 
@@ -54,7 +55,8 @@ internal sealed class WriteState
         if (t is null)
             throw new WriteApiException(
                 "unknown_ref_type",
-                $"Тип связи '{name}' не объявлен в Схеме как ref_type.");
+                $"Тип связи '{name}' не объявлен в Схеме как ref_type.",
+                "Объяви новый ref_type через add-ref-type перед create-ref, либо сверь существующие имена через get-schema.");
         return t;
     }
 

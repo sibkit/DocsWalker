@@ -1,4 +1,6 @@
 using DocsWalker.Core.Graph;
+using DocsWalker.Core.Schema;
+using DocsWalker.Core.Validation;
 using GraphModel = DocsWalker.Core.Graph.Graph;
 
 namespace DocsWalker.Core.Api;
@@ -11,10 +13,12 @@ namespace DocsWalker.Core.Api;
 public sealed class ReadApiException : Exception
 {
     public string Code { get; }
+    public string? Hint { get; }
 
-    public ReadApiException(string code, string message) : base(message)
+    public ReadApiException(string code, string message, string? hint = null) : base(message)
     {
         Code = code;
+        Hint = hint;
     }
 }
 
@@ -339,4 +343,17 @@ public sealed class ReadApi
         RefOrigin.Default  => "default",
         _ => origin.ToString().ToLowerInvariant(),
     };
+
+    /// <summary>
+    /// Полный прогон <see cref="Validator"/> на текущем графе без записи. Возвращает
+    /// <see cref="ValidationResult"/> — успешное завершение операции (CLI exit=0)
+    /// независимо от наличия ошибок графа; ошибки графа — данные ответа.
+    /// Используется LLM-агентом как «sanity check» перед началом цепочки правок и для
+    /// аудита после ручных изменений в YAML.
+    /// </summary>
+    public ValidationResult CheckIntegrity(MetaSchemaDocument meta, SchemaDocument schema, int? sequence = null)
+    {
+        var validator = new Validator(meta, schema);
+        return validator.Validate(_graph, sequence);
+    }
 }

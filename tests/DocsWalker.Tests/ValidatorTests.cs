@@ -120,6 +120,104 @@ public class ValidatorTests
         Assert.DoesNotContain(result.Errors, e => e.Code == "invalid_title_format");
     }
 
+    [Fact]
+    public void Validate_RefTargetNotFound_HasHint()
+    {
+        var (v, g) = Setup();
+        var section = g.GetById(45)!;
+        var bad = WithExplicitRefs(section, new[] { new Ref(section.Id, "ref", 99999, RefOrigin.Explicit) });
+        var mutated = RebuildWithReplacement(g, bad);
+        var result = v.Validate(mutated);
+        var err = result.Errors.First(e => e.Code == "ref_target_not_found");
+        Assert.False(string.IsNullOrEmpty(err.Hint));
+    }
+
+    [Fact]
+    public void Validate_DuplicateChildInBlock_Reports_DuplicateChildInBlock()
+    {
+        var (v, g) = Setup();
+        var section = g.GetById(7)!; // section с блоком definitions
+        var newBlocks = section.Blocks!
+            .Select<NodeBlock, NodeBlock>(b => b is ChildrenBlock cb && cb.Name == "definitions"
+                ? new ChildrenBlock(cb.Name, cb.ChildIds.Concat(new[] { cb.ChildIds[0] }).ToList())
+                : b)
+            .ToList();
+        var bad = new Node
+        {
+            Id = section.Id,
+            TypeName = section.TypeName,
+            Title = section.Title,
+            ParentId = section.ParentId,
+            ParentBlockName = section.ParentBlockName,
+            SourceFile = section.SourceFile,
+            Blocks = newBlocks,
+            Fields = section.Fields,
+            InlineValue = section.InlineValue,
+            ExplicitOutRefs = section.ExplicitOutRefs,
+        };
+        var mutated = RebuildWithReplacement(g, bad);
+        var result = v.Validate(mutated);
+        Assert.Contains(result.Errors, e => e.Code == "duplicate_child_in_block" && e.NodeId == section.Id);
+    }
+
+    [Fact]
+    public void Validate_ParentBlockMismatch_Reports_ParentBlockInconsistent()
+    {
+        var (v, g) = Setup();
+        // Берём definition (id=8), у него parent_block_name="definitions"; ломаем имя
+        // — родитель не объявляет блока 'wrong_block_name'.
+        var node = g.GetById(8)!;
+        var bad = new Node
+        {
+            Id = node.Id,
+            TypeName = node.TypeName,
+            Title = node.Title,
+            ParentId = node.ParentId,
+            ParentBlockName = "wrong_block_name",
+            SourceFile = node.SourceFile,
+            Blocks = node.Blocks,
+            Fields = node.Fields,
+            InlineValue = node.InlineValue,
+            ExplicitOutRefs = node.ExplicitOutRefs,
+        };
+        var mutated = RebuildWithReplacement(g, bad);
+        var result = v.Validate(mutated);
+        Assert.Contains(result.Errors, e => e.Code == "parent_block_inconsistent" && e.NodeId == node.Id);
+    }
+
+    [Fact]
+    public void Validate_SequenceBelowMaxId_Reports_SequenceUnderflow()
+    {
+        var (v, g) = Setup();
+        var maxId = g.ById.Keys.Max();
+        var result = v.Validate(g, sequence: maxId - 1);
+        Assert.Contains(result.Errors, e => e.Code == "sequence_underflow");
+        Assert.False(string.IsNullOrEmpty(result.Errors.First(e => e.Code == "sequence_underflow").Hint));
+    }
+
+    [Fact]
+    public void Validate_SequenceAtOrAboveMaxId_Passes_SequenceCheck()
+    {
+        var (v, g) = Setup();
+        var maxId = g.ById.Keys.Max();
+        var result = v.Validate(g, sequence: maxId);
+        Assert.DoesNotContain(result.Errors, e => e.Code == "sequence_underflow");
+    }
+
+    private static Node WithExplicitRefs(Node original, IReadOnlyList<Ref> refs) => new()
+    {
+        Id = original.Id,
+        TypeName = original.TypeName,
+        Title = original.Title,
+        ParentId = original.ParentId,
+        ParentBlockName = original.ParentBlockName,
+        SourceFile = original.SourceFile,
+        Blocks = original.Blocks,
+        Fields = original.Fields,
+        InlineValue = original.InlineValue,
+        ExplicitOutRefs = refs,
+    };
+
     /// <summary>
     /// Пересобирает граф из исходного, заменяя один узел. Сохраняет порядок
     /// добавления (важно для path-связей).

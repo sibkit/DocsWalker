@@ -217,6 +217,31 @@ public class WriteApiTests
     }
 
     [Fact]
+    public void CreateNode_NonExistentParent_Includes_Hint()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+        var ex = Assert.Throws<WriteApiException>(() =>
+            write.ApplyOne(new CreateNodeOp(99999, "section", "X", null, null)));
+        Assert.Equal("parent_not_found", ex.Code);
+        Assert.False(string.IsNullOrEmpty(ex.Hint),
+            "WriteApiException(parent_not_found) должна нести непустой Hint для LLM-агента.");
+    }
+
+    [Fact]
+    public void AddRefType_ReservedName_Includes_Hint()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+        var ex = Assert.Throws<WriteApiException>(() =>
+            write.ApplyOne(new AddRefTypeOp("definitions", "from_to", "...")));
+        Assert.Equal("reserved_name", ex.Code);
+        Assert.False(string.IsNullOrEmpty(ex.Hint));
+    }
+
+    [Fact]
     public void Apply_FailedValidation_DoesNotChangeFiles()
     {
         using var env = new WriteTestEnvironment();

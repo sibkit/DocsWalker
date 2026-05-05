@@ -18,10 +18,12 @@ namespace DocsWalker.Core.Api;
 public sealed class WriteApiException : Exception
 {
     public string Code { get; }
+    public string? Hint { get; }
 
-    public WriteApiException(string code, string message) : base(message)
+    public WriteApiException(string code, string message, string? hint = null) : base(message)
     {
         Code = code;
+        Hint = hint;
     }
 }
 
@@ -161,7 +163,7 @@ public sealed class WriteApi
             }
             catch (WriteApiException ex)
             {
-                throw new WriteApiException(ex.Code, $"Операция #{i} ({ops[i].Type}): {ex.Message}");
+                throw new WriteApiException(ex.Code, $"Операция #{i} ({ops[i].Type}): {ex.Message}", ex.Hint);
             }
         }
 
@@ -169,7 +171,8 @@ public sealed class WriteApi
         var newSchema = state.SchemaModified ? state.Schema : schema;
 
         var validator = new Validator(_ctx.MetaSchema, newSchema);
-        var validation = validator.Validate(newGraph);
+        var newSequence = state.SequenceBase + state.IdsConsumed;
+        var validation = validator.Validate(newGraph, newSequence);
         if (!validation.IsValid)
             throw new WriteValidationException(validation.Errors);
 
@@ -191,7 +194,6 @@ public sealed class WriteApi
 
         if (state.IdsConsumed > 0)
         {
-            var newSequence = state.SequenceBase + state.IdsConsumed;
             var content = newSequence.ToString(CultureInfo.InvariantCulture) + "\n";
             targets.Add(new AtomicWriteTarget(_ctx.SequencePath, content));
         }
@@ -224,7 +226,8 @@ public sealed class WriteApi
         var parent = s.GetNode(op.ParentId)
             ?? throw new WriteApiException(
                 "parent_not_found",
-                $"Родительский узел id={op.ParentId} не найден.");
+                $"Родительский узел id={op.ParentId} не найден.",
+                "Сверь parent_id с актуальным графом через list-documents/get-map; возможно узел уже удалён.");
 
         var nodeType = s.ResolveNodeType(op.TypeName);
 
@@ -238,7 +241,8 @@ public sealed class WriteApi
 
         throw new WriteApiException(
             "invalid_parent",
-            $"Узел типа '{parent.TypeName}' (id={parent.Id}) не может быть родителем create_node.");
+            $"Узел типа '{parent.TypeName}' (id={parent.Id}) не может быть родителем create_node.",
+            "В текущей Схеме создание узлов поддерживается только под document (section) и под section (definition/example/field). Сверь тип родителя через get-nodes.");
     }
 
     private static WriteOpResult CreateUnderDocument(
@@ -247,7 +251,8 @@ public sealed class WriteApi
         if (!string.Equals(nodeType.Name, "section", StringComparison.Ordinal))
             throw new WriteApiException(
                 "invalid_child_type",
-                $"Под document можно создавать только section; запрошен тип '{nodeType.Name}'.");
+                $"Под document можно создавать только section; запрошен тип '{nodeType.Name}'.",
+                "Под document разрешён единственный дочерний тип 'section'. Если нужен definition/example/field — сначала создай под document секцию, потом узлы внутри неё.");
         var title = RequireTitle(op);
         var id = s.ReserveId();
 
@@ -328,7 +333,8 @@ public sealed class WriteApi
             default:
                 throw new WriteApiException(
                     "invalid_child_type",
-                    $"Создание узлов типа '{nodeType.Name}' под section на этом шаге не поддерживается.");
+                    $"Создание узлов типа '{nodeType.Name}' под section на этом шаге не поддерживается.",
+                    "Под section разрешены definition / example / field. Уточни тип через describe-type, либо подбери подходящего родителя.");
         }
 
         s.Add(newNode);
@@ -352,7 +358,8 @@ public sealed class WriteApi
         var node = s.GetNode(op.Id)
             ?? throw new WriteApiException(
                 "node_not_found",
-                $"Узел id={op.Id} не найден.");
+                $"Узел id={op.Id} не найден.",
+                "Сверь id через get-map / get-nodes; возможно узел уже удалён или id указан с опечаткой.");
 
         var nodeType = s.ResolveNodeType(node.TypeName);
         var patch = op.Patch;
@@ -439,18 +446,21 @@ public sealed class WriteApi
         var node = s.GetNode(op.Id)
             ?? throw new WriteApiException(
                 "node_not_found",
-                $"Узел id={op.Id} не найден.");
+                $"Узел id={op.Id} не найден.",
+                "Сверь id через get-map / get-nodes; возможно узел уже удалён или id указан с опечаткой.");
         if (node.ParentId is null)
             throw new WriteApiException(
                 "delete_document_unsupported",
-                $"Удаление документа id={op.Id} ('{node.Title}') в этой версии write-API не поддерживается.");
+                $"Удаление документа id={op.Id} ('{node.Title}') в этой версии write-API не поддерживается.",
+                "Для удаления документа используй команду delete-document.");
 
         // Запрет на входящие явные связи.
         var inExplicit = s.ListIncomingExplicitRefs(op.Id).ToList();
         if (inExplicit.Count > 0)
             throw new WriteApiException(
                 "incoming_refs",
-                $"Узел id={op.Id} имеет {inExplicit.Count} входящих явных связ(и/ей); удаление запрещено.");
+                $"Узел id={op.Id} имеет {inExplicit.Count} входящих явных связ(и/ей); удаление запрещено.",
+                "Сначала удали входящие связи через delete-ref (источники видны в get-in-refs), затем повтори delete-node — либо проведи всё одной transaction.");
 
         var parent = s.GetNode(node.ParentId.Value)
             ?? throw new WriteApiException(
@@ -478,23 +488,27 @@ public sealed class WriteApi
         var src = s.GetNode(op.FromId)
             ?? throw new WriteApiException(
                 "node_not_found",
-                $"Узел-источник id={op.FromId} не найден.");
+                $"Узел-источник id={op.FromId} не найден.",
+                "Сверь from_id через get-map / get-nodes.");
         if (s.GetNode(op.ToId) is null)
             throw new WriteApiException(
                 "node_not_found",
-                $"Узел-цель id={op.ToId} не найден.");
+                $"Узел-цель id={op.ToId} не найден.",
+                "Сверь to_id через get-map / get-nodes.");
 
         var rt = s.ResolveRefType(op.RefType);
         if (rt.System)
             throw new WriteApiException(
                 "system_ref_type",
-                $"Тип связи '{op.RefType}' — системный, его нельзя создавать через create_ref.");
+                $"Тип связи '{op.RefType}' — системный, его нельзя создавать через create_ref.",
+                "Системная связь 'path' формируется автоматически из YAML-вложенности; для прикладных связей объяви новый ref_type через add-ref-type.");
 
         var existing = src.ExplicitOutRefs ?? Array.Empty<Ref>();
         if (existing.Any(r => string.Equals(r.TypeName, op.RefType, StringComparison.Ordinal) && r.ToId == op.ToId))
             throw new WriteApiException(
                 "duplicate_ref",
-                $"Узел id={op.FromId} уже имеет связь '{op.RefType}' → id={op.ToId}.");
+                $"Узел id={op.FromId} уже имеет связь '{op.RefType}' → id={op.ToId}.",
+                "Если связь уже существует — повторная попытка не нужна; при необходимости удали старую через delete-ref и создай заново.");
 
         var newRefs = existing.Concat(new[] { new Ref(op.FromId, op.RefType, op.ToId, RefOrigin.Explicit) }).ToArray();
         var updatedBlocks = ReplaceOutRefsBlock(src, newRefs);
@@ -527,7 +541,8 @@ public sealed class WriteApi
         var src = s.GetNode(op.FromId)
             ?? throw new WriteApiException(
                 "node_not_found",
-                $"Узел-источник id={op.FromId} не найден.");
+                $"Узел-источник id={op.FromId} не найден.",
+                "Сверь from_id через get-map / get-nodes.");
 
         var existing = src.ExplicitOutRefs ?? Array.Empty<Ref>();
         var filtered = existing
@@ -536,7 +551,8 @@ public sealed class WriteApi
         if (filtered.Length == existing.Count)
             throw new WriteApiException(
                 "ref_not_found",
-                $"У узла id={op.FromId} нет связи '{op.RefType}' → id={op.ToId}.");
+                $"У узла id={op.FromId} нет связи '{op.RefType}' → id={op.ToId}.",
+                "Сверь набор связей через get-refs --id=<from-id>; возможно тип связи или to_id указаны с опечаткой.");
 
         var updatedBlocks = ReplaceOutRefsBlock(src, filtered);
         var updated = new Node
@@ -570,7 +586,8 @@ public sealed class WriteApi
         if (op.Direction != "from_to")
             throw new WriteApiException(
                 "invalid_direction",
-                $"Для прикладного ref_type direction должен быть 'from_to', получено '{op.Direction}'.");
+                $"Для прикладного ref_type direction должен быть 'from_to', получено '{op.Direction}'.",
+                "В этой версии DocsWalker для прикладных ref_type поддерживается только direction='from_to'.");
 
         // Запреты на коллизии с системными именами и default-блоками — фиксированный
         // список из docs/Правила оформления.yml/«Перекрёстные ссылки».
@@ -578,12 +595,14 @@ public sealed class WriteApi
         if (reserved.Contains(op.Name, StringComparer.Ordinal))
             throw new WriteApiException(
                 "reserved_name",
-                $"Имя '{op.Name}' зарезервировано (системный тип или default-блок) и не может использоваться для ref_type.");
+                $"Имя '{op.Name}' зарезервировано (системный тип или default-блок) и не может использоваться для ref_type.",
+                "Подбери другое имя ref_type, не пересекающееся со списком системных имён и default-блоков (path, definitions, examples, fields, content).");
 
         if (s.Schema.Types.Any(t => string.Equals(t.Name, op.Name, StringComparison.Ordinal)))
             throw new WriteApiException(
                 "duplicate_type",
-                $"Тип '{op.Name}' уже объявлен в Схеме.");
+                $"Тип '{op.Name}' уже объявлен в Схеме.",
+                "Тип с таким именем уже есть в Схеме — используй его существующее имя в create-ref, либо переименуй через ручную правку Схемы (вне write-API).");
 
         var newRefType = new RefType(op.Name, RefDirection.FromTo, false, op.Description);
         var newTypes = s.Schema.Types.Concat(new TypeDefinition[] { newRefType }).ToList();

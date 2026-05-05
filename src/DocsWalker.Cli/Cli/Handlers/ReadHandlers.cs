@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using DocsWalker.Core.Api;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
+using DocsWalker.Core.Store;
 using GraphModel = DocsWalker.Core.Graph.Graph;
 
 namespace DocsWalker.Cli.Cli.Handlers;
@@ -47,7 +48,7 @@ internal static class ReadHandlers
             }
             catch (ReadApiException ex)
             {
-                Output.WriteError(ex.Code, path: null, ex.Message);
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
                 return 1;
             }
         });
@@ -65,7 +66,7 @@ internal static class ReadHandlers
             }
             catch (ReadApiException ex)
             {
-                Output.WriteError(ex.Code, path: null, ex.Message);
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
                 return 1;
             }
         });
@@ -88,7 +89,7 @@ internal static class ReadHandlers
             }
             catch (ReadApiException ex)
             {
-                Output.WriteError(ex.Code, path: null, ex.Message);
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
                 return 1;
             }
         });
@@ -111,10 +112,45 @@ internal static class ReadHandlers
             }
             catch (ReadApiException ex)
             {
-                Output.WriteError(ex.Code, path: null, ex.Message);
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
                 return 1;
             }
         });
+    }
+
+    public static int CheckIntegrity(string root)
+    {
+        var docsRoot = Path.Combine(root, "docs");
+        var schemaPath = Path.Combine(docsRoot, "Схема.yml");
+        var metaSchemaPath = Path.Combine(docsRoot, ".docswalker", "meta-schema.yml");
+        var sequencePath = Path.Combine(docsRoot, ".docswalker", "sequence.txt");
+
+        try
+        {
+            var meta = SchemaLoader.LoadMetaSchema(metaSchemaPath);
+            var schema = SchemaLoader.LoadSchema(schemaPath);
+            var loaded = DocumentLoader.Load(docsRoot, schema);
+            int? sequence = File.Exists(sequencePath) ? new SequenceCounter(sequencePath).Read() : null;
+            var api = new ReadApi(loaded.Graph);
+            var result = api.CheckIntegrity(meta, schema, sequence);
+            Output.WriteSuccess(ReadApiJson.ValidationResultToJson(result));
+            return 0;
+        }
+        catch (SchemaLoadException ex)
+        {
+            Output.WriteError(ex.Code, ex.FilePath, ex.Message);
+            return 1;
+        }
+        catch (GraphLoadException ex)
+        {
+            Output.WriteError(ex.Code, ex.FilePath, ex.Message);
+            return 1;
+        }
+        catch (SequenceCounterException ex)
+        {
+            Output.WriteError(ex.Code, ex.FilePath, ex.Message);
+            return 1;
+        }
     }
 
     public static int Search(string root, string query)
@@ -129,7 +165,7 @@ internal static class ReadHandlers
             }
             catch (ReadApiException ex)
             {
-                Output.WriteError(ex.Code, path: null, ex.Message);
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
                 return 1;
             }
         });

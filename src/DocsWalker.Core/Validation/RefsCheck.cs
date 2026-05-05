@@ -27,19 +27,22 @@ internal static class RefsCheck
                     errors.Add(new ValidationError(
                         "unknown_ref_type",
                         $"Узел id={node.Id}: тип связи '{r.TypeName}' не объявлен в Схеме как ref_type.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: "Объяви новый ref_type через add-ref-type перед create-ref, либо сверь существующие имена через get-schema."));
                     continue;
                 }
                 if (rt.System)
                     errors.Add(new ValidationError(
                         "system_ref_in_explicit",
                         $"Узел id={node.Id}: системный тип связи '{r.TypeName}' не должен явно записываться в out_refs.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: "Системная связь 'path' формируется автоматически из YAML-вложенности и не должна попадать в out_refs."));
                 if (graph.GetById(r.ToId) is null)
                     errors.Add(new ValidationError(
                         "ref_target_not_found",
                         $"Узел id={node.Id}: явная связь '{r.TypeName}' указывает на отсутствующий узел id={r.ToId}.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: "Целевой узел исчез из графа; либо удали связь через delete-ref, либо подставь корректный to_id."));
             }
         }
 
@@ -56,7 +59,8 @@ internal static class RefsCheck
                     errors.Add(new ValidationError(
                         "path_cycle",
                         $"Узел id={node.Id}: обнаружен цикл по path-связям (повторно встречен id={pid}).",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: "Цепочка parent_id зациклена; такое состояние возникает только при ручной правке YAML — восстанови корректную иерархию."));
                     break;
                 }
                 var parent = graph.GetById(pid);
@@ -65,7 +69,8 @@ internal static class RefsCheck
                     errors.Add(new ValidationError(
                         "dangling_parent",
                         $"Узел id={node.Id}: parent_id={pid} указывает на отсутствующий узел.",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        Hint: "Родительский узел отсутствует; восстанови parent_id, либо удали узел через delete-node."));
                     break;
                 }
                 current = parent;

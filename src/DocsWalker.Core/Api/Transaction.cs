@@ -42,7 +42,7 @@ public static class TransactionParser
             }
             catch (WriteApiException ex)
             {
-                throw new WriteApiException(ex.Code, $"Операция #{i}: {ex.Message}");
+                throw new WriteApiException(ex.Code, $"Операция #{i}: {ex.Message}", ex.Hint);
             }
         }
         return ops;

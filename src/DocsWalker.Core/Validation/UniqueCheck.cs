@@ -23,6 +23,29 @@ internal static class UniqueCheck
                     node.SourceFile, node.Id));
         }
 
+        // Уникальность id внутри одного ChildrenBlock — отдельная проверка от глобальной
+        // duplicate_id: id может быть уникален в графе, но дважды упомянут в одном блоке
+        // родителя (например, после ручной правки YAML). Без этой проверки граф «тихо
+        // разъезжается» — узел отдан как ребёнок дважды.
+        foreach (var parent in graph.ById.Values)
+        {
+            if (parent.Blocks is null) continue;
+            foreach (var b in parent.Blocks)
+            {
+                if (b is not ChildrenBlock cb) continue;
+                var seen = new HashSet<int>();
+                foreach (var childId in cb.ChildIds)
+                {
+                    if (!seen.Add(childId))
+                        errors.Add(new ValidationError(
+                            "duplicate_child_in_block",
+                            $"У узла id={parent.Id} в children-блоке '{cb.Name}' id={childId} упомянут более одного раза.",
+                            parent.SourceFile, parent.Id,
+                            Hint: "Удали повторяющийся id из ChildrenBlock родителя; обычно это след ручной правки YAML."));
+                }
+            }
+        }
+
         var rootByNode = new Dictionary<int, int>();
         foreach (var node in graph.ById.Values)
             rootByNode[node.Id] = FindRootDoc(graph, node);
@@ -36,7 +59,8 @@ internal static class UniqueCheck
                 errors.Add(new ValidationError(
                     "duplicate_section_title",
                     $"В документе id={doc} секция с title='{section.Title}' встречается дважды (id={prev} и id={section.Id}).",
-                    section.SourceFile, section.Id));
+                    section.SourceFile, section.Id,
+                    Hint: "Title секции должен быть уникален в пределах документа; переименуй одну из секций через update-node patch.title."));
             else
                 seenTitles[key] = section.Id;
         }

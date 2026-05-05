@@ -61,6 +61,7 @@ internal static class Dispatcher
                                     parsed.Params.TryGetValue("type", out var t2) ? t2 : null,
                                     parsed.Params.TryGetValue("origin", out var o2) ? o2 : null),
             "search"          => ReadHandlers.Search(rootPath, parsed.Params["query"]),
+            "check_integrity" => ReadHandlers.CheckIntegrity(rootPath),
             "create_node"     => WriteHandlers.CreateNode(rootPath, parsed.Params),
             "update_node"     => WriteHandlers.UpdateNode(rootPath, parsed.Params),
             "delete_node"     => WriteHandlers.DeleteNode(rootPath, parsed.Params),
