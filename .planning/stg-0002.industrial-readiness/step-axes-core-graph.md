@@ -22,4 +22,4 @@
 6. Адаптировать тесты.
 
 ## Риски
-Ломается весь Read API (get_nodes возвращает out_refs, get_refs — direction/type). Эти изменения покрываются шагами axes-core-create-node и axes-cli-dynamic-params, но в этом шаге компиляция Read API уже сломается — допускаем как промежуточное состояние, либо вводим shim, отдающий старую форму поверх новой `Axes`-коллекции.
+Ломается весь Read API (get_nodes возвращает out_refs, get_refs — direction/type). Эти изменения покрываются шагами axes-core-create-node и axes-cli-dynamic-params; в этом шаге компиляция Read API уже сломается — это **ожидаемое промежуточное состояние** (см. strategy.md, «Стратегия рефакторинга — без shim»). Никакого переходного слоя не вводим.
