@@ -1,0 +1,30 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+[Pp]ackages/
+
+# Test results
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+*.csproj.user
+*.lutconfig
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Локальные настройки Claude Code
+.claude/

@@ -1,0 +1,186 @@
+meta_schema_version: 2
+name: DocsWalker Meta-Schema
+description: Описывает форму schema-файла проекта (например, docs/Схема.yml). Schema-файл задаёт типы узлов, типы связей и формы значений документов проекта.
+primitive_types:
+  - string
+  - text
+  - identifier
+  - bool
+  - integer
+  - enum
+  - list
+type_kinds:
+  - mapping
+  - single_key_mapping
+  - list
+  - primitive
+  - ref_type
+schema_root:
+  kind: mapping
+  description: Корневой объект schema-файла.
+  fields:
+    - name: schema
+      type: string
+      required: true
+      description: Имя схемы. Совпадает с именем файла без расширения.
+    - name: description
+      type: string
+      required: true
+      description: Однострочное описание схемы.
+    - name: types
+      type: list
+      of: type_definition
+      required: true
+      description: Список определений типов проекта.
+  constraints:
+    - Дополнительные ключи на корневом уровне не допускаются.
+    - Имена типов уникальны в пределах schema-файла.
+type_definition:
+  kind: mapping
+  description: Описание одного типа.
+  fields:
+    - name: name
+      type: string
+      required: true
+      description: Имя типа.
+    - name: kind
+      type: enum
+      values:
+        - mapping
+        - single_key_mapping
+        - list
+        - primitive
+        - ref_type
+      required: true
+      description: Категория типа.
+    - name: description
+      type: text
+      required: false
+      description: Назначение типа.
+    - name: node
+      type: bool
+      required: false
+      description: 'Если true — экземпляр типа адресуется DocsWalker как узел и получает уникальный sequence-id. Допустим только при kind в {mapping, single_key_mapping}.'
+    - name: title_source
+      type: enum
+      values:
+        - filename
+        - inline_key
+        - field
+      required: false
+      description: 'Откуда узел берёт title: имя файла без расширения, ключ single_key_mapping или значение указанного поля. Задаётся только при node=true.'
+    - name: title_field
+      type: string
+      required: false
+      description: Имя поля, дающего title — задаётся только при title_source=field.
+    - name: title_format
+      type: string
+      required: false
+      description: 'Шаблон title узла в YAML с подстановками {id} и {title}. Задаётся только при title_source=inline_key. Пример: "(#{id}) {title}".'
+    - name: fields
+      type: list
+      of: field_definition
+      required: false
+      description: Список полей. Используется только при kind=mapping.
+    - name: key_type
+      type: string
+      required: false
+      description: Тип ключа. Используется только при kind=single_key_mapping.
+    - name: value_type
+      type: string
+      required: false
+      description: Тип значения. Используется только при kind=single_key_mapping.
+    - name: of
+      type: string
+      required: false
+      description: Тип элемента списка. Используется только при kind=list (когда элементы однотипны).
+    - name: blocks
+      type: list
+      of: block_definition
+      required: false
+      description: Список допустимых блоков. Используется при kind=list или у узла-single_key_mapping, значение которого — список блоков.
+    - name: direction
+      type: enum
+      values:
+        - child_to_parent
+        - from_to
+      required: false
+      description: Направление связи. Задаётся только при kind=ref_type.
+    - name: system
+      type: bool
+      required: false
+      description: 'Системный тип связи: создаётся и удаляется DocsWalker автоматически, не хранится в YAML явно. Задаётся только при kind=ref_type.'
+    - name: constraints
+      type: list
+      of: string
+      required: false
+      description: Дополнительные правила для типа в человекочитаемой форме.
+  constraints:
+    - Поле fields допустимо только при kind=mapping.
+    - Поля key_type и value_type обязательны и допустимы только при kind=single_key_mapping.
+    - 'При kind=list задаётся либо of (однотипный список), либо blocks (список блоков), но не оба сразу.'
+    - 'При kind=primitive поля fields, key_type, value_type, of, blocks, node, title_*, direction, system не задаются.'
+    - 'При kind=ref_type поля fields, key_type, value_type, of, blocks, node, title_* не задаются; direction обязательно.'
+    - node=true допустим только при kind=mapping или kind=single_key_mapping.
+    - title_source обязательно при node=true.
+    - title_format задаётся только при title_source=inline_key.
+    - title_field задаётся только при title_source=field.
+field_definition:
+  kind: mapping
+  description: Описание одного поля типа kind=mapping.
+  fields:
+    - name: name
+      type: string
+      required: true
+      description: Имя поля (snake_case).
+    - name: type
+      type: string
+      required: true
+      description: Имя типа из schema-файла или примитива.
+    - name: of
+      type: string
+      required: false
+      description: Тип элемента — указывается только при type=list.
+    - name: values
+      type: list
+      of: string
+      required: false
+      description: Перечень допустимых значений — указывается только при type=enum.
+    - name: required
+      type: bool
+      required: true
+      description: Обязательность поля.
+    - name: default
+      type: text
+      required: false
+      description: Значение по умолчанию.
+    - name: description
+      type: text
+      required: false
+      description: Назначение поля.
+  constraints:
+    - Поле default допустимо только при required=false.
+    - Поле of обязательно при type=list.
+    - Поле values обязательно при type=enum.
+block_definition:
+  kind: mapping
+  description: Описание допустимого блока внутри kind=list со смешанными элементами (например, блока section_body).
+  fields:
+    - name: name
+      type: string
+      required: true
+      description: Имя блока (snake_case).
+    - name: of
+      type: string
+      required: true
+      description: Тип элементов блока.
+    - name: required
+      type: bool
+      required: true
+      description: Обязательность блока.
+    - name: description
+      type: text
+      required: false
+      description: Назначение блока.
+  constraints:
+    - В одном носителе не может быть двух блоков с одинаковым name.
