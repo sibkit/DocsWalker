@@ -4,9 +4,12 @@
 Реализовать базовые write-операции: `create-node`, `update-node`, `delete-node`, `create-ref`, `delete-ref`, `add-ref-type`. Атомарная запись (temp-файлы + rename), валидация перед коммитом.
 
 ## Файлы
-`src/DocsWalker.Core/Api/WriteApi.cs` — реализация операций
+`src/DocsWalker.Core/Api/WriteApi.cs` — реализация операций (типизированные `WriteOp`, общий `Apply` через снимок графа)
+`src/DocsWalker.Core/Api/WriteState.cs` — изменяемый снимок графа и Схемы для одной транзакции
 `src/DocsWalker.Core/Store/AtomicWriter.cs` — единый механизм атомарной записи нескольких файлов: подготовить временные файлы, проверить, переименовать
-`src/DocsWalker.Cli/Cli/Handlers/WriteHandlers.cs` — заменить заглушки команд записи
+`src/DocsWalker.Core/Yaml/SchemaEmitter.cs` — сериализатор `SchemaDocument` обратно в `Схема.yml` (нужен `add-ref-type`)
+`src/DocsWalker.Cli/Cli/Handlers/WriteHandlers.cs` — обработчики write- и transaction-команд CLI
+`src/DocsWalker.Cli/Program.cs` — диспетчер команд: подключение write- и transaction-команд
 
 ## Действия
 1. Каждая операция работает на копии графа: применить изменения, прогнать `Validator`, при успехе сериализовать через `Emitter` и записать атомарно через `AtomicWriter`.

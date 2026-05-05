@@ -4,8 +4,8 @@
 Реализовать атомарную пачку write-операций: список из любых базовых операций применяется целиком или не применяется. Используется для составных изменений (rename + правка связанных, перенос узла в другого родителя, массовая правка).
 
 ## Файлы
-`src/DocsWalker.Core/Api/Transaction.cs` — парсинг входной структуры transaction, применение к снимку графа, единая запись
-`src/DocsWalker.Cli/Cli/Handlers/TransactionHandler.cs` — обработчик команды `transaction`
+`src/DocsWalker.Core/Api/Transaction.cs` — парсинг входной JSON-структуры transaction в типизированный список `WriteOp`. Сама атомарная пачка применяется через `WriteApi.Apply(IReadOnlyList<WriteOp>)` — общий движок одиночных и пачечных операций.
+`src/DocsWalker.Cli/Cli/Handlers/WriteHandlers.cs` — содержит обработчик команды `transaction` рядом с одиночными write-обработчиками (отдельный `TransactionHandler.cs` не выделён, чтобы не размазывать общую обвязку CLI).
 
 ## Действия
 1. Описать форму входа `transaction`: массив операций, у каждой — `type` (`create-node` / `update-node` / ...) и параметры. Принимать как JSON-строку через CLI-параметр.

@@ -40,6 +40,28 @@ internal static class Dispatcher
         {
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
             "get_schema"      => SchemaHandlers.GetSchema(rootPath),
+            "list_documents"  => ReadHandlers.ListDocuments(rootPath),
+            "get_map"         => ReadHandlers.GetMap(rootPath),
+            "get_nodes"       => ReadHandlers.GetNodes(rootPath, parsed.Params["ids"]),
+            "get_by_path"     => ReadHandlers.GetByPath(rootPath, parsed.Params["path"]),
+            "get_refs"        => ReadHandlers.GetRefs(
+                                    rootPath,
+                                    int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
+                                    parsed.Params.TryGetValue("type", out var t1) ? t1 : null,
+                                    parsed.Params.TryGetValue("origin", out var o1) ? o1 : null),
+            "get_in_refs"     => ReadHandlers.GetInRefs(
+                                    rootPath,
+                                    int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
+                                    parsed.Params.TryGetValue("type", out var t2) ? t2 : null,
+                                    parsed.Params.TryGetValue("origin", out var o2) ? o2 : null),
+            "search"          => ReadHandlers.Search(rootPath, parsed.Params["query"]),
+            "create_node"     => WriteHandlers.CreateNode(rootPath, parsed.Params),
+            "update_node"     => WriteHandlers.UpdateNode(rootPath, parsed.Params),
+            "delete_node"     => WriteHandlers.DeleteNode(rootPath, parsed.Params),
+            "create_ref"      => WriteHandlers.CreateRef(rootPath, parsed.Params),
+            "delete_ref"      => WriteHandlers.DeleteRef(rootPath, parsed.Params),
+            "add_ref_type"    => WriteHandlers.AddRefType(rootPath, parsed.Params),
+            "transaction"     => WriteHandlers.Transaction(rootPath, parsed.Params),
             _                 => NotImplemented(spec),
         };
     }

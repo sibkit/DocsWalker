@@ -19,10 +19,6 @@ schema_root:
   kind: mapping
   description: Корневой объект schema-файла.
   fields:
-    - name: schema
-      type: string
-      required: true
-      description: Имя схемы. Совпадает с именем файла без расширения.
     - name: description
       type: string
       required: true
@@ -35,6 +31,7 @@ schema_root:
   constraints:
     - Дополнительные ключи на корневом уровне не допускаются.
     - Имена типов уникальны в пределах schema-файла.
+    - Идентификация schema-файла — по имени файла (см. Правила оформления/Идентификация документа); внутреннего поля schema/document не объявляется.
 type_definition:
   kind: mapping
   description: Описание одного типа.
@@ -117,7 +114,8 @@ type_definition:
       description: Дополнительные правила для типа в человекочитаемой форме.
   constraints:
     - Поле fields допустимо только при kind=mapping.
-    - Поля key_type и value_type обязательны и допустимы только при kind=single_key_mapping.
+    - Поле key_type обязательно и допустимо только при kind=single_key_mapping.
+    - 'Поле value_type допустимо только при kind=single_key_mapping. У single_key_mapping значение задаётся либо value_type (скалярное значение), либо blocks (список блоков), но не оба сразу; одно из двух обязательно.'
     - 'При kind=list задаётся либо of (однотипный список), либо blocks (список блоков), но не оба сразу.'
     - 'При kind=primitive поля fields, key_type, value_type, of, blocks, node, title_*, direction, system не задаются.'
     - 'При kind=ref_type поля fields, key_type, value_type, of, blocks, node, title_* не задаются; direction обязательно.'

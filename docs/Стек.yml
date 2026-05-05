@@ -1,19 +1,20 @@
+id: 64
 description: Технологический стек проекта DocsWalker.
 content:
-  - Версия .NET:
+  - "(#65) Версия .NET":
     - rules:
       - Все компоненты DocsWalker собираются на актуальной LTS-версии .NET. На момент старта проекта — .NET 10. Конкретная версия SDK фиксируется в общем global.json (на момент бутстрапа — 10.0.201). TargetFramework каждого проекта — net10.0.
       - Переход на новую LTS-версию выполняется единым обновлением для всех проектов решения.
-  - Нативная компиляция:
+  - "(#66) Нативная компиляция":
     - rules:
       - CLI-хост (DocsWalker.Cli) публикуется через Native AOT (PublishAot=true в csproj).
       - Библиотека ядра (DocsWalker.Core) помечается IsAotCompatible=true. Код, использующий рефлексию для сериализации/десериализации, не допускается. Для System.Text.Json используются source-генераторы (JsonSerializerContext).
       - Тестовый проект (DocsWalker.Tests) собирается и запускается на стандартном CLR (xUnit с Native AOT не совместим). Это не отменяет требований к AOT-совместимости кода в src/.
-  - YAML-парсер:
+  - "(#67) YAML-парсер":
     - rules:
       - Парсинг и сериализация YAML — через библиотеку SharpYaml (NuGet, источник xoofx/SharpYaml).
       - Используется event-stream API SharpYaml (SharpYaml.Parser.CreateParser → IParser, события из SharpYaml.Events). Использование object-mapping API SharpYaml через рефлексию не допускается — несовместимо с Native AOT.
-  - Тесты:
+  - "(#68) Тесты":
     - rules:
       - xUnit. Запускается через dotnet test.
       - Smoke-тесты на минимальное подмножество YAML, поддерживаемое DocsWalker, обязательны и должны быть зелёными до любого продвижения по реализации. Подмножество — block-mapping, block-sequence, flow-sequence, flow-mapping, скаляры в стилях unquoted/single-quoted/double-quoted, integer, true/false, комментарии #.

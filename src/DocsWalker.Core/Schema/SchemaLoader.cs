@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
-using SharpYaml;
+using DocsWalker.Core.Yaml;
 using SharpYaml.Events;
 
 namespace DocsWalker.Core.Schema;
@@ -47,6 +47,10 @@ public static class SchemaLoader
         {
             throw;
         }
+        catch (YamlReadException ex)
+        {
+            throw new SchemaLoadException(ex.Code, ex.FilePath, ex.Message);
+        }
         catch (Exception ex)
         {
             throw new SchemaLoadException(
@@ -86,7 +90,7 @@ public static class SchemaLoader
                 case "type_definition": typeDef = ReadInlineNodeType(r, "type_definition"); break;
                 case "field_definition": fieldDef = ReadInlineNodeType(r, "field_definition"); break;
                 case "block_definition": blockDef = ReadInlineNodeType(r, "block_definition"); break;
-                default: SkipValue(r); break;
+                default: r.SkipValue(); break;
             }
         }
 
@@ -122,7 +126,6 @@ public static class SchemaLoader
         r.Expect<DocumentStart>();
         r.Expect<MappingStart>();
 
-        string? schemaName = null;
         string? description = null;
         IReadOnlyList<TypeDefinition>? types = null;
 
@@ -131,10 +134,9 @@ public static class SchemaLoader
             var key = r.NextScalarValue();
             switch (key)
             {
-                case "schema": schemaName = r.NextScalarValue(); break;
                 case "description": description = r.NextScalarValue(); break;
                 case "types": types = ReadTypeList(r); break;
-                default: SkipValue(r); break;
+                default: r.SkipValue(); break;
             }
         }
 
@@ -145,7 +147,7 @@ public static class SchemaLoader
         Require(filePath, "description", description is not null);
         Require(filePath, "types", types is not null);
 
-        return new SchemaDocument(schemaName, description!, types!);
+        return new SchemaDocument(description!, types!);
     }
 
     private static NodeType ReadInlineNodeType(YamlReader r, string explicitName)
@@ -182,7 +184,7 @@ public static class SchemaLoader
                 case "of": of = r.NextScalarValue(); break;
                 case "blocks": blocks = ReadBlockList(r); break;
                 case "constraints": constraints = ReadStringList(r); break;
-                default: SkipValue(r); break;
+                default: r.SkipValue(); break;
             }
         }
 
@@ -248,7 +250,7 @@ public static class SchemaLoader
                 case "constraints": constraints = ReadStringList(r); break;
                 case "direction": direction = ParseRefDirection(r.NextScalarValue()); break;
                 case "system": system = ReadBool(r, key); break;
-                default: SkipValue(r); break;
+                default: r.SkipValue(); break;
             }
         }
 
@@ -313,7 +315,7 @@ public static class SchemaLoader
                 case "required": required = ReadBool(r, key); break;
                 case "default": defaultValue = r.NextScalarValue(); break;
                 case "description": description = r.NextScalarValue(); break;
-                default: SkipValue(r); break;
+                default: r.SkipValue(); break;
             }
         }
 
@@ -356,7 +358,7 @@ public static class SchemaLoader
                 case "of": of = r.NextScalarValue(); break;
                 case "required": required = ReadBool(r, key); break;
                 case "description": description = r.NextScalarValue(); break;
-                default: SkipValue(r); break;
+                default: r.SkipValue(); break;
             }
         }
 
@@ -422,24 +424,6 @@ public static class SchemaLoader
         _ => throw NewError("invalid_schema", $"Неизвестный direction '{raw}'."),
     };
 
-    private static void SkipValue(YamlReader r)
-    {
-        var ev = r.Next();
-        if (ev is null) return;
-        if (ev is Scalar) return;
-        if (ev is MappingStart || ev is SequenceStart)
-        {
-            var depth = 1;
-            while (depth > 0)
-            {
-                var inner = r.Next();
-                if (inner is null) return;
-                if (inner is MappingStart || inner is SequenceStart) depth++;
-                else if (inner is MappingEnd || inner is SequenceEnd) depth--;
-            }
-        }
-    }
-
     private static void Require(string filePath, string field, bool ok)
     {
         if (!ok)
@@ -451,69 +435,6 @@ public static class SchemaLoader
 
     private static SchemaLoadException NewError(string code, string message) =>
         new(code, null, message);
-}
-
-internal sealed class YamlReader
-{
-    private readonly IParser _parser;
-    private readonly string _filePath;
-    private bool _hasPeeked;
-    private ParsingEvent? _peeked;
-
-    public YamlReader(TextReader reader, string filePath)
-    {
-        _parser = Parser.CreateParser(reader);
-        _filePath = filePath;
-    }
-
-    public ParsingEvent? Peek()
-    {
-        if (!_hasPeeked)
-        {
-            _hasPeeked = _parser.MoveNext();
-            _peeked = _hasPeeked ? _parser.Current : null;
-        }
-        return _peeked;
-    }
-
-    public ParsingEvent? Next()
-    {
-        if (_hasPeeked)
-        {
-            var ev = _peeked;
-            _hasPeeked = false;
-            _peeked = null;
-            return ev;
-        }
-        return _parser.MoveNext() ? _parser.Current : null;
-    }
-
-    public T Expect<T>() where T : ParsingEvent
-    {
-        var ev = Next();
-        if (ev is null)
-            throw new SchemaLoadException(
-                "yaml_eof",
-                _filePath,
-                $"Неожиданный конец YAML-потока, ожидалось событие {typeof(T).Name}.");
-        if (ev is not T typed)
-            throw new SchemaLoadException(
-                "yaml_unexpected",
-                _filePath,
-                $"Ожидалось событие {typeof(T).Name}, получено {ev.GetType().Name}.");
-        return typed;
-    }
-
-    public string NextScalarValue()
-    {
-        var ev = Next();
-        if (ev is not Scalar s)
-            throw new SchemaLoadException(
-                "yaml_unexpected",
-                _filePath,
-                $"Ожидался скаляр, получено {ev?.GetType().Name ?? "null"}.");
-        return s.Value;
-    }
 }
 
 public static class SchemaJson
@@ -533,9 +454,10 @@ public static class SchemaJson
 
     public static JsonObject ToJson(SchemaDocument doc)
     {
-        var obj = new JsonObject();
-        if (doc.SchemaName is not null) obj["schema"] = doc.SchemaName;
-        obj["description"] = doc.Description;
+        var obj = new JsonObject
+        {
+            ["description"] = doc.Description,
+        };
         var types = new JsonArray();
         foreach (var t in doc.Types) types.Add((JsonNode?)TypeDefinitionToJson(t));
         obj["types"] = types;

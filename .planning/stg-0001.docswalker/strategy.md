@@ -7,12 +7,12 @@
 
 ## Шаги
 - [+] (01) bootstrap-project
-- [+] cli-skeleton
-- [+] schema-loader
-- [*] document-loader
-- [*] read-api
-- [*] graph-validator
-- [*] yaml-emitter
-- [*] sequence-counter
-- [*] write-api-basics
-- [*] write-api-transaction
+- [+] (02) cli-skeleton
+- [+] (03) schema-loader
+- [+] (04) document-loader
+- [+] (05) read-api
+- [+] (06) graph-validator
+- [+] (07) yaml-emitter
+- [+] (08) sequence-counter
+- [+] (09) write-api-basics
+- [+] (10) write-api-transaction
