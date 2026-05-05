@@ -102,6 +102,16 @@ internal sealed class WriteState
         }
     }
 
+    /// <summary>
+    /// Перечисляет узлы, у которых ParentId == <paramref name="parentId"/>. Используется
+    /// для обхода поддерева (например, в move_node при переносе между документами).
+    /// </summary>
+    public IEnumerable<Node> GetChildren(int parentId)
+    {
+        foreach (var n in _nodes.Values)
+            if (n.ParentId == parentId) yield return n;
+    }
+
     /// <summary>Помечает документ <paramref name="documentId"/> к перезаписи.</summary>
     public void MarkDocumentDirty(int documentId) => _affectedDocs.Add(documentId);
 

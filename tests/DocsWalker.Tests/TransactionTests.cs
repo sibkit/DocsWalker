@@ -65,19 +65,47 @@ public class TransactionTests
           { "op": "create-node", "parent_id": 1, "type": "section", "title": "x" },
           { "op": "update-node", "id": 2, "patch": { "title": "y" } },
           { "op": "delete-node", "id": 3 },
+          { "op": "move-node", "id": 4, "new_parent_id": 5, "new_block_name": "definitions" },
           { "op": "create-ref", "from_id": 1, "type": "ref", "to_id": 2 },
           { "op": "delete-ref", "from_id": 1, "type": "ref", "to_id": 2 },
           { "op": "add-ref-type", "name": "z", "direction": "from_to", "description": "..." }
         ]
         """);
         var ops = TransactionParser.Parse(json);
-        Assert.Equal(6, ops.Count);
+        Assert.Equal(7, ops.Count);
         Assert.IsType<CreateNodeOp>(ops[0]);
         Assert.IsType<UpdateNodeOp>(ops[1]);
         Assert.IsType<DeleteNodeOp>(ops[2]);
-        Assert.IsType<CreateRefOp>(ops[3]);
-        Assert.IsType<DeleteRefOp>(ops[4]);
-        Assert.IsType<AddRefTypeOp>(ops[5]);
+        var move = Assert.IsType<MoveNodeOp>(ops[3]);
+        Assert.Equal(4, move.Id);
+        Assert.Equal(5, move.NewParentId);
+        Assert.Equal("definitions", move.NewBlockName);
+        Assert.IsType<CreateRefOp>(ops[4]);
+        Assert.IsType<DeleteRefOp>(ops[5]);
+        Assert.IsType<AddRefTypeOp>(ops[6]);
+    }
+
+    [Fact]
+    public void Transaction_MoveNode_AppliesAndPersists()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+
+        // Перенос definition 6 ("схема") из section 4 в section 17 в составе пачки.
+        var ops = new WriteOp[]
+        {
+            new MoveNodeOp(Id: 6, NewParentId: 17, NewBlockName: null),
+        };
+        var result = write.Apply(ops);
+        Assert.Single(result.OpResults);
+        Assert.Equal("move-node", result.OpResults[0].Type);
+
+        var schema = SchemaLoader.LoadSchema(env.SchemaPath);
+        var graph = DocumentLoader.Load(env.DocsRoot, schema).Graph;
+        var moved = graph.GetById(6)!;
+        Assert.Equal(17, moved.ParentId);
+        Assert.Equal("definitions", moved.ParentBlockName);
     }
 
     [Fact]

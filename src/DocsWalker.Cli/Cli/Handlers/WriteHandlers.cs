@@ -48,6 +48,15 @@ internal static class WriteHandlers
         return Run(root, op);
     }
 
+    public static int MoveNode(string root, IReadOnlyDictionary<string, string> args)
+    {
+        var op = new MoveNodeOp(
+            Id: int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture),
+            NewParentId: int.Parse(args["new-parent-id"], System.Globalization.CultureInfo.InvariantCulture),
+            NewBlockName: args.TryGetValue("new-block-name", out var b) ? b : null);
+        return Run(root, op);
+    }
+
     public static int CreateRef(string root, IReadOnlyDictionary<string, string> args)
     {
         var op = new CreateRefOp(

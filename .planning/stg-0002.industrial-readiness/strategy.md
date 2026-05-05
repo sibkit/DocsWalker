@@ -9,7 +9,7 @@
 - [+] (01) error-hints
 - [+] (02) extra-integrity-checks
 - [+] (03) check-integrity-command
-- [*] move-node
+- [+] move-node
 - [*] create-document
 - [*] delete-document
 - [*] dry-run

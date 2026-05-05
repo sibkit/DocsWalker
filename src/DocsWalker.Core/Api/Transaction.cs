@@ -14,6 +14,7 @@ namespace DocsWalker.Core.Api;
 ///   { "op": "create-node", "parent_id": 1, "type": "section", "title": "..." },
 ///   { "op": "update-node", "id": 42, "patch": { "title": "..." } },
 ///   { "op": "delete-node", "id": 42 },
+///   { "op": "move-node",   "id": 42, "new_parent_id": 8, "new_block_name": "definitions" },
 ///   { "op": "create-ref",  "from_id": 42, "type": "ref", "to_id": 8 },
 ///   { "op": "delete-ref",  "from_id": 42, "type": "ref", "to_id": 8 },
 ///   { "op": "add-ref-type","name": "defines", "direction": "from_to", "description": "..." }
@@ -60,6 +61,7 @@ public static class TransactionParser
             "create-node"   => ParseCreateNode(obj),
             "update-node"   => ParseUpdateNode(obj),
             "delete-node"   => ParseDeleteNode(obj),
+            "move-node"     => ParseMoveNode(obj),
             "create-ref"    => ParseCreateRef(obj),
             "delete-ref"    => ParseDeleteRef(obj),
             "add-ref-type"  => ParseAddRefType(obj),
@@ -89,6 +91,12 @@ public static class TransactionParser
 
     private static DeleteNodeOp ParseDeleteNode(JsonObject obj) =>
         new(ReadRequiredInt(obj, "id"));
+
+    private static MoveNodeOp ParseMoveNode(JsonObject obj) =>
+        new(
+            Id: ReadRequiredInt(obj, "id"),
+            NewParentId: ReadRequiredInt(obj, "new_parent_id"),
+            NewBlockName: ReadOptionalString(obj, "new_block_name"));
 
     private static CreateRefOp ParseCreateRef(JsonObject obj) =>
         new(

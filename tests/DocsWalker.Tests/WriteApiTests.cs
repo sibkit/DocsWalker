@@ -264,6 +264,143 @@ public class WriteApiTests
         Assert.Equal(beforeSeq, File.ReadAllText(env.SequencePath));
     }
 
+    [Fact]
+    public void MoveNode_Definition_BetweenSections_InSameDocument()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+
+        // Definition id=5 ("мета-схема") сейчас лежит в section 4 ("Уровни схемы"),
+        // блок definitions=[5, 6]. Переносим его в section 17 ("Операции чтения"),
+        // у которой definitions содержат [18..26, 70] — после переноса должен
+        // появиться 5 в конце.
+        var result = write.ApplyOne(new MoveNodeOp(Id: 5, NewParentId: 17, NewBlockName: null));
+        Assert.Single(result.OpResults);
+        var data = result.OpResults[0].Data;
+        Assert.Equal(5, data["id"]!.GetValue<int>());
+        Assert.Equal(17, data["new_parent_id"]!.GetValue<int>());
+        Assert.Equal("definitions", data["new_block_name"]!.GetValue<string>());
+
+        var graph = LoadGraph(env);
+        var oldParent = graph.GetById(4)!;
+        var oldDefs = oldParent.Blocks!.OfType<ChildrenBlock>().First(b => b.Name == "definitions");
+        Assert.DoesNotContain(5, oldDefs.ChildIds);
+        Assert.Contains(6, oldDefs.ChildIds);
+
+        var newParent = graph.GetById(17)!;
+        var newDefs = newParent.Blocks!.OfType<ChildrenBlock>().First(b => b.Name == "definitions");
+        Assert.Contains(5, newDefs.ChildIds);
+        Assert.Equal(5, newDefs.ChildIds[^1]); // Добавлено в конец.
+
+        var moved = graph.GetById(5)!;
+        Assert.Equal(17, moved.ParentId);
+        Assert.Equal("definitions", moved.ParentBlockName);
+        Assert.Equal("DocsWalker.yml", moved.SourceFile);
+    }
+
+    [Fact]
+    public void MoveNode_Section_BetweenDocuments_UpdatesSubtreeSourceFile()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+
+        // Section id=4 ("Уровни схемы") в DocsWalker.yml (doc id=1) содержит definitions [5, 6].
+        // Переносим всю section в Стек.yml (doc id=64). Проверяем, что у section и
+        // обоих определений source_file обновился на "Стек.yml".
+        write.ApplyOne(new MoveNodeOp(Id: 4, NewParentId: 64, NewBlockName: null));
+
+        var graph = LoadGraph(env);
+        var moved = graph.GetById(4)!;
+        Assert.Equal(64, moved.ParentId);
+        Assert.Equal("content", moved.ParentBlockName);
+        Assert.Equal("Стек.yml", moved.SourceFile);
+
+        var def5 = graph.GetById(5)!;
+        Assert.Equal(4, def5.ParentId);
+        Assert.Equal("Стек.yml", def5.SourceFile);
+
+        var def6 = graph.GetById(6)!;
+        Assert.Equal(4, def6.ParentId);
+        Assert.Equal("Стек.yml", def6.SourceFile);
+
+        // Старый документ DocsWalker.yml больше не содержит section 4 среди children.
+        var oldDoc = graph.GetById(1)!;
+        var oldDocChildren = graph.GetChildren(oldDoc.Id);
+        Assert.DoesNotContain(oldDocChildren, c => c.Id == 4);
+
+        // Новый документ Стек.yml теперь содержит section 4.
+        var newDoc = graph.GetById(64)!;
+        var newDocChildren = graph.GetChildren(newDoc.Id);
+        Assert.Contains(newDocChildren, c => c.Id == 4);
+    }
+
+    [Fact]
+    public void MoveNode_IncompatibleChildType_IsRejected()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+
+        // Definition id=5 нельзя положить под document id=1 — у document в content
+        // только section, definitions он не принимает.
+        var ex = Assert.Throws<WriteApiException>(() =>
+            write.ApplyOne(new MoveNodeOp(Id: 5, NewParentId: 1, NewBlockName: null)));
+        Assert.Equal("invalid_child_type", ex.Code);
+    }
+
+    [Fact]
+    public void MoveNode_RequestedBlockName_NotOnParent_IsRejected()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+
+        // Просим положить definition 5 в блок "examples" под section 17 — у section
+        // блок "examples" есть, но он принимает 'example', а не 'definition'.
+        var ex = Assert.Throws<WriteApiException>(() =>
+            write.ApplyOne(new MoveNodeOp(Id: 5, NewParentId: 17, NewBlockName: "examples")));
+        Assert.Equal("unknown_block", ex.Code);
+    }
+
+    [Fact]
+    public void MoveNode_DocumentRoot_IsRejected()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+
+        var ex = Assert.Throws<WriteApiException>(() =>
+            write.ApplyOne(new MoveNodeOp(Id: 1, NewParentId: 64, NewBlockName: null)));
+        Assert.Equal("cannot_move_document", ex.Code);
+    }
+
+    [Fact]
+    public void MoveNode_Self_IsRejected()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+
+        var ex = Assert.Throws<WriteApiException>(() =>
+            write.ApplyOne(new MoveNodeOp(Id: 17, NewParentId: 17, NewBlockName: null)));
+        Assert.Equal("invalid_move", ex.Code);
+    }
+
+    [Fact]
+    public void MoveNode_NoEffect_SameParentSameBlock_IsRejected()
+    {
+        using var env = new WriteTestEnvironment();
+        var ctx = WriteContext.FromRoot(env.Root);
+        var write = new WriteApi(ctx);
+
+        // Definition 5 уже в section 4, блок "definitions" — повторный перенос туда же.
+        var ex = Assert.Throws<WriteApiException>(() =>
+            write.ApplyOne(new MoveNodeOp(Id: 5, NewParentId: 4, NewBlockName: "definitions")));
+        Assert.Equal("no_effect", ex.Code);
+    }
+
     private static DocsWalker.Core.Graph.Graph LoadGraph(WriteTestEnvironment env)
     {
         var schema = SchemaLoader.LoadSchema(env.SchemaPath);

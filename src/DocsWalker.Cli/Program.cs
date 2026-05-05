@@ -65,6 +65,7 @@ internal static class Dispatcher
             "create_node"     => WriteHandlers.CreateNode(rootPath, parsed.Params),
             "update_node"     => WriteHandlers.UpdateNode(rootPath, parsed.Params),
             "delete_node"     => WriteHandlers.DeleteNode(rootPath, parsed.Params),
+            "move_node"       => WriteHandlers.MoveNode(rootPath, parsed.Params),
             "create_ref"      => WriteHandlers.CreateRef(rootPath, parsed.Params),
             "delete_ref"      => WriteHandlers.DeleteRef(rootPath, parsed.Params),
             "add_ref_type"    => WriteHandlers.AddRefType(rootPath, parsed.Params),

@@ -60,6 +60,8 @@ public sealed record UpdateNodeOp(int Id, JsonObject Patch) : WriteOp("update-no
 
 public sealed record DeleteNodeOp(int Id) : WriteOp("delete-node");
 
+public sealed record MoveNodeOp(int Id, int NewParentId, string? NewBlockName) : WriteOp("move-node");
+
 public sealed record CreateRefOp(int FromId, string RefType, int ToId) : WriteOp("create-ref");
 
 public sealed record DeleteRefOp(int FromId, string RefType, int ToId) : WriteOp("delete-ref");
@@ -213,6 +215,7 @@ public sealed class WriteApi
         CreateNodeOp c => ApplyCreateNode(s, c),
         UpdateNodeOp u => ApplyUpdateNode(s, u),
         DeleteNodeOp d => ApplyDeleteNode(s, d),
+        MoveNodeOp m => ApplyMoveNode(s, m),
         CreateRefOp cr => ApplyCreateRef(s, cr),
         DeleteRefOp dr => ApplyDeleteRef(s, dr),
         AddRefTypeOp ar => ApplyAddRefType(s, ar),
@@ -481,6 +484,188 @@ public sealed class WriteApi
         {
             ["id"] = op.Id,
         });
+    }
+
+    private static WriteOpResult ApplyMoveNode(WriteState s, MoveNodeOp op)
+    {
+        var node = s.GetNode(op.Id)
+            ?? throw new WriteApiException(
+                "node_not_found",
+                $"Узел id={op.Id} не найден.",
+                "Сверь id через get-map / get-nodes; возможно узел уже удалён или id указан с опечаткой.");
+        if (node.ParentId is null)
+            throw new WriteApiException(
+                "cannot_move_document",
+                $"Узел id={op.Id} ('{node.Title}') — документ; перенос документов не поддерживается.",
+                "Документ нельзя перенести как узел; используй create-document/delete-document для смены файла.");
+
+        var newParent = s.GetNode(op.NewParentId)
+            ?? throw new WriteApiException(
+                "parent_not_found",
+                $"Новый родитель id={op.NewParentId} не найден.",
+                "Сверь new_parent_id через get-map / get-nodes.");
+
+        if (op.NewParentId == op.Id)
+            throw new WriteApiException(
+                "invalid_move",
+                $"Узел id={op.Id} нельзя сделать собственным родителем.");
+
+        if (IsDescendantOf(s, op.NewParentId, op.Id))
+            throw new WriteApiException(
+                "invalid_move",
+                $"Новый родитель id={op.NewParentId} является потомком переносимого узла id={op.Id} — перенос создал бы цикл.",
+                "Выбери родителя вне поддерева переносимого узла; либо сначала перенеси конфликтующее поддерево.");
+
+        var newParentType = s.ResolveNodeType(newParent.TypeName);
+        var (containerName, isFieldContainer) = ResolveTargetContainer(
+            s.Schema, newParentType, node.TypeName, op.NewBlockName);
+
+        if (node.ParentId == op.NewParentId
+            && string.Equals(node.ParentBlockName, containerName, StringComparison.Ordinal))
+            throw new WriteApiException(
+                "no_effect",
+                $"Узел id={op.Id} уже находится в контейнере '{containerName}' родителя id={op.NewParentId}.");
+
+        var oldParent = s.GetNode(node.ParentId.Value)
+            ?? throw new WriteApiException(
+                "parent_not_found",
+                $"Старый родитель id={node.ParentId} переносимого узла id={op.Id} не найден.");
+
+        // 1. Убираем id из ChildrenBlock старого родителя (если оно там было).
+        if (node.ParentBlockName is string oldBlockName)
+        {
+            var updatedOldParent = RemoveChildFromParentBlock(oldParent, oldBlockName, op.Id);
+            if (!ReferenceEquals(updatedOldParent, oldParent))
+                s.Replace(updatedOldParent);
+        }
+
+        // 2. Добавляем id в ChildrenBlock нового родителя — только если контейнер
+        //    блочный (single_key_mapping-родитель). Для field-контейнера (например,
+        //    document.content) дети живут через ParentId, у родителя нет блочного
+        //    представления.
+        if (!isFieldContainer)
+        {
+            var updatedNewParent = AddChildToParentBlock(newParent, containerName, op.Id);
+            s.Replace(updatedNewParent);
+        }
+
+        // 3. Обновляем сам переносимый узел: ParentId, ParentBlockName, при смене
+        //    документа — SourceFile.
+        var sourceChanged = !string.Equals(newParent.SourceFile, node.SourceFile, StringComparison.Ordinal);
+        var newSourceFile = sourceChanged ? newParent.SourceFile : node.SourceFile;
+
+        var movedNode = new Node
+        {
+            Id = node.Id,
+            TypeName = node.TypeName,
+            Title = node.Title,
+            ParentId = op.NewParentId,
+            ParentBlockName = containerName,
+            SourceFile = newSourceFile,
+            Fields = node.Fields,
+            Blocks = node.Blocks,
+            InlineValue = node.InlineValue,
+            ExplicitOutRefs = node.ExplicitOutRefs,
+        };
+        s.Replace(movedNode);
+
+        // 4. Если документ сменился — каскадно обновляем SourceFile у всех потомков.
+        if (sourceChanged)
+            UpdateSubtreeSourceFile(s, op.Id, newSourceFile);
+
+        // 5. Помечаем dirty оба документа: старый (узел оттуда ушёл) и новый.
+        s.MarkDocumentDirtyForNode(oldParent.Id);
+        s.MarkDocumentDirtyForNode(op.NewParentId);
+
+        return new WriteOpResult("move-node", new JsonObject
+        {
+            ["id"] = op.Id,
+            ["new_parent_id"] = op.NewParentId,
+            ["new_block_name"] = containerName,
+        });
+    }
+
+    private static bool IsDescendantOf(WriteState s, int candidateId, int ancestorId)
+    {
+        var current = s.GetNode(candidateId);
+        var safety = 100000;
+        while (current is not null && current.ParentId is int pid && safety-- > 0)
+        {
+            if (pid == ancestorId) return true;
+            current = s.GetNode(pid);
+        }
+        return false;
+    }
+
+    private static (string ContainerName, bool IsField) ResolveTargetContainer(
+        SchemaDocument schema, NodeType parentType, string childTypeName, string? requestedName)
+    {
+        var blockMatches = (parentType.Blocks ?? Array.Empty<BlockDefinition>())
+            .Where(b => string.Equals(b.Of, childTypeName, StringComparison.Ordinal))
+            .Select(b => (Name: b.Name, IsField: false))
+            .ToList();
+        var fieldMatches = (parentType.Fields ?? Array.Empty<FieldDefinition>())
+            .Where(f => string.Equals(f.Type, "list", StringComparison.Ordinal)
+                     && string.Equals(f.Of, childTypeName, StringComparison.Ordinal))
+            .Select(f => (Name: f.Name, IsField: true))
+            .ToList();
+        var candidates = blockMatches.Concat(fieldMatches).ToList();
+
+        if (candidates.Count == 0)
+            throw new WriteApiException(
+                "invalid_child_type",
+                $"Тип '{parentType.Name}' не имеет контейнера, принимающего дочерний тип '{childTypeName}'.",
+                "Сверь допустимые контейнеры через describe-type --name=<имя_типа>.");
+
+        if (requestedName is not null)
+        {
+            var match = candidates.FirstOrDefault(c => string.Equals(c.Name, requestedName, StringComparison.Ordinal));
+            if (match.Name is null)
+                throw new WriteApiException(
+                    "unknown_block",
+                    $"У типа '{parentType.Name}' нет контейнера '{requestedName}', принимающего тип '{childTypeName}'. Доступные: {string.Join(", ", candidates.Select(c => c.Name))}.",
+                    "Уточни имя контейнера через describe-type --name=<тип_родителя>.");
+            return match;
+        }
+
+        if (candidates.Count > 1)
+            throw new WriteApiException(
+                "ambiguous_target_block",
+                $"У типа '{parentType.Name}' несколько контейнеров для типа '{childTypeName}': {string.Join(", ", candidates.Select(c => c.Name))}. Укажи new_block_name явно.",
+                "Передай параметр new_block_name из списка выше.");
+
+        return candidates[0];
+    }
+
+    private static void UpdateSubtreeSourceFile(WriteState s, int rootId, string newSourceFile)
+    {
+        var queue = new Queue<int>();
+        foreach (var ch in s.GetChildren(rootId)) queue.Enqueue(ch.Id);
+        var safety = 1_000_000;
+        while (queue.Count > 0 && safety-- > 0)
+        {
+            var id = queue.Dequeue();
+            var n = s.GetNode(id);
+            if (n is null) continue;
+            if (!string.Equals(n.SourceFile, newSourceFile, StringComparison.Ordinal))
+            {
+                var updated = new Node
+                {
+                    Id = n.Id,
+                    TypeName = n.TypeName,
+                    Title = n.Title,
+                    ParentId = n.ParentId,
+                    ParentBlockName = n.ParentBlockName,
+                    SourceFile = newSourceFile,
+                    Fields = n.Fields,
+                    Blocks = n.Blocks,
+                    InlineValue = n.InlineValue,
+                    ExplicitOutRefs = n.ExplicitOutRefs,
+                };
+                s.Replace(updated);
+            }
+            foreach (var c in s.GetChildren(id)) queue.Enqueue(c.Id);
+        }
     }
 
     private static WriteOpResult ApplyCreateRef(WriteState s, CreateRefOp op)
