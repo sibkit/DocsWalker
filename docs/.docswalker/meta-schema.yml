@@ -1,6 +1,6 @@
-meta_schema_version: 2
+meta_schema_version: 3
 name: DocsWalker Meta-Schema
-description: Описывает форму schema-файла проекта (например, docs/Схема.yml). Schema-файл задаёт типы узлов, типы связей и формы значений документов проекта.
+description: Описывает форму schema-файла проекта (например, docs/Схема.yml). Schema-файл задаёт типы узлов, оси (отношения между узлами) и формы значений документов проекта.
 primitive_types:
   - string
   - text
@@ -14,7 +14,6 @@ type_kinds:
   - single_key_mapping
   - list
   - primitive
-  - ref_type
 schema_root:
   kind: mapping
   description: Корневой объект schema-файла.
@@ -23,6 +22,11 @@ schema_root:
       type: string
       required: true
       description: Однострочное описание схемы.
+    - name: axes
+      type: list
+      of: axis_definition
+      required: false
+      description: Список объявленных в проекте осей — направленных именованных отношений между узлами.
     - name: types
       type: list
       of: type_definition
@@ -31,7 +35,53 @@ schema_root:
   constraints:
     - Дополнительные ключи на корневом уровне не допускаются.
     - Имена типов уникальны в пределах schema-файла.
+    - Имена осей уникальны в пределах schema-файла.
+    - Имя оси не совпадает с именем поля любого type_definition (избежать коллизии при разборе CLI-параметров и ключей out_refs).
     - Идентификация schema-файла — по имени файла (см. Правила оформления/Идентификация документа); внутреннего поля schema/document не объявляется.
+axis_definition:
+  kind: mapping
+  description: Описание одной оси — направленного именованного отношения между узлами.
+  fields:
+    - name: name
+      type: string
+      required: true
+      description: Имя оси. Используется как ключ в API (параметр create-node, axis в get-refs, имя ключа в out_refs для kind=explicit).
+    - name: direction
+      type: enum
+      values:
+        - child_to_parent
+        - parent_to_child
+        - from_to
+      required: true
+      description: Направление оси.
+    - name: kind
+      type: enum
+      values:
+        - system
+        - default
+        - explicit
+      required: true
+      description: 'Способ хранения значений оси. system — управляется ядром, в YAML не хранится; default — порождается принадлежностью узла child-block родителя, имя оси совпадает с именем блока в типе родителя; explicit — пишется в out_refs узла-источника как single_key_mapping {имя_оси: id_цели}.'
+    - name: cardinality
+      type: enum
+      values:
+        - one
+        - many
+      required: true
+      description: Сколько значений может иметь ось у одного узла. one — ровно одно значение (например, path); many — список значений (например, ref).
+    - name: target_types
+      type: list
+      of: string
+      required: false
+      description: Список имён типов, допустимых на конце оси. Если не задано — допустим любой node-тип.
+    - name: description
+      type: text
+      required: false
+      description: Назначение оси.
+  constraints:
+    - Для kind=system значение оси создаётся и удаляется только ядром DocsWalker как побочный эффект структурных операций; через create_ref / delete_ref не управляется.
+    - Для kind=default имя оси совпадает с именем блока (block) в типе родителя; принадлежность узла блоку родителя порождает значение оси автоматически.
+    - Для kind=explicit имя оси не совпадает ни с одним именем default-блока ни одного type_definition.
 type_definition:
   kind: mapping
   description: Описание одного типа.
@@ -47,7 +97,6 @@ type_definition:
         - single_key_mapping
         - list
         - primitive
-        - ref_type
       required: true
       description: Категория типа.
     - name: description
@@ -62,10 +111,11 @@ type_definition:
       type: enum
       values:
         - filename
+        - dirname
         - inline_key
         - field
       required: false
-      description: 'Откуда узел берёт title: имя файла без расширения, ключ single_key_mapping или значение указанного поля. Задаётся только при node=true.'
+      description: 'Откуда узел берёт title: имя файла без расширения (filename), имя директории (dirname), ключ single_key_mapping (inline_key) или значение указанного поля (field). Задаётся только при node=true.'
     - name: title_field
       type: string
       required: false
@@ -78,7 +128,7 @@ type_definition:
       type: list
       of: field_definition
       required: false
-      description: Список полей. Используется только при kind=mapping.
+      description: Список полей. Используется только при kind=mapping. Пустой список допустим — узел без YAML-тела (например, тип folder).
     - name: key_type
       type: string
       required: false
@@ -96,17 +146,16 @@ type_definition:
       of: block_definition
       required: false
       description: Список допустимых блоков. Используется при kind=list или у узла-single_key_mapping, значение которого — список блоков.
-    - name: direction
-      type: enum
-      values:
-        - child_to_parent
-        - from_to
+    - name: must_have_axes
+      type: list
+      of: string
       required: false
-      description: Направление связи. Задаётся только при kind=ref_type.
-    - name: system
-      type: bool
+      description: Имена осей, обязательных для каждого экземпляра типа. Значение каждой такой оси должно быть задано при создании узла; ядро проверяет наличие при валидации.
+    - name: may_have_axes
+      type: list
+      of: string
       required: false
-      description: 'Системный тип связи: создаётся и удаляется DocsWalker автоматически, не хранится в YAML явно. Задаётся только при kind=ref_type.'
+      description: Имена осей, допустимых для типа дополнительно к must_have_axes. Значения этих осей не обязательны, но если заданы — должны соответствовать контракту оси.
     - name: constraints
       type: list
       of: string
@@ -117,12 +166,12 @@ type_definition:
     - Поле key_type обязательно и допустимо только при kind=single_key_mapping.
     - 'Поле value_type допустимо только при kind=single_key_mapping. У single_key_mapping значение задаётся либо value_type (скалярное значение), либо blocks (список блоков), но не оба сразу; одно из двух обязательно.'
     - 'При kind=list задаётся либо of (однотипный список), либо blocks (список блоков), но не оба сразу.'
-    - 'При kind=primitive поля fields, key_type, value_type, of, blocks, node, title_*, direction, system не задаются.'
-    - 'При kind=ref_type поля fields, key_type, value_type, of, blocks, node, title_* не задаются; direction обязательно.'
+    - 'При kind=primitive поля fields, key_type, value_type, of, blocks, node, title_*, must_have_axes, may_have_axes не задаются.'
     - node=true допустим только при kind=mapping или kind=single_key_mapping.
     - title_source обязательно при node=true.
     - title_format задаётся только при title_source=inline_key.
     - title_field задаётся только при title_source=field.
+    - 'Имена в must_have_axes и may_have_axes должны быть объявлены в секции axes schema-файла; пересечение списков пусто.'
 field_definition:
   kind: mapping
   description: Описание одного поля типа kind=mapping.
@@ -162,12 +211,12 @@ field_definition:
     - Поле values обязательно при type=enum.
 block_definition:
   kind: mapping
-  description: Описание допустимого блока внутри kind=list со смешанными элементами (например, блока section_body).
+  description: Описание допустимого блока внутри kind=list со смешанными элементами (например, блока section_body). Каждый блок порождает default-ось одноимённой формы (kind=default, direction=parent_to_child).
   fields:
     - name: name
       type: string
       required: true
-      description: Имя блока (snake_case).
+      description: Имя блока (snake_case). Совпадает с именем default-оси, порождаемой принадлежностью узла блоку.
     - name: of
       type: string
       required: true
@@ -182,3 +231,4 @@ block_definition:
       description: Назначение блока.
   constraints:
     - В одном носителе не может быть двух блоков с одинаковым name.
+    - 'Имя блока попадает в пространство имён осей: имя name должно быть объявлено в секции axes schema-файла как ось с kind=default и direction=parent_to_child.'
