@@ -14,7 +14,7 @@
 - [+] move-node
 - [+] axes-meta-schema
 - [+] axes-schema
-- [*] axes-docswalker-yml
+- [+] axes-docswalker-yml
 - [*] axes-core-graph
 - [*] axes-core-create-node
 - [*] axes-cli-dynamic-params
