@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using DocsWalker.Core.Api;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
@@ -43,7 +42,7 @@ internal static class ReadHandlers
             try
             {
                 var nodes = api.ReadApi.GetNodes(ids);
-                Output.WriteSuccess(ReadApiJson.NodesToJson(nodes, api.Graph));
+                Output.WriteSuccess(ReadApiJson.NodesToJson(nodes));
                 return 0;
             }
             catch (ReadApiException ex)
@@ -61,7 +60,7 @@ internal static class ReadHandlers
             try
             {
                 var subtree = api.ReadApi.GetByPath(path);
-                Output.WriteSuccess(ReadApiJson.SubtreeToJson(subtree, api.Graph));
+                Output.WriteSuccess(ReadApiJson.SubtreeToJson(subtree));
                 return 0;
             }
             catch (ReadApiException ex)
@@ -72,18 +71,13 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetRefs(string root, int id, string? type, string? originRaw)
+    public static int GetRefs(string root, int id, string? name)
     {
-        if (!TryParseOrigin(originRaw, out var origin, out var error))
-        {
-            Output.WriteError(error.Code, path: null, error.Message);
-            return 1;
-        }
         return WithApi(root, api =>
         {
             try
             {
-                var set = api.ReadApi.GetRefs(id, type, origin);
+                var set = api.ReadApi.GetRefs(id, name);
                 Output.WriteSuccess(ReadApiJson.RefSetToJson(set));
                 return 0;
             }
@@ -95,18 +89,13 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetInRefs(string root, int id, string? type, string? originRaw)
+    public static int GetInRefs(string root, int id, string? name)
     {
-        if (!TryParseOrigin(originRaw, out var origin, out var error))
-        {
-            Output.WriteError(error.Code, path: null, error.Message);
-            return 1;
-        }
         return WithApi(root, api =>
         {
             try
             {
-                var set = api.ReadApi.GetInRefs(id, type, origin);
+                var set = api.ReadApi.GetInRefs(id, name);
                 Output.WriteSuccess(ReadApiJson.RefSetToJson(set));
                 return 0;
             }
@@ -219,27 +208,4 @@ internal static class ReadHandlers
         }
         return ids;
     }
-
-    private static bool TryParseOrigin(string? raw, out RefOrigin? origin, out OriginError error)
-    {
-        if (raw is null)
-        {
-            origin = null;
-            error = default!;
-            return true;
-        }
-        if (ReadApi.TryParseOrigin(raw, out var o))
-        {
-            origin = o;
-            error = default!;
-            return true;
-        }
-        origin = null;
-        error = new OriginError(
-            "invalid_parameter",
-            $"Параметр '--origin': ожидается одно из 'explicit', 'system', 'default', получено '{raw}'.");
-        return false;
-    }
-
-    private sealed record OriginError(string Code, string Message);
 }

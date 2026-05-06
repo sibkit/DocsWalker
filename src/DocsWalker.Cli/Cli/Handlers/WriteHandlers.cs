@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DocsWalker.Core.Api;
@@ -18,69 +19,96 @@ namespace DocsWalker.Cli.Cli.Handlers;
 /// </summary>
 internal static class WriteHandlers
 {
+    /// <summary>
+    /// Фиксированные параметры <c>create-node</c>, известные на уровне CLI
+    /// независимо от Схемы. Всё остальное в args (кроме общего <c>root</c>)
+    /// трактуется как имя out_ref-связи и парсится как ID-список.
+    /// </summary>
+    private static readonly HashSet<string> CreateNodeFixedKeys =
+        new(StringComparer.Ordinal) { "type", "title", "text", "root" };
+
     public static int CreateNode(string root, IReadOnlyDictionary<string, string> args)
     {
+        var typeName = args["type"];
+        var title = args["title"];
+        var text = args.TryGetValue("text", out var t) ? t : null;
+
+        var refs = new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal);
+        foreach (var (key, value) in args)
+        {
+            if (CreateNodeFixedKeys.Contains(key))
+                continue;
+
+            if (!TryParseIdList(value, out var ids, out var parseError))
+            {
+                Output.WriteError(
+                    "invalid_parameter",
+                    path: null,
+                    $"Параметр '--{key}': {parseError}",
+                    "Ожидается id или список id через запятую (например, --path=1 или --rel=2,3).");
+                return 1;
+            }
+            refs[key] = ids;
+        }
+
         var op = new CreateNodeOp(
-            ParentId: int.Parse(args["parent-id"], System.Globalization.CultureInfo.InvariantCulture),
-            TypeName: args["type"],
-            Title: args.TryGetValue("title", out var t) ? t : null,
-            Name: args.TryGetValue("name", out var n) ? n : null,
-            Body: ParseOptionalBody(args));
+            TypeName: typeName,
+            Title: title,
+            Text: text,
+            Refs: refs);
         return Run(root, op);
     }
 
     public static int UpdateNode(string root, IReadOnlyDictionary<string, string> args)
     {
-        var patchRaw = args["patch"];
-        var patch = JsonNode.Parse(patchRaw) as JsonObject
-            ?? throw new InvalidOperationException(
-                "patch должен быть JSON-объектом (валидация формы — на ArgParser).");
+        var newTitle = args.TryGetValue("title", out var t) ? t : null;
+        var newText  = args.TryGetValue("text",  out var x) ? x : null;
+        if (newTitle is null && newText is null)
+        {
+            Output.WriteError(
+                "invalid_parameter",
+                path: null,
+                "Команда 'update-node' требует хотя бы один из параметров '--title' или '--text'.");
+            return 1;
+        }
+
         var op = new UpdateNodeOp(
-            Id: int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture),
-            Patch: patch);
+            Id: int.Parse(args["id"], CultureInfo.InvariantCulture),
+            NewTitle: newTitle,
+            NewText: newText);
         return Run(root, op);
     }
 
     public static int DeleteNode(string root, IReadOnlyDictionary<string, string> args)
     {
         var op = new DeleteNodeOp(
-            Id: int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture));
+            Id: int.Parse(args["id"], CultureInfo.InvariantCulture));
         return Run(root, op);
     }
 
     public static int MoveNode(string root, IReadOnlyDictionary<string, string> args)
     {
         var op = new MoveNodeOp(
-            Id: int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture),
-            NewParentId: int.Parse(args["new-parent-id"], System.Globalization.CultureInfo.InvariantCulture),
-            NewBlockName: args.TryGetValue("new-block-name", out var b) ? b : null);
+            Id: int.Parse(args["id"], CultureInfo.InvariantCulture),
+            NewParentId: int.Parse(args["new-path"], CultureInfo.InvariantCulture));
         return Run(root, op);
     }
 
     public static int CreateRef(string root, IReadOnlyDictionary<string, string> args)
     {
         var op = new CreateRefOp(
-            FromId: int.Parse(args["from-id"], System.Globalization.CultureInfo.InvariantCulture),
-            RefType: args["type"],
-            ToId: int.Parse(args["to-id"], System.Globalization.CultureInfo.InvariantCulture));
+            FromId: int.Parse(args["from-id"], CultureInfo.InvariantCulture),
+            Name: args["name"],
+            ToId: int.Parse(args["to-id"], CultureInfo.InvariantCulture));
         return Run(root, op);
     }
 
     public static int DeleteRef(string root, IReadOnlyDictionary<string, string> args)
     {
         var op = new DeleteRefOp(
-            FromId: int.Parse(args["from-id"], System.Globalization.CultureInfo.InvariantCulture),
-            RefType: args["type"],
-            ToId: int.Parse(args["to-id"], System.Globalization.CultureInfo.InvariantCulture));
-        return Run(root, op);
-    }
-
-    public static int AddRefType(string root, IReadOnlyDictionary<string, string> args)
-    {
-        var op = new AddRefTypeOp(
+            FromId: int.Parse(args["from-id"], CultureInfo.InvariantCulture),
             Name: args["name"],
-            Direction: args["direction"],
-            Description: args["description"]);
+            ToId: int.Parse(args["to-id"], CultureInfo.InvariantCulture));
         return Run(root, op);
     }
 
@@ -155,15 +183,32 @@ internal static class WriteHandlers
         }
     }
 
-    private static JsonObject? ParseOptionalBody(IReadOnlyDictionary<string, string> args)
+    private static bool TryParseIdList(string raw, out IReadOnlyList<int> ids, out string? error)
     {
-        if (!args.TryGetValue("body", out var body)) return null;
-        var parsed = JsonNode.Parse(body);
-        if (parsed is null) return null;
-        if (parsed is JsonObject obj) return obj;
-        throw new WriteApiException(
-            "invalid_parameter",
-            "body должен быть JSON-объектом.");
+        if (string.IsNullOrEmpty(raw))
+        {
+            ids = Array.Empty<int>();
+            error = "ожидается непустое значение (id или список id через запятую).";
+            return false;
+        }
+
+        var parts = raw.Split(',');
+        var list = new List<int>(parts.Length);
+        foreach (var p in parts)
+        {
+            var s = p.Trim();
+            if (!int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            {
+                ids = Array.Empty<int>();
+                error = $"ожидается целое число или список целых через запятую, получено '{raw}'.";
+                return false;
+            }
+            list.Add(id);
+        }
+
+        ids = list;
+        error = null;
+        return true;
     }
 
     /// <summary>

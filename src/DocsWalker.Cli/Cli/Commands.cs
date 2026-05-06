@@ -10,7 +10,21 @@ internal enum ParamType
 
 internal sealed record CommandParam(string KebabName, ParamType Type, bool Required);
 
-internal sealed record CommandSpec(string SnakeName, string KebabName, IReadOnlyList<CommandParam> Params);
+/// <summary>
+/// Спецификация CLI-команды.
+///
+/// <para><c>DynamicParams=true</c> означает: набор параметров командой не
+/// зафиксирован полностью — фиксированные параметры всё равно валидируются
+/// (тип значения, наличие у required), но любые сверх них не отвергаются
+/// как "unknown_parameter". Используется для <c>create-node</c>, у которого
+/// имена out_refs-параметров берутся из контракта типа в Схеме (см.
+/// docs/DocsWalker.yml/#159).</para>
+/// </summary>
+internal sealed record CommandSpec(
+    string SnakeName,
+    string KebabName,
+    IReadOnlyList<CommandParam> Params,
+    bool DynamicParams = false);
 
 internal static class Commands
 {
@@ -32,45 +46,37 @@ internal static class Commands
             Cmd("get_by_path",
                 Req("path", ParamType.String)),
             Cmd("get_refs",
-                Req("id", ParamType.Integer),
-                Opt("type", ParamType.String),
-                Opt("origin", ParamType.String)),
+                Req("id",   ParamType.Integer),
+                Opt("name", ParamType.String)),
             Cmd("get_in_refs",
-                Req("id", ParamType.Integer),
-                Opt("type", ParamType.String),
-                Opt("origin", ParamType.String)),
+                Req("id",   ParamType.Integer),
+                Opt("name", ParamType.String)),
             Cmd("search",
                 Req("query", ParamType.String)),
             Cmd("check_integrity"),
 
             // Запись
-            Cmd("create_node",
-                Req("parent_id", ParamType.Integer),
-                Req("type",      ParamType.String),
-                Opt("title",     ParamType.String),
-                Opt("name",      ParamType.String),
-                Opt("body",      ParamType.Json)),
+            DynamicCmd("create_node",
+                Req("type",  ParamType.String),
+                Req("title", ParamType.String),
+                Opt("text",  ParamType.String)),
             Cmd("update_node",
                 Req("id",    ParamType.Integer),
-                Req("patch", ParamType.Json)),
+                Opt("title", ParamType.String),
+                Opt("text",  ParamType.String)),
             Cmd("delete_node",
                 Req("id", ParamType.Integer)),
             Cmd("move_node",
-                Req("id",             ParamType.Integer),
-                Req("new_parent_id",  ParamType.Integer),
-                Opt("new_block_name", ParamType.String)),
+                Req("id",       ParamType.Integer),
+                Req("new_path", ParamType.Integer)),
             Cmd("create_ref",
                 Req("from_id", ParamType.Integer),
-                Req("type",    ParamType.String),
+                Req("name",    ParamType.String),
                 Req("to_id",   ParamType.Integer)),
             Cmd("delete_ref",
                 Req("from_id", ParamType.Integer),
-                Req("type",    ParamType.String),
+                Req("name",    ParamType.String),
                 Req("to_id",   ParamType.Integer)),
-            Cmd("add_ref_type",
-                Req("name",        ParamType.String),
-                Req("direction",   ParamType.String),
-                Req("description", ParamType.String)),
             Cmd("transaction",
                 Req("operations", ParamType.Json)),
         };
@@ -78,6 +84,9 @@ internal static class Commands
 
     private static CommandSpec Cmd(string snakeName, params CommandParam[] parameters) =>
         new(snakeName, snakeName.Replace('_', '-'), parameters);
+
+    private static CommandSpec DynamicCmd(string snakeName, params CommandParam[] parameters) =>
+        new(snakeName, snakeName.Replace('_', '-'), parameters, DynamicParams: true);
 
     private static CommandParam Req(string snakeName, ParamType type) =>
         new(snakeName.Replace('_', '-'), type, Required: true);

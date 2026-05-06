@@ -53,13 +53,11 @@ internal static class Dispatcher
             "get_refs"        => ReadHandlers.GetRefs(
                                     rootPath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
-                                    parsed.Params.TryGetValue("type", out var t1) ? t1 : null,
-                                    parsed.Params.TryGetValue("origin", out var o1) ? o1 : null),
+                                    parsed.Params.TryGetValue("name", out var n1) ? n1 : null),
             "get_in_refs"     => ReadHandlers.GetInRefs(
                                     rootPath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
-                                    parsed.Params.TryGetValue("type", out var t2) ? t2 : null,
-                                    parsed.Params.TryGetValue("origin", out var o2) ? o2 : null),
+                                    parsed.Params.TryGetValue("name", out var n2) ? n2 : null),
             "search"          => ReadHandlers.Search(rootPath, parsed.Params["query"]),
             "check_integrity" => ReadHandlers.CheckIntegrity(rootPath),
             "create_node"     => WriteHandlers.CreateNode(rootPath, parsed.Params),
@@ -68,7 +66,6 @@ internal static class Dispatcher
             "move_node"       => WriteHandlers.MoveNode(rootPath, parsed.Params),
             "create_ref"      => WriteHandlers.CreateRef(rootPath, parsed.Params),
             "delete_ref"      => WriteHandlers.DeleteRef(rootPath, parsed.Params),
-            "add_ref_type"    => WriteHandlers.AddRefType(rootPath, parsed.Params),
             "transaction"     => WriteHandlers.Transaction(rootPath, parsed.Params),
             _                 => NotImplemented(spec),
         };
@@ -88,15 +85,22 @@ internal static class Dispatcher
         IReadOnlyDictionary<string, string> provided)
     {
         // Неизвестные параметры (общий --root исключаем).
-        foreach (var key in provided.Keys)
+        // Для динамических команд (например, create-node, у которой имена
+        // out_refs-параметров берутся из контракта типа в Схеме) проверка
+        // unknown-параметра пропускается — handler сам разбирается, что
+        // делать с не-фиксированными ключами.
+        if (!spec.DynamicParams)
         {
-            if (key == "root")
-                continue;
-            if (!HasParam(spec, key))
+            foreach (var key in provided.Keys)
             {
-                return new ParamValidationError(
-                    "unknown_parameter",
-                    $"Неизвестный параметр '--{key}' для команды '{spec.KebabName}'.");
+                if (key == "root")
+                    continue;
+                if (!HasParam(spec, key))
+                {
+                    return new ParamValidationError(
+                        "unknown_parameter",
+                        $"Неизвестный параметр '--{key}' для команды '{spec.KebabName}'.");
+                }
             }
         }
 
