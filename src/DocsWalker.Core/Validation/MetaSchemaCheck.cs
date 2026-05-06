@@ -1,3 +1,4 @@
+using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
 
 namespace DocsWalker.Core.Validation;
