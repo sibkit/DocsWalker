@@ -67,6 +67,63 @@
 ### Cross-refs (отказ от generic `ref`)
 Generic-тип связи `ref` (текущий `kind: ref_type, direction: from_to`) уходит. Каждая связь — это named контракт, объявленный в типе узла-источника. На R3 у `section`/`document`/прочих смысловых типов **никакие cross-refs не объявляются** — оставляем минимальный набор связей под атомизацию. На R5 каждое существующее `{ref: id}` в живых docs смотрится по одному: либо переименование в семантически точный named ref (с декларацией в Схеме того же шага), либо удаление как избыточный — то есть cross-refs появляются спросом, а не сразу.
 
+### Tree-scopes — обобщение «дерева» поверх графа (refs-model phase 2)
+
+Принято после R11 при проектировании оставшихся read/write-команд. Граф = узлы + named-связи; **некоторые связи объединяются в named-scope деревья**. Дерево — это именованная область поверх графа, образованная одной или несколькими связями, опционально на разных типах. Связь принадлежит одному дереву (не нескольким); это объявляется через `tree: <scope_name>` в RefDef.
+
+**Правила tree-scope:**
+- Связь с `tree: X` всегда `cardinality=one + required=true` — эти поля **не указываются** рядом с `tree:` (запрещено мета-схемой), они подразумеваются. Конвенция направления: tree-refs идут child → parent.
+- Несколько RefDef с одинаковым `tree: X` (на разных типах, с разными именами) **вместе** образуют дерево. Пример: `project.strategy → strategy`, `task.project → project`, `subtask.parent_task → task` — все три с `tree: strategic`, вместе дают дерево «стратегия → проект → задача → подзадача».
+- Узел — корень дерева scope X, если его тип не объявляет ни одной out_ref с `tree: X`. Лист — если на узел нет входящих refs scope X. Forest допустим (несколько корней).
+- Все деревья scope-имена декларируются на верхнем уровне Схемы в секции `trees: [{name, description}]`. Каждое `tree: X` в RefDef валидируется по этой декларации.
+- Валидатор по каждому объявленному дереву: нет циклов в графе scope'а. По дереву `path` дополнительно — связность (каждый не-root достижим из root).
+
+**`path` теперь — обычный scope.** В мета-схеме path-связи описываются так же, как любые tree-refs: `name: path, tree: path, target_types: [...]`. Никакого специального поля `path:` или `path_targets:` (последнее уходит из мета-схемы — заменяется на target_types у самой связи). Особенность path только семантическая: `tree: path` — единственное обязательное на каждом не-root узле дерево, физически задающее размещение в хранилище. Имя `path` — зарезервировано (нельзя объявить свою связь с этим именем).
+
+**API:**
+- `get_subtree(node_id, tree="path")` — обобщённая subtree-операция. По умолчанию path. Внутри scope X: обход вниз по входящим refs scope X на каждом уровне.
+- `get_ancestors(node_id, tree="path")` — обход вверх по исходящему scope-ref'у узла.
+- `move_node(node_id, new_parent_id, tree="path")` — переподшивка scope-ref'а узла. Для path = реструктуризация хранилища (с каскадным rewrite SourceFile у потомков). Для других scope'ов = просто правка одного ref'а.
+- `describe-type` отдаёт out_refs с полем `tree?: <scope>` (отсутствует у не-tree связей).
+
+### Удаление узлов: универсальный delete-nodes с контрактом о намерении
+
+Принято после R11 при проектировании delete-семантики. Одиночный `delete-node` снимается, заменяется множественным `delete-nodes --ids=<csv>` с явным списком id. Cascade ни по какому дереву **не зашит** — LLM сама собирает набор удаляемого через `get_subtree` (по любому scope), движок валидирует.
+
+**Алгоритм:**
+1. **Path-замкнутость:** для каждого id в наборе все path-children тоже в наборе. Иначе ошибка `path_orphans_left` со списком недостающих id и hint «добавь их или ограничь набор».
+2. **Нет dangling cross-refs:** ни одной входящей cross-ref на узел внутри набора от узла снаружи. Иначе ошибка `dangling_refs` с перечислением (source_id, ref_name, target_id) — LLM перенаправляет/удаляет связи и ретраит.
+3. Если чисто — атомарное удаление всех узлов в наборе.
+
+Это даёт «universal cascade»: если LLM хочет удалить проект со всеми задачами по дереву `strategic`, она зовёт `get_subtree(project_id, tree="strategic")`, добавляет path-children для каждого узла набора (если есть) и передаёт всё в `delete-nodes`. Движок не делает магии — LLM явно собирает набор, движок проверяет целостность. Ошибки — обучающий сигнал: LLM осваивает структуру, а галлюцинации ловятся жёстко.
+
+### Redirect-refs — массовая переподшивка cross-refs
+
+Принято там же. Удобная операция перед удалением: перенаправить все входящие cross-refs (или их подмножество) с одного узла на другой, либо разорвать.
+
+Формы:
+- `redirect-refs --from=<src_id> --to=<dst_id> [--name=<ref_name>]` — все входящие cross-refs в src_id (опционально только с указанным именем) → в dst_id.
+- `redirect-refs --from-subtree=<root_id> --to=<dst_id>` — все входящие cross-refs в любой узел path-subtree → в dst_id.
+- `redirect-refs --from=<src_id> --unlink [--name=<ref_name>]` — разрыв вместо переноса.
+
+Без `redirect-refs` тот же результат достигается серией `update-ref`'ов в transaction'е, но требует от LLM руками собрать список источников через `get-refs` — шумно и подверженно ошибкам.
+
+### Schema-правило: `rule` обязан иметь `example`
+
+Принято при проектировании tree-scopes. У типа `rule` появляется обязательная горизонтальная связь:
+
+```yaml
+- name: rule
+  out_refs:
+    - name: examples
+      target_types: [example]
+      cardinality: many
+      required: true
+      description: Примеры применения правила. Минимум один.
+```
+
+Не tree-scope — обычная cross-ref. `example.path` остаётся `[section]` (вариант A): example — самостоятельный атом секции, может иллюстрировать несколько правил. Существующие правила в живых docs мигрируются: для каждого rule подбирается/создаётся example из соседних узлов или из формулировки правила.
+
 ### Что остаётся как есть
 - YAML — единственная форма хранения.
 - `sequence.txt` — id-счётчик ядра (будет пересчитан при миграции под максимальный id новой нумерации).
@@ -89,16 +146,42 @@ Generic-тип связи `ref` (текущий `kind: ref_type, direction: from
 - [+] (R10) folders-read-create — поддержка типа `folder` на чтение и создание/удаление: рекурсивный обход подкаталогов в DocumentLoader, `.docswalker/folders.yml` как primary-источник folder-узлов (FS-расхождение → integrity_failed без авто-починки), `create-node type=folder` создаёт каталог + запись, `delete-node` для folder требует пустой каталог. Update/move folder сюда **не входят** (отдельный шаг R11) — title/parent у folder в этой итерации не правятся, чтобы не тащить в R10 cascade-rewrite SourceFile у потомков и FS-machine для переноса каталогов.
 - [+] (R11) folders-rename-move — поддержка update-node (rename folder = переименование dirname + правка folders.yml + cascade-rewrite SourceFile у потомков) и move-node (перенос каталога между родителями + всё то же). Расширение AtomicWriter под FS-операции `MoveDirectory` / `DeleteEmptyDirectory`. Отдельным шагом, чтобы границы R10 оставались узкими.
 
-После завершения refs-модели — оставшиеся шаги исходной стратегии:
+### Refs-model phase 2 — tree-scopes и универсальное удаление
+
+- [*] (R12) tree-scopes-meta-schema — добавить в `docs/.docswalker/meta-schema.yml` секцию `trees: [{name, description}]` на верхнем уровне Схемы; в `ref_definition` — поле `tree?: string`. Запретить указывать `cardinality`/`required` рядом с `tree:`. Снять `path_targets` из `type_definition` (заменяется на target_types у самой path-связи). Поднять `meta_schema_version` до 5.
+- [*] (R13) tree-scopes-schema — переписать `docs/Схема.yml`: добавить декларацию `trees: [{name: path, description: ...}]`; для каждого типа кроме root объявить связь `path` через `tree: path` (вместо текущего `path_targets`). Заодно: добавить в `rule.out_refs` обязательную связь `examples → example` (см. раздел «Schema-правило: rule обязан иметь example»).
+- [*] (R14) tree-scopes-core — расширить ядро (Schema parser, валидатор, Graph). Парсер мета-схемы понимает `trees:` и `tree:`. Валидатор: per-scope no-cycle, для `path` — связность; запрещает cardinality/required рядом с tree. Graph хранит индекс «по scope → entries», чтобы subtree-операции были эффективны.
+- [*] (R15) tree-scopes-read-api — обобщить `get_subtree`/`get_ancestors` параметром `tree: string` (default `"path"`). Внутри scope X: subtree = обход вниз по входящим refs scope X; ancestors = вверх по исходящему scope-ref'у. ListDocuments снимается (граф достаётся обходом от root по `tree: path`).
+- [*] (R16) tree-scopes-write-api — `move-node` получает параметр `tree: string` (default `"path"`). Для `tree=path` сохраняется текущая семантика (переподшивка path + cascade-rewrite SourceFile). Для других scope'ов — атомарная правка одного scope-ref'а. `create-node` для нескольких tree-refs принимает значение каждого scope-родителя как required-параметр.
+
+### Read/write API completion
+
+- [*] delete-nodes — заменить одиночный `delete-node` множественным `delete-nodes --ids=<csv>`. Алгоритм валидации: path-замкнутость + dangling cross-refs check. Без авто-каскада. См. раздел «Удаление узлов».
+- [*] redirect-refs — новая команда. Формы `--from/--to`, `--from-subtree/--to`, `--unlink`. См. раздел «Redirect-refs».
+- [*] rule-requires-example — миграция живых docs: каждое существующее `rule` в docs/*.yml получает обязательный `examples` ref ≥1 элемент. Где example нет — создаётся минимальный example рядом или формулируется из текста правила. См. раздел «Schema-правило».
+
+### Завершающие шаги исходной стратегии
+
 - [+] (01) error-hints — выполнено.
 - [+] (02) extra-integrity-checks — выполнено.
 - [+] (03) check-integrity-command — выполнено.
-- [+] move-node — выполнено (придётся пересмотреть в R7).
+- [+] move-node — выполнено (пересмотрено в R7, расширяется в R16).
 - [*] dry-run
-- [*] describe-type
-- [*] usage-guide
-- [*] docs-llm-guide
 - [*] cross-process-lock
+- [*] describe-type — спецификация переписывается под refs-model + tree-scopes.
+- [*] docs-llm-guide — спецификация переписывается под модель «граф + tree-scopes».
+- [*] usage-guide — спецификация переписывается под актуальный manifest команд.
+
+### Итоговый порядок выполнения
+
+```
+R12 → R13 → R14 → R15 → R16
+→ delete-nodes → redirect-refs → rule-requires-example
+→ dry-run → cross-process-lock
+→ describe-type → docs-llm-guide → usage-guide
+```
+
+Перед стартом реализации каждый из спорных step-файлов (`describe-type`, `docs-llm-guide`, `usage-guide`) переписывается под актуальный дизайн — чтобы спецификация и код не расходились к моменту шага.
 
 ## Точка возобновления (для новой сессии после сброса контекста)
 
