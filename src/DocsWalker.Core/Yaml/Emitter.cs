@@ -7,34 +7,44 @@ using GraphModel = DocsWalker.Core.Graph.Graph;
 namespace DocsWalker.Core.Yaml;
 
 /// <summary>
-/// Сериализатор docs/*.yml. Принимает <see cref="Graph"/>, схему и узел-document,
-/// возвращает текст YAML по правилам docs/ (см. docs/Правила оформления.yml,
+/// Сериализатор docs/*.yml под refs-модель. Принимает <see cref="Graph"/>, схему и
+/// узел-document, возвращает текст YAML по правилам docs/ (см. docs/Правила оформления.yml,
 /// docs/DocsWalker.yml/«Стек реализации»).
 ///
-/// Стиль: 2-space indent, block-mapping и block-sequence как основные конструкции,
-/// inline-key склейка ключа single_key_mapping в двойных кавычках, минимум кавычек
-/// для остальных скаляров (см. <see cref="Quoting"/>). Запрещённые YAML-конструкции
-/// ("|", ">", "&amp;", "*", "!", "%") эмиттер не порождает.
+/// Формат:
+/// <list type="bullet">
+///   <item><description>Документ — block-mapping с полями id, text, далее каждый
+///   non-path out_ref как ключ-блок (например, sections).</description></item>
+///   <item><description>Смысловой узел-контейнер (есть out_refs в типе) — single_key_mapping
+///   "(#id) title" со списком ключ-блоков, каждый блок — single_key_mapping
+///   `имя_связи: [...]` с последовательностью атомов.</description></item>
+///   <item><description>Атом (text_required=true и нет out_refs в типе) —
+///   "(#id) title": text как одна строка.</description></item>
+/// </list>
+///
+/// Стиль: 2-space indent; block-mapping и block-sequence как основные конструкции;
+/// inline-key склейка ключа в двойных кавычках; минимум кавычек для прочих скаляров
+/// (см. <see cref="Quoting"/>). Запрещённые YAML-конструкции
+/// (<c>|</c>, <c>&gt;</c>, <c>&amp;</c>, <c>*</c>, <c>!</c>, <c>%</c>) эмиттер не порождает.
 /// </summary>
 public sealed class Emitter
 {
     private readonly StringBuilder _sb = new();
     private readonly SchemaDocument _schema;
     private readonly GraphModel _graph;
-    private readonly Dictionary<string, NodeType> _nodeTypeByName;
+    private readonly Dictionary<string, TypeDefinition> _typeByName;
 
     private Emitter(SchemaDocument schema, GraphModel graph)
     {
         _schema = schema;
         _graph = graph;
-        _nodeTypeByName = new Dictionary<string, NodeType>(StringComparer.Ordinal);
-        foreach (var t in schema.Types)
-            if (t is NodeType nt) _nodeTypeByName[nt.Name] = nt;
+        _typeByName = new Dictionary<string, TypeDefinition>(StringComparer.Ordinal);
+        foreach (var t in schema.Types) _typeByName[t.Name] = t;
     }
 
     /// <summary>
     /// Сериализует один документ docs/ (узел типа "document") в YAML-текст.
-    /// Текст оканчивается переводом строки, как принято для UTF-8 yml-файлов.
+    /// Текст оканчивается переводом строки.
     /// </summary>
     public static string EmitDocument(GraphModel graph, SchemaDocument schema, Node document)
     {
@@ -53,213 +63,123 @@ public sealed class Emitter
 
     private void WriteDocument(Node document)
     {
-        // Поля документа в фиксированном порядке: id первым, затем description.
-        // Дочерние секции идут под "content:" — отдельным sequence-блоком, потому что
-        // в Node.Fields поле content не материализовано (children подвешены через ParentId).
-        WriteIdLine(0, document);
-        var description = GetFieldScalar(document, "description") ?? string.Empty;
-        WriteLine(0, "description: " + Quoting.Format(description));
-
-        var sections = _graph.GetChildren(document.Id);
-        if (sections.Count == 0)
-        {
-            WriteLine(0, "content: []");
-            return;
-        }
-        WriteLine(0, "content:");
-        // Стиль docs/: items блок-sequence сдвигаются на 2 пробела от родительского ключа;
-        // dash родительского ключа лежит на col 0, тогда dash дочернего — на col 2.
-        foreach (var section in sections)
-            WriteSection(2, section);
+        WriteLine(0, "id: " + document.Id.ToString(CultureInfo.InvariantCulture));
+        WriteLine(0, "text: " + Quoting.Format(document.Text));
+        foreach (var (refName, targetIds) in EnumerateOrderedRefs(document))
+            WriteRefBlockTopLevel(refName, targetIds);
     }
 
     /// <summary>
-    /// dashIndent — колонка символа '-' у текущего sequence-item. Внутреннее значение
-    /// mapping-ключа (block-sequence элементов внутри) выводится на dashIndent + 2.
+    /// Эмитит верхний out_ref документа: <c>name:</c> на col 0, далее sequence
+    /// дочерних узлов с dash на col 2.
     /// </summary>
-    private void WriteSection(int dashIndent, Node section)
+    private void WriteRefBlockTopLevel(string refName, IReadOnlyList<int> targetIds)
     {
-        var nodeType = ResolveNodeType(section.TypeName);
-        var key = TitleFormat.Format(
-            nodeType.TitleFormat ?? throw new InvalidOperationException(
-                $"У типа '{nodeType.Name}' отсутствует title_format в схеме."),
-            section.Id, section.Title);
+        if (targetIds.Count == 0)
+        {
+            WriteLine(0, refName + ": []");
+            return;
+        }
+        WriteLine(0, refName + ":");
+        foreach (var targetId in targetIds)
+        {
+            var child = ResolveStructuralChild(targetId, refName);
+            WriteSemanticNode(2, child);
+        }
+    }
+
+    /// <summary>
+    /// Эмитит смысловой узел (title_source=inline_key) под dash <paramref name="dashIndent"/>.
+    /// Атом-форма для типа с text_required=true и пустым out_refs:
+    /// <c>"(#id) title": text</c>; иначе контейнерная форма со списком ref-блоков.
+    /// </summary>
+    private void WriteSemanticNode(int dashIndent, Node node)
+    {
+        var type = ResolveType(node);
+        var key = TitleFormat.Format(DocumentLoader.InlineKeyFormat, node.Id, node.Title);
         var encodedKey = Quoting.Format(key, forceDoubleQuoted: true);
 
-        var blocks = section.Blocks;
-        if (blocks is null || blocks.Count == 0)
+        bool isAtomForm = type.TextRequired && type.OutRefs.Count == 0;
+        if (isAtomForm)
+        {
+            WriteLine(dashIndent, "- " + encodedKey + ": " + Quoting.Format(node.Text));
+            return;
+        }
+
+        var orderedRefs = EnumerateOrderedRefs(node).ToList();
+        if (orderedRefs.Count == 0)
         {
             WriteLine(dashIndent, "- " + encodedKey + ": []");
             return;
         }
         WriteLine(dashIndent, "- " + encodedKey + ":");
-        var childDash = dashIndent + 2;
-        foreach (var block in blocks)
-            WriteBlock(childDash, block);
+        var blockDashIndent = dashIndent + 2;
+        foreach (var (refName, targetIds) in orderedRefs)
+            WriteRefBlockNested(blockDashIndent, refName, targetIds);
     }
 
-    private void WriteBlock(int dashIndent, NodeBlock block)
+    /// <summary>
+    /// Эмитит блок-связь как элемент sequence на dash <paramref name="dashIndent"/>:
+    /// <c>- name:</c> + sequence дочерних узлов на dash <paramref name="dashIndent"/>+2.
+    /// </summary>
+    private void WriteRefBlockNested(int dashIndent, string refName, IReadOnlyList<int> targetIds)
     {
-        var innerDash = dashIndent + 2;
-        switch (block)
+        if (targetIds.Count == 0)
         {
-            case TextBlock tb:
-                if (tb.Items.Count == 0)
-                {
-                    WriteLine(dashIndent, "- " + tb.Name + ": []");
-                    return;
-                }
-                WriteLine(dashIndent, "- " + tb.Name + ":");
-                foreach (var item in tb.Items)
-                    WriteLine(innerDash, "- " + Quoting.Format(item));
-                break;
-
-            case ChildrenBlock cb:
-                if (cb.ChildIds.Count == 0)
-                {
-                    WriteLine(dashIndent, "- " + cb.Name + ": []");
-                    return;
-                }
-                WriteLine(dashIndent, "- " + cb.Name + ":");
-                foreach (var childId in cb.ChildIds)
-                {
-                    var child = _graph.GetById(childId)
-                        ?? throw new InvalidOperationException(
-                            $"Граф не содержит узел id={childId}, упомянутый в блоке '{cb.Name}'.");
-                    WriteChild(innerDash, child);
-                }
-                break;
-
-            case OutRefsBlock orb:
-                if (orb.Refs.Count == 0)
-                {
-                    WriteLine(dashIndent, "- " + orb.Name + ": []");
-                    return;
-                }
-                WriteLine(dashIndent, "- " + orb.Name + ":");
-                foreach (var r in orb.Refs)
-                    WriteLine(innerDash,
-                        "- " + r.TypeName + ": " + r.ToId.ToString(CultureInfo.InvariantCulture));
-                break;
-
-            default:
-                throw new InvalidOperationException(
-                    $"Неизвестный тип блока: {block.GetType().Name}.");
-        }
-    }
-
-    private void WriteChild(int dashIndent, Node child)
-    {
-        var nodeType = ResolveNodeType(child.TypeName);
-        switch (nodeType.Kind)
-        {
-            case TypeKind.SingleKeyMapping:
-                WriteSingleKeyMappingChild(dashIndent, child, nodeType);
-                break;
-            case TypeKind.Mapping:
-                WriteMappingChild(dashIndent, child, nodeType);
-                break;
-            default:
-                throw new InvalidOperationException(
-                    $"Не поддерживается дочерний узел kind={nodeType.Kind} (id={child.Id}, type='{nodeType.Name}').");
-        }
-    }
-
-    private void WriteSingleKeyMappingChild(int dashIndent, Node child, NodeType nodeType)
-    {
-        var format = nodeType.TitleFormat ?? throw new InvalidOperationException(
-            $"У типа '{nodeType.Name}' отсутствует title_format в схеме.");
-        var key = TitleFormat.Format(format, child.Id, child.Title);
-        var encodedKey = Quoting.Format(key, forceDoubleQuoted: true);
-
-        if (child.InlineValue is null)
-            throw new InvalidOperationException(
-                $"Single_key_mapping узел id={child.Id} типа '{nodeType.Name}' без InlineValue не поддерживается эмиттером.");
-
-        WriteLine(dashIndent, "- " + encodedKey + ": " + Quoting.Format(child.InlineValue));
-    }
-
-    private void WriteMappingChild(int dashIndent, Node child, NodeType nodeType)
-    {
-        var fields = child.Fields ?? Array.Empty<FieldValue>();
-        if (fields.Count == 0)
-        {
-            WriteLine(dashIndent, "- {}");
+            WriteLine(dashIndent, "- " + refName + ": []");
             return;
         }
-
-        var fieldDefs = new Dictionary<string, FieldDefinition>(StringComparer.Ordinal);
-        if (nodeType.Fields is not null)
-            foreach (var fd in nodeType.Fields) fieldDefs[fd.Name] = fd;
-
-        // Первая пара ключ-значение поджата к "- "; остальные сдвинуты на 2 пробела.
-        // Содержимое list-полей (например, values: [...]) идёт на dashIndent + 4.
-        bool first = true;
-        var listItemIndent = dashIndent + 4;
-        foreach (var f in fields)
+        WriteLine(dashIndent, "- " + refName + ":");
+        var atomDashIndent = dashIndent + 2;
+        foreach (var targetId in targetIds)
         {
-            var prefix = first ? "- " : "  ";
-            first = false;
-            WriteFieldOnLine(dashIndent, prefix, f, fieldDefs, listItemIndent);
+            var child = ResolveStructuralChild(targetId, refName);
+            WriteSemanticNode(atomDashIndent, child);
         }
     }
 
-    private void WriteFieldOnLine(
-        int dashIndent, string prefix, FieldValue f,
-        IReadOnlyDictionary<string, FieldDefinition> fieldDefs,
-        int listItemIndent)
+    /// <summary>
+    /// Возвращает out_refs узла в стабильном порядке: сначала по объявлению в типе
+    /// (если тип найден), затем оставшиеся неизвестные имена. Связь path не входит в
+    /// результат. Пустые списки целей пропускаются — эмиттер не пишет шумных <c>: []</c>
+    /// для незаполненных дополнительных связей.
+    /// </summary>
+    private IEnumerable<(string Name, IReadOnlyList<int> Targets)> EnumerateOrderedRefs(Node node)
     {
-        if (f.Items is not null)
+        var emitted = new HashSet<string>(StringComparer.Ordinal);
+        if (_typeByName.TryGetValue(node.TypeName, out var type))
         {
-            if (f.Items.Count == 0)
+            foreach (var rd in type.OutRefs)
             {
-                WriteLine(dashIndent, prefix + f.Name + ": []");
-                return;
+                if (node.OutRefs.TryGetValue(rd.Name, out var targets) && targets.Count > 0)
+                {
+                    emitted.Add(rd.Name);
+                    yield return (rd.Name, targets);
+                }
             }
-            WriteLine(dashIndent, prefix + f.Name + ":");
-            foreach (var item in f.Items)
-                WriteLine(listItemIndent, "- " + Quoting.Format(item));
-            return;
         }
-
-        var raw = f.Scalar ?? string.Empty;
-        var encoded = FormatFieldScalar(f.Name, raw, fieldDefs);
-        WriteLine(dashIndent, prefix + f.Name + ": " + encoded);
-    }
-
-    private static string FormatFieldScalar(
-        string fieldName, string raw,
-        IReadOnlyDictionary<string, FieldDefinition> fieldDefs)
-    {
-        // id всегда integer; иначе берём тип поля из схемы.
-        if (string.Equals(fieldName, "id", StringComparison.Ordinal)) return raw;
-        if (!fieldDefs.TryGetValue(fieldName, out var fd)) return Quoting.Format(raw);
-        return fd.Type switch
+        foreach (var (name, targets) in node.OutRefs)
         {
-            "integer" or "bool" or "enum" => raw,
-            _ => Quoting.Format(raw),
-        };
+            if (string.Equals(name, Node.PathRefName, StringComparison.Ordinal)) continue;
+            if (emitted.Contains(name)) continue;
+            if (targets.Count == 0) continue;
+            yield return (name, targets);
+        }
     }
 
-    private NodeType ResolveNodeType(string name)
+    private TypeDefinition ResolveType(Node node)
     {
-        if (_nodeTypeByName.TryGetValue(name, out var t)) return t;
+        if (_typeByName.TryGetValue(node.TypeName, out var t)) return t;
         throw new InvalidOperationException(
-            $"Тип '{name}' не объявлен в схеме как mapping/single_key_mapping/list.");
+            $"Тип '{node.TypeName}' (узел id={node.Id}) не объявлен в Схеме.");
     }
 
-    private void WriteIdLine(int indent, Node node)
+    private Node ResolveStructuralChild(int targetId, string refName)
     {
-        // id всегда первый ключ в mapping (см. Правила оформления/«Порядок полей»).
-        WriteLine(indent, "id: " + node.Id.ToString(CultureInfo.InvariantCulture));
-    }
-
-    private static string? GetFieldScalar(Node node, string name)
-    {
-        if (node.Fields is null) return null;
-        foreach (var f in node.Fields)
-            if (string.Equals(f.Name, name, StringComparison.Ordinal)) return f.Scalar;
-        return null;
+        var child = _graph.GetById(targetId)
+            ?? throw new InvalidOperationException(
+                $"Граф не содержит узел id={targetId}, упомянутый в связи '{refName}'.");
+        return child;
     }
 
     private void WriteLine(int indent, string line)

@@ -8,16 +8,21 @@ namespace DocsWalker.Core.Api;
 /// <c>transaction</c> и тестами. Любая ошибка парсинга — <see cref="WriteApiException"/>
 /// с указанием индекса операции.
 ///
-/// Форма входа:
+/// Форма входа (refs-модель):
 /// <code>
 /// [
-///   { "op": "create-node", "parent_id": 1, "type": "section", "title": "..." },
-///   { "op": "update-node", "id": 42, "patch": { "title": "..." } },
+///   {
+///     "op": "create-node",
+///     "type": "section",
+///     "title": "...",
+///     "text": "...",
+///     "refs": { "path": [1] }
+///   },
+///   { "op": "update-node", "id": 42, "title": "...", "text": "..." },
 ///   { "op": "delete-node", "id": 42 },
-///   { "op": "move-node",   "id": 42, "new_parent_id": 8, "new_block_name": "definitions" },
-///   { "op": "create-ref",  "from_id": 42, "type": "ref", "to_id": 8 },
-///   { "op": "delete-ref",  "from_id": 42, "type": "ref", "to_id": 8 },
-///   { "op": "add-ref-type","name": "defines", "direction": "from_to", "description": "..." }
+///   { "op": "move-node",   "id": 42, "new_parent_id": 8 },
+///   { "op": "create-ref",  "from_id": 42, "name": "related", "to_id": 8 },
+///   { "op": "delete-ref",  "from_id": 42, "name": "related", "to_id": 8 }
 /// ]
 /// </code>
 /// </summary>
@@ -64,30 +69,60 @@ public static class TransactionParser
             "move-node"     => ParseMoveNode(obj),
             "create-ref"    => ParseCreateRef(obj),
             "delete-ref"    => ParseDeleteRef(obj),
-            "add-ref-type"  => ParseAddRefType(obj),
             _ => throw new WriteApiException(
                     "unknown_op",
                     $"Неизвестное имя операции '{opName}'."),
         };
     }
 
-    private static CreateNodeOp ParseCreateNode(JsonObject obj) =>
-        new(
-            ParentId: ReadRequiredInt(obj, "parent_id"),
-            TypeName: ReadRequiredString(obj, "type"),
-            Title: ReadOptionalString(obj, "title"),
-            Name: ReadOptionalString(obj, "name"),
-            Body: ReadOptionalObject(obj, "body"));
-
-    private static UpdateNodeOp ParseUpdateNode(JsonObject obj)
+    private static CreateNodeOp ParseCreateNode(JsonObject obj)
     {
-        var id = ReadRequiredInt(obj, "id");
-        var patch = ReadOptionalObject(obj, "patch")
-            ?? throw new WriteApiException(
-                "missing_field",
-                "Поле 'patch' обязательно для update-node.");
-        return new UpdateNodeOp(id, patch);
+        var typeName = ReadRequiredString(obj, "type");
+        var title = ReadRequiredString(obj, "title");
+        var text = ReadOptionalString(obj, "text");
+        var refsObj = ReadOptionalObject(obj, "refs");
+        var refs = ParseRefsMap(refsObj);
+        return new CreateNodeOp(typeName, title, text, refs);
     }
+
+    /// <summary>
+    /// Разбирает объект <c>refs</c>: ключ — имя связи, значение — массив целочисленных id.
+    /// Возвращает пустую карту, если refs не задан.
+    /// </summary>
+    private static IReadOnlyDictionary<string, IReadOnlyList<int>> ParseRefsMap(JsonObject? refsObj)
+    {
+        if (refsObj is null)
+            return new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal);
+
+        var result = new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal);
+        foreach (var prop in refsObj)
+        {
+            if (prop.Value is not JsonArray arr)
+                throw new WriteApiException(
+                    "invalid_field_type",
+                    $"Поле refs.{prop.Key} должно быть массивом целочисленных id.");
+            var list = new List<int>(arr.Count);
+            for (int i = 0; i < arr.Count; i++)
+            {
+                if (arr[i] is JsonValue jv)
+                {
+                    if (jv.TryGetValue<int>(out var iv)) { list.Add(iv); continue; }
+                    if (jv.TryGetValue<long>(out var lv)) { list.Add(checked((int)lv)); continue; }
+                }
+                throw new WriteApiException(
+                    "invalid_field_type",
+                    $"Поле refs.{prop.Key}[{i}] должно быть целым числом.");
+            }
+            result[prop.Key] = list;
+        }
+        return result;
+    }
+
+    private static UpdateNodeOp ParseUpdateNode(JsonObject obj) =>
+        new(
+            Id: ReadRequiredInt(obj, "id"),
+            NewTitle: ReadOptionalString(obj, "title"),
+            NewText: ReadOptionalString(obj, "text"));
 
     private static DeleteNodeOp ParseDeleteNode(JsonObject obj) =>
         new(ReadRequiredInt(obj, "id"));
@@ -95,26 +130,19 @@ public static class TransactionParser
     private static MoveNodeOp ParseMoveNode(JsonObject obj) =>
         new(
             Id: ReadRequiredInt(obj, "id"),
-            NewParentId: ReadRequiredInt(obj, "new_parent_id"),
-            NewBlockName: ReadOptionalString(obj, "new_block_name"));
+            NewParentId: ReadRequiredInt(obj, "new_parent_id"));
 
     private static CreateRefOp ParseCreateRef(JsonObject obj) =>
         new(
             FromId: ReadRequiredInt(obj, "from_id"),
-            RefType: ReadRequiredString(obj, "type"),
+            Name: ReadRequiredString(obj, "name"),
             ToId: ReadRequiredInt(obj, "to_id"));
 
     private static DeleteRefOp ParseDeleteRef(JsonObject obj) =>
         new(
             FromId: ReadRequiredInt(obj, "from_id"),
-            RefType: ReadRequiredString(obj, "type"),
-            ToId: ReadRequiredInt(obj, "to_id"));
-
-    private static AddRefTypeOp ParseAddRefType(JsonObject obj) =>
-        new(
             Name: ReadRequiredString(obj, "name"),
-            Direction: ReadRequiredString(obj, "direction"),
-            Description: ReadRequiredString(obj, "description"));
+            ToId: ReadRequiredInt(obj, "to_id"));
 
     private static string ReadRequiredString(JsonObject obj, string field)
     {
