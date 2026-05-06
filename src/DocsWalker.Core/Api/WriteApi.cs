@@ -90,15 +90,17 @@ public sealed class WriteContext
     public string DocsRoot { get; }
     public string SchemaPath { get; }
     public string SequencePath { get; }
+    public string FoldersPath { get; }
     public MetaSchemaDocument MetaSchema { get; }
 
     public WriteContext(
-        string docsRoot, string schemaPath, string sequencePath,
+        string docsRoot, string schemaPath, string sequencePath, string foldersPath,
         MetaSchemaDocument metaSchema)
     {
         DocsRoot = docsRoot;
         SchemaPath = schemaPath;
         SequencePath = sequencePath;
+        FoldersPath = foldersPath;
         MetaSchema = metaSchema;
     }
 
@@ -108,8 +110,9 @@ public sealed class WriteContext
         var schemaPath = Path.Combine(docsRoot, "Схема.yml");
         var metaSchemaPath = Path.Combine(docsRoot, ".docswalker", "meta-schema.yml");
         var sequencePath = Path.Combine(docsRoot, ".docswalker", "sequence.txt");
+        var foldersPath = FoldersFile.AbsolutePath(docsRoot);
         var meta = SchemaLoader.LoadMetaSchema(metaSchemaPath);
-        return new WriteContext(docsRoot, schemaPath, sequencePath, meta);
+        return new WriteContext(docsRoot, schemaPath, sequencePath, foldersPath, meta);
     }
 }
 
@@ -204,12 +207,22 @@ public sealed class WriteApi
             targets.Add(new AtomicWriteTarget(_ctx.SequencePath, content));
         }
 
-        if (targets.Count == 0)
+        if (state.FoldersDirty)
+        {
+            var records = state.AllNodes
+                .Where(n => string.Equals(n.TypeName, "folder", StringComparison.Ordinal))
+                .OrderBy(n => n.Id)
+                .Select(n => new FolderRecord(n.Id, n.ParentId ?? Node.RootId, n.Title))
+                .ToList();
+            targets.Add(new AtomicWriteTarget(_ctx.FoldersPath, FoldersFile.Emit(records)));
+        }
+
+        if (targets.Count == 0 && state.FsOperations.Count == 0)
             throw new WriteApiException(
                 "no_effect",
                 "Пачка операций не приводит ни к каким изменениям в файлах.");
 
-        AtomicWriter.WriteAll(targets);
+        AtomicWriter.WriteAndApply(targets, state.FsOperations);
 
         return new WriteResult(opResults);
     }
@@ -257,6 +270,15 @@ public sealed class WriteApi
                     "parent_not_found",
                     $"Родитель id={parentId} не найден.",
                     "Сверь parent_id с актуальным графом через get-map.");
+            // Тип родителя должен входить в path_targets создаваемого узла (root — особое имя).
+            var parentTypeName = parentId == Node.RootId
+                ? Node.RootTypeName
+                : s.GetNode(parentId)!.TypeName;
+            if (!type.PathTargets.Any(p => string.Equals(p, parentTypeName, StringComparison.Ordinal)))
+                throw new WriteApiException(
+                    "invalid_path_target",
+                    $"Тип '{type.Name}' не допускает родителя типа '{parentTypeName}'.",
+                    $"Допустимые типы родителя: {string.Join(", ", type.PathTargets)}.");
             outRefs[Node.PathRefName] = new[] { parentId };
         }
 
@@ -300,6 +322,14 @@ public sealed class WriteApi
                     "Допустимые имена связей смотри в get-schema или describe-type.");
         }
 
+        // R10: создание folder идёт по отдельной ветке — у folder нет
+        // SourceFile-документа, путь хранится в .docswalker/folders.yml,
+        // а на FS нужно создать каталог одной FS-операцией.
+        if (string.Equals(type.Name, "folder", StringComparison.Ordinal))
+        {
+            return ApplyCreateFolder(s, op, outRefs);
+        }
+
         var sourceFile = ResolveSourceFile(s, type, op.Title, outRefs);
 
         var id = s.ReserveId();
@@ -328,28 +358,114 @@ public sealed class WriteApi
     }
 
     /// <summary>
+    /// Создание folder-узла: проверяет коллизию имени под тем же родителем,
+    /// строит FS-путь по цепочке title до root, регистрирует
+    /// <see cref="FsCreateDirectory"/> и помечает folders.yml как dirty.
+    /// SourceFile у folder-узлов — общий <see cref="FoldersFile.RelativePath"/>.
+    /// </summary>
+    private static WriteOpResult ApplyCreateFolder(
+        WriteState s, CreateNodeOp op,
+        Dictionary<string, IReadOnlyList<int>> outRefs)
+    {
+        var parentId = outRefs[Node.PathRefName][0];
+
+        // Коллизия: уже есть folder с тем же title под этим parent.
+        foreach (var sibling in s.GetChildren(parentId))
+        {
+            if (string.Equals(sibling.TypeName, "folder", StringComparison.Ordinal)
+                && string.Equals(sibling.Title, op.Title, StringComparison.Ordinal))
+            {
+                throw new WriteApiException(
+                    "duplicate_folder_name",
+                    $"Под parent id={parentId} уже существует folder с title '{op.Title}' (id={sibling.Id}).",
+                    "Выбери другое имя или используй существующий folder.");
+            }
+        }
+
+        // Полный FS-путь нового каталога.
+        var parentRel = BuildFolderRelativePath(s, parentId);
+        var newRel = parentRel.Length == 0 ? op.Title : parentRel + "/" + op.Title;
+        var absolutePath = Path.Combine(s.DocsRoot,
+            newRel.Replace('/', Path.DirectorySeparatorChar));
+
+        // Защита от рассинхронизации: если каталог уже существует на FS, но
+        // записи в графе под ним нет — это симптом ручной правки docs/.
+        if (Directory.Exists(absolutePath))
+            throw new WriteApiException(
+                "fs_collision",
+                $"На FS уже существует каталог '{absolutePath}', но в .docswalker/folders.yml нет соответствующей записи.",
+                "Это может быть остаточный каталог от ручной правки; убери вручную или восстанови запись в folders.yml.");
+
+        var id = s.ReserveId();
+        s.Add(new Node
+        {
+            Id = id,
+            TypeName = "folder",
+            Title = op.Title,
+            Text = string.Empty,
+            OutRefs = outRefs,
+            SourceFile = FoldersFile.RelativePath,
+        });
+
+        s.AddFsOperation(new FsCreateDirectory(absolutePath));
+        s.MarkFoldersDirty();
+
+        return new WriteOpResult("create-node", new JsonObject
+        {
+            ["id"] = id,
+            ["type"] = "folder",
+            ["title"] = op.Title,
+        });
+    }
+
+    /// <summary>
+    /// Восстанавливает относительный путь FS-каталога folder-узла по цепочке title до root.
+    /// Для root возвращает пустую строку.
+    /// </summary>
+    private static string BuildFolderRelativePath(WriteState s, int folderId)
+    {
+        if (folderId == Node.RootId) return string.Empty;
+        var node = s.GetNode(folderId)
+            ?? throw new WriteApiException(
+                "parent_not_found",
+                $"Folder id={folderId} не найден.");
+        if (!string.Equals(node.TypeName, "folder", StringComparison.Ordinal))
+            throw new WriteApiException(
+                "invalid_path_target",
+                $"id={folderId} имеет тип '{node.TypeName}', ожидается folder.");
+        var parentId = node.ParentId ?? Node.RootId;
+        var parentRel = BuildFolderRelativePath(s, parentId);
+        return parentRel.Length == 0 ? node.Title : parentRel + "/" + node.Title;
+    }
+
+    /// <summary>
     /// Определяет SourceFile для нового узла:
-    /// title_source=filename → "{title}.yml" (для document);
-    /// title_source=inline_key → SourceFile path-родителя;
-    /// title_source=dirname → пока не поддерживается (ждёт R10/folders).
+    /// title_source=filename → "{folder_rel_path}/{title}.yml" (для document);
+    /// title_source=inline_key → SourceFile path-родителя.
+    /// title_source=dirname (folder) обрабатывается отдельно в <see cref="ApplyCreateFolder"/>;
+    /// сюда не должно попадать.
     /// </summary>
     private static string ResolveSourceFile(
         WriteState s, TypeDefinition type, string title,
         IReadOnlyDictionary<string, IReadOnlyList<int>> outRefs)
     {
-        if (type.TitleSource == TitleSource.Filename)
-            return title + ".yml";
-        if (type.TitleSource == TitleSource.Dirname)
-            throw new WriteApiException(
-                "unsupported_type",
-                $"Создание узлов типа '{type.Name}' (title_source=dirname) на этом шаге не поддерживается.",
-                "Папки docs/ управляются вручную; через write-API будет поддержано на шаге R10.");
-
         if (!outRefs.TryGetValue(Node.PathRefName, out var pathTargets) || pathTargets.Count == 0)
             throw new WriteApiException(
                 "internal_inconsistency",
                 $"У узла типа '{type.Name}' отсутствует связь path после её резервирования.");
         var parentId = pathTargets[0];
+
+        if (type.TitleSource == TitleSource.Filename)
+        {
+            // Документ может лежать под root или под folder; SourceFile = <rel>/title.yml.
+            var parentRel = BuildFolderRelativePath(s, parentId);
+            return parentRel.Length == 0 ? title + ".yml" : parentRel + "/" + title + ".yml";
+        }
+        if (type.TitleSource == TitleSource.Dirname)
+            throw new WriteApiException(
+                "internal_inconsistency",
+                $"Тип '{type.Name}' (title_source=dirname) должен обрабатываться отдельной веткой ApplyCreateFolder.");
+
         if (parentId == Node.RootId)
             throw new WriteApiException(
                 "invalid_path_target",
@@ -389,6 +505,18 @@ public sealed class WriteApi
                 "rename_document_unsupported",
                 $"Переименование документа id={op.Id} ('{node.Title}') в этой версии write-API не поддерживается.",
                 "Title документа = имя файла; переименование требует переименования YAML-файла, появится в отдельной команде.");
+        }
+
+        // R10: rename folder требует FS-операций и каскадного rewrite SourceFile у потомков —
+        // выполняется в отдельном шаге R11.
+        if (string.Equals(node.TypeName, "folder", StringComparison.Ordinal)
+            && op.NewTitle is not null
+            && !string.Equals(op.NewTitle, node.Title, StringComparison.Ordinal))
+        {
+            throw new WriteApiException(
+                "not_supported",
+                $"Переименование folder id={op.Id} ('{node.Title}') в текущей версии не поддержано.",
+                "Появится в шаге R11. Для смены имени каталога временно используй прямую правку folders.yml + FS.");
         }
 
         var updated = new Node
@@ -438,6 +566,30 @@ public sealed class WriteApi
                 $"Узел id={op.Id} имеет {inRefs.Count} входящих связ(и/ей); удаление запрещено.",
                 "Сначала удали входящие связи через delete-ref, затем повтори delete-node.");
 
+        // R10: удаление folder требует отдельной FS-операции и dirty folders.yml.
+        if (string.Equals(node.TypeName, "folder", StringComparison.Ordinal))
+        {
+            var rel = BuildFolderRelativePath(s, node.Id);
+            var absolutePath = Path.Combine(s.DocsRoot,
+                rel.Replace('/', Path.DirectorySeparatorChar));
+            if (Directory.Exists(absolutePath))
+            {
+                bool isEmpty = !Directory.EnumerateFileSystemEntries(absolutePath).Any();
+                if (!isEmpty)
+                    throw new WriteApiException(
+                        "folder_not_empty",
+                        $"Каталог '{absolutePath}' не пуст; удаление folder допустимо только для пустого каталога.",
+                        "Сначала удали все документы и подкаталоги внутри.");
+            }
+            s.AddFsOperation(new FsDeleteEmptyDirectory(absolutePath));
+            s.MarkFoldersDirty();
+            s.Remove(op.Id);
+            return new WriteOpResult("delete-node", new JsonObject
+            {
+                ["id"] = op.Id,
+            });
+        }
+
         s.MarkDocumentDirtyForNode(op.Id);
         s.Remove(op.Id);
 
@@ -460,6 +612,14 @@ public sealed class WriteApi
                 "cannot_move_document",
                 $"Узел id={op.Id} ('{node.Title}') — документ; перенос документов не поддерживается.",
                 "Документ нельзя перенести как узел; используй create-document/delete-document для смены файла.");
+
+        // R10: перенос folder требует переноса каталога на FS и каскадного rewrite SourceFile —
+        // выполняется в отдельном шаге R11.
+        if (string.Equals(node.TypeName, "folder", StringComparison.Ordinal))
+            throw new WriteApiException(
+                "not_supported",
+                $"Перенос folder id={op.Id} ('{node.Title}') в текущей версии не поддержан.",
+                "Появится в шаге R11.");
 
         if (op.NewParentId == op.Id)
             throw new WriteApiException(

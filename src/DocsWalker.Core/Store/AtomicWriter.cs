@@ -10,6 +10,20 @@ namespace DocsWalker.Core.Store;
 public sealed record AtomicWriteTarget(string AbsolutePath, string Content);
 
 /// <summary>
+/// Базовый тип FS-операций, применяемых в составе атомарной транзакции записи
+/// (см. <see cref="AtomicWriter.WriteAndApply"/>). В R10 поддерживаются только
+/// создание и удаление пустого каталога — этого достаточно для create/delete
+/// folder. Перенос/переименование каталогов появятся в R11.
+/// </summary>
+public abstract record FsOperation;
+
+/// <summary>Создать каталог по абсолютному пути (идемпотентно).</summary>
+public sealed record FsCreateDirectory(string AbsolutePath) : FsOperation;
+
+/// <summary>Удалить пустой каталог. Если каталог не пуст — операция падает.</summary>
+public sealed record FsDeleteEmptyDirectory(string AbsolutePath) : FsOperation;
+
+/// <summary>
 /// Ошибка атомарной записи. Несёт код, исходный путь и человекочитаемое сообщение.
 /// На фазе подготовки временных файлов гарантирует, что временные файлы убраны.
 /// </summary>
@@ -35,15 +49,53 @@ public sealed class AtomicWriteException : Exception
 /// нескольких файлов возможен «частично применённый» исход при сбое между переименованиями.
 /// Это известное ограничение — фиксируется в спецификации write-api.
 /// При ошибке на фазе 1 удаляются все уже созданные tmp-файлы.
+///
+/// R10: дополнительно поддержаны простые FS-операции (создание / удаление пустого
+/// каталога) через <see cref="WriteAndApply"/>. CreateDirectory применяется до
+/// фазы tmp (так что tmp-файл может лечь в новый каталог); DeleteEmptyDirectory —
+/// после rename.
 /// </summary>
 public static class AtomicWriter
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    public static void WriteAll(IReadOnlyList<AtomicWriteTarget> targets)
+    public static void WriteAll(IReadOnlyList<AtomicWriteTarget> targets) =>
+        WriteAndApply(targets, Array.Empty<FsOperation>());
+
+    /// <summary>
+    /// Атомарно записывает <paramref name="targets"/> и применяет
+    /// <paramref name="fsOperations"/>. Порядок:
+    ///   1) <see cref="FsCreateDirectory"/> — все, в порядке поступления;
+    ///   2) фаза tmp + rename для targets;
+    ///   3) <see cref="FsDeleteEmptyDirectory"/> — все, в порядке поступления.
+    /// При ошибке на фазе 1 — ничего не записано (но каталоги, созданные до
+    /// ошибки, остаются — они идемпотентны и не нарушают согласованности).
+    /// </summary>
+    public static void WriteAndApply(
+        IReadOnlyList<AtomicWriteTarget> targets,
+        IReadOnlyList<FsOperation> fsOperations)
     {
         ArgumentNullException.ThrowIfNull(targets);
-        if (targets.Count == 0) return;
+        ArgumentNullException.ThrowIfNull(fsOperations);
+        if (targets.Count == 0 && fsOperations.Count == 0) return;
+
+        // Фаза fs-pre: CreateDirectory.
+        foreach (var op in fsOperations)
+        {
+            if (op is not FsCreateDirectory create) continue;
+            try
+            {
+                Directory.CreateDirectory(create.AbsolutePath);
+            }
+            catch (Exception ex)
+            {
+                throw new AtomicWriteException(
+                    "fs_create_directory_failed",
+                    create.AbsolutePath,
+                    $"Не удалось создать каталог '{create.AbsolutePath}': {ex.Message}",
+                    ex);
+            }
+        }
 
         var tempPaths = new List<string>(targets.Count);
         try
@@ -99,6 +151,25 @@ public static class AtomicWriter
                     targets[i].AbsolutePath,
                     $"Не удалось переименовать временный файл в '{targets[i].AbsolutePath}': {ex.Message}. " +
                     $"Возможно частично применённое состояние: переименовано {i} из {targets.Count} файлов.",
+                    ex);
+            }
+        }
+
+        // Фаза fs-post: DeleteEmptyDirectory.
+        foreach (var op in fsOperations)
+        {
+            if (op is not FsDeleteEmptyDirectory del) continue;
+            try
+            {
+                if (Directory.Exists(del.AbsolutePath))
+                    Directory.Delete(del.AbsolutePath, recursive: false);
+            }
+            catch (Exception ex)
+            {
+                throw new AtomicWriteException(
+                    "fs_delete_directory_failed",
+                    del.AbsolutePath,
+                    $"Не удалось удалить каталог '{del.AbsolutePath}': {ex.Message}",
                     ex);
             }
         }

@@ -1,5 +1,6 @@
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
+using DocsWalker.Core.Store;
 using GraphModel = DocsWalker.Core.Graph.Graph;
 
 namespace DocsWalker.Core.Api;
@@ -21,6 +22,8 @@ internal sealed class WriteState
 {
     private readonly Dictionary<int, Node> _nodes;
     private readonly HashSet<int> _affectedDocs = new();
+    private readonly List<FsOperation> _fsOperations = new();
+    private bool _foldersDirty;
 
     public string DocsRoot { get; }
     public SchemaDocument Schema { get; }
@@ -28,6 +31,12 @@ internal sealed class WriteState
     public int IdsConsumed { get; private set; }
 
     public IReadOnlyCollection<int> AffectedDocumentIds => _affectedDocs;
+
+    public IReadOnlyList<FsOperation> FsOperations => _fsOperations;
+
+    public bool FoldersDirty => _foldersDirty;
+
+    public IEnumerable<Node> AllNodes => _nodes.Values;
 
     public WriteState(string docsRoot, SchemaDocument schema, GraphModel original, int sequenceBase)
     {
@@ -112,6 +121,12 @@ internal sealed class WriteState
 
     /// <summary>Помечает документ <paramref name="documentId"/> к перезаписи.</summary>
     public void MarkDocumentDirty(int documentId) => _affectedDocs.Add(documentId);
+
+    /// <summary>Помечает <c>.docswalker/folders.yml</c> к перезаписи.</summary>
+    public void MarkFoldersDirty() => _foldersDirty = true;
+
+    /// <summary>Регистрирует FS-операцию (создание/удаление каталога), применяемую при <see cref="WriteApi.Apply"/>.</summary>
+    public void AddFsOperation(FsOperation op) => _fsOperations.Add(op);
 
     /// <summary>
     /// Поднимается по path до document-узла (узла с ParentId == <see cref="Node.RootId"/>)
