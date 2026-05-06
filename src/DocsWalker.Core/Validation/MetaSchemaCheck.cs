@@ -3,16 +3,21 @@ using DocsWalker.Core.Schema;
 namespace DocsWalker.Core.Validation;
 
 /// <summary>
-/// Соответствие <see cref="SchemaDocument"/> мета-схеме (см. docs/.docswalker/meta-schema.yml).
-/// Проверяет имена типов, обязательные поля, перекрёстные ссылки между type-определениями
-/// и формальные constraints (fields допустимо только при kind=mapping; key_type/value_type
-/// обязательны при kind=single_key_mapping; node=true требует title_source; и т. п.).
+/// Соответствие <see cref="SchemaDocument"/> мета-схеме v4 и self-consistency Схемы.
+/// Под refs-модель проверяет: имена типов snake_case, дубли, корректные ссылки в
+/// path_targets и target_types, зарезервированные имена (root, path), уникальность
+/// имён связей внутри типа.
 /// </summary>
 internal static class MetaSchemaCheck
 {
     public static void Run(MetaSchemaDocument meta, SchemaDocument schema, List<ValidationError> errors)
     {
-        var primitives = new HashSet<string>(meta.PrimitiveTypes, StringComparer.Ordinal);
+        // Версия мета-схемы должна быть v4 (refs-модель). Если SchemaLoader пропустил
+        // другую версию — здесь подстраховываемся.
+        if (meta.Version != SchemaLoader.SupportedMetaSchemaVersion)
+            errors.Add(new ValidationError(
+                "unsupported_meta_schema_version",
+                $"Поддерживается только meta_schema_version={SchemaLoader.SupportedMetaSchemaVersion}; в мета-схеме — {meta.Version}."));
 
         var declared = new Dictionary<string, TypeDefinition>(StringComparer.Ordinal);
         foreach (var t in schema.Types)
@@ -22,6 +27,13 @@ internal static class MetaSchemaCheck
                 errors.Add(new ValidationError(
                     "invalid_meta_schema",
                     "В Схеме встречен тип с пустым именем."));
+                continue;
+            }
+            if (string.Equals(t.Name, Node.RootTypeName, StringComparison.Ordinal))
+            {
+                errors.Add(new ValidationError(
+                    "reserved_type_name",
+                    $"Имя '{Node.RootTypeName}' зарезервировано — нельзя объявлять как тип в Схеме."));
                 continue;
             }
             if (declared.ContainsKey(t.Name))
@@ -39,221 +51,103 @@ internal static class MetaSchemaCheck
                     $"Имя типа '{t.Name}' должно быть на латинице, snake_case."));
         }
 
-        foreach (var t in schema.Types)
+        foreach (var t in declared.Values)
         {
-            switch (t)
+            ValidatePathTargets(t, declared, errors);
+            ValidateOutRefs(t, declared, errors);
+        }
+    }
+
+    private static void ValidatePathTargets(
+        TypeDefinition t,
+        Dictionary<string, TypeDefinition> declared,
+        List<ValidationError> errors)
+    {
+        if (t.PathTargets.Count == 0)
+        {
+            errors.Add(new ValidationError(
+                "invalid_meta_schema",
+                $"Тип '{t.Name}': path_targets не может быть пустым (изолированных узлов не бывает)."));
+            return;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var target in t.PathTargets)
+        {
+            if (!seen.Add(target))
+                errors.Add(new ValidationError(
+                    "invalid_meta_schema",
+                    $"Тип '{t.Name}': path_targets содержит '{target}' дважды."));
+
+            if (string.Equals(target, Node.RootTypeName, StringComparison.Ordinal))
+                continue;
+            if (!declared.ContainsKey(target))
+                errors.Add(new ValidationError(
+                    "unknown_type",
+                    $"Тип '{t.Name}': path_targets ссылается на неизвестный тип '{target}'."));
+        }
+    }
+
+    private static void ValidateOutRefs(
+        TypeDefinition t,
+        Dictionary<string, TypeDefinition> declared,
+        List<ValidationError> errors)
+    {
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var rd in t.OutRefs)
+        {
+            if (string.IsNullOrEmpty(rd.Name))
             {
-                case NodeType n:
-                    ValidateNodeType(n, declared, primitives, errors);
-                    break;
-                case RefType r:
-                    ValidateRefType(r, errors);
-                    break;
-                case Primitive p:
-                    ValidatePrimitive(p, errors);
-                    break;
-                default:
+                errors.Add(new ValidationError(
+                    "invalid_meta_schema",
+                    $"Тип '{t.Name}': встречена связь без имени."));
+                continue;
+            }
+            if (string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal))
+            {
+                errors.Add(new ValidationError(
+                    "reserved_ref_name",
+                    $"Тип '{t.Name}': имя связи '{Node.PathRefName}' зарезервировано — встроенная связь, не объявляется."));
+                continue;
+            }
+            if (!seenNames.Add(rd.Name))
+                errors.Add(new ValidationError(
+                    "invalid_meta_schema",
+                    $"Тип '{t.Name}': связь '{rd.Name}' объявлена дважды."));
+            if (!IsLatinSnakeCase(rd.Name))
+                errors.Add(new ValidationError(
+                    "invalid_meta_schema",
+                    $"Тип '{t.Name}': имя связи '{rd.Name}' должно быть на латинице, snake_case."));
+
+            if (rd.TargetTypes.Count == 0)
+            {
+                errors.Add(new ValidationError(
+                    "invalid_meta_schema",
+                    $"Тип '{t.Name}', связь '{rd.Name}': target_types не может быть пустым."));
+                continue;
+            }
+
+            var seenTargets = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var target in rd.TargetTypes)
+            {
+                if (!seenTargets.Add(target))
                     errors.Add(new ValidationError(
                         "invalid_meta_schema",
-                        $"Тип '{t.Name}': неизвестная категория {t.GetType().Name}."));
-                    break;
+                        $"Тип '{t.Name}', связь '{rd.Name}': target_types содержит '{target}' дважды."));
+
+                if (string.Equals(target, Node.RootTypeName, StringComparison.Ordinal))
+                    continue;
+                if (!declared.ContainsKey(target))
+                    errors.Add(new ValidationError(
+                        "unknown_type",
+                        $"Тип '{t.Name}', связь '{rd.Name}': target_types ссылается на неизвестный тип '{target}'."));
             }
         }
-    }
-
-    private static void ValidateNodeType(
-        NodeType n,
-        Dictionary<string, TypeDefinition> declared,
-        HashSet<string> primitives,
-        List<ValidationError> errors)
-    {
-        // fields допустимо только при kind=mapping
-        if (n.Fields is not null && n.Kind != TypeKind.Mapping)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': поле 'fields' допустимо только при kind=mapping."));
-
-        // key_type обязательно и допустимо только при kind=single_key_mapping;
-        // value_type допустимо только при kind=single_key_mapping; у single_key_mapping
-        // значение задаётся либо value_type, либо blocks (но не оба сразу), и одно из двух обязательно.
-        if (n.Kind == TypeKind.SingleKeyMapping)
-        {
-            if (n.KeyType is null)
-                errors.Add(new ValidationError(
-                    "invalid_meta_schema",
-                    $"Тип '{n.Name}' (single_key_mapping) без key_type."));
-            var hasValueType = n.ValueType is not null;
-            var hasBlocks = n.Blocks is not null;
-            if (hasValueType && hasBlocks)
-                errors.Add(new ValidationError(
-                    "invalid_meta_schema",
-                    $"Тип '{n.Name}' (single_key_mapping): value_type и blocks одновременно не допускаются."));
-            if (!hasValueType && !hasBlocks)
-                errors.Add(new ValidationError(
-                    "invalid_meta_schema",
-                    $"Тип '{n.Name}' (single_key_mapping): необходимо задать либо value_type, либо blocks."));
-        }
-        else
-        {
-            if (n.KeyType is not null)
-                errors.Add(new ValidationError(
-                    "invalid_meta_schema",
-                    $"Тип '{n.Name}': key_type допустим только при kind=single_key_mapping."));
-            if (n.ValueType is not null)
-                errors.Add(new ValidationError(
-                    "invalid_meta_schema",
-                    $"Тип '{n.Name}': value_type допустим только при kind=single_key_mapping."));
-        }
-
-        // node=true допустим только при kind ∈ {mapping, single_key_mapping}
-        if (n.Node == true && n.Kind != TypeKind.Mapping && n.Kind != TypeKind.SingleKeyMapping)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': node=true допустим только при kind ∈ {{mapping, single_key_mapping}}."));
-
-        // title_source обязательно при node=true
-        if (n.Node == true && n.TitleSource is null)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': title_source обязательно при node=true."));
-
-        // title_format задаётся только при title_source=inline_key (и обязателен там)
-        if (n.TitleFormat is not null && n.TitleSource != TitleSourceKind.InlineKey)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': title_format задаётся только при title_source=inline_key."));
-        if (n.TitleSource == TitleSourceKind.InlineKey && n.TitleFormat is null)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': title_source=inline_key требует title_format."));
-
-        // title_field задаётся только при title_source=field (и обязателен там)
-        if (n.TitleField is not null && n.TitleSource != TitleSourceKind.Field)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': title_field задаётся только при title_source=field."));
-        if (n.TitleSource == TitleSourceKind.Field && n.TitleField is null)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': title_source=field требует title_field."));
-
-        // Поля
-        if (n.Fields is not null)
-        {
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var f in n.Fields)
-            {
-                ValidateFieldDefinition(n, f, declared, primitives, seen, errors);
-            }
-        }
-
-        // Блоки
-        if (n.Blocks is not null)
-        {
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var b in n.Blocks)
-            {
-                ValidateBlockDefinition(n, b, declared, primitives, seen, errors);
-            }
-        }
-    }
-
-    private static void ValidateFieldDefinition(
-        NodeType n,
-        FieldDefinition f,
-        Dictionary<string, TypeDefinition> declared,
-        HashSet<string> primitives,
-        HashSet<string> seen,
-        List<ValidationError> errors)
-    {
-        if (string.IsNullOrEmpty(f.Name))
-        {
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': встречено поле без имени."));
-            return;
-        }
-        if (!seen.Add(f.Name))
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': поле '{f.Name}' объявлено дважды."));
-        if (!IsLatinSnakeCase(f.Name))
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': имя поля '{f.Name}' должно быть на латинице, snake_case."));
-
-        if (!declared.ContainsKey(f.Type) && !primitives.Contains(f.Type))
-            errors.Add(new ValidationError(
-                "unknown_type",
-                $"Тип '{n.Name}', поле '{f.Name}': тип '{f.Type}' не объявлен в Схеме и не примитив."));
-
-        if (f.Type == "list" && f.Of is null)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}', поле '{f.Name}': при type=list обязательно поле 'of'."));
-        if (f.Type == "enum" && f.Values is null)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}', поле '{f.Name}': при type=enum обязательно поле 'values'."));
-        if (f.Default is not null && f.Required)
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}', поле '{f.Name}': default допустим только при required=false."));
-        if (f.Of is not null && !declared.ContainsKey(f.Of) && !primitives.Contains(f.Of))
-            errors.Add(new ValidationError(
-                "unknown_type",
-                $"Тип '{n.Name}', поле '{f.Name}': of='{f.Of}' не объявлен в Схеме и не примитив."));
-    }
-
-    private static void ValidateBlockDefinition(
-        NodeType n,
-        BlockDefinition b,
-        Dictionary<string, TypeDefinition> declared,
-        HashSet<string> primitives,
-        HashSet<string> seen,
-        List<ValidationError> errors)
-    {
-        if (string.IsNullOrEmpty(b.Name))
-        {
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': встречен блок без имени."));
-            return;
-        }
-        if (!seen.Add(b.Name))
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': блок '{b.Name}' объявлен дважды."));
-        if (!IsLatinSnakeCase(b.Name))
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{n.Name}': имя блока '{b.Name}' должно быть на латинице, snake_case."));
-        if (!declared.ContainsKey(b.Of) && !primitives.Contains(b.Of))
-            errors.Add(new ValidationError(
-                "unknown_type",
-                $"Тип '{n.Name}', блок '{b.Name}': of='{b.Of}' не объявлен в Схеме и не примитив."));
-    }
-
-    private static void ValidateRefType(RefType r, List<ValidationError> errors)
-    {
-        // RefType хранит direction как обязательный enum (см. SchemaLoader);
-        // отсутствие direction отлавливается ещё на этапе парсинга Схемы.
-        // Системный путь — единственный известный системный тип; других быть не должно.
-        if (r.System && r.Name != "path")
-            errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Системный ref_type '{r.Name}': единственный допустимый системный тип — 'path'."));
-    }
-
-    private static void ValidatePrimitive(Primitive p, List<ValidationError> errors)
-    {
-        // Имя уже проверено на snake_case в общей секции.
     }
 
     /// <summary>
-    /// Проверка идентификатора на формат: только латиница в нижнем регистре, цифры
-    /// и подчёркивание, не начинается с цифры. Используется для имён типов, полей и блоков
-    /// в Схеме (см. docs/Правила оформления.yml/«Язык ключей»).
+    /// Идентификатор: только латиница в нижнем регистре, цифры и подчёркивание,
+    /// не начинается с цифры (см. docs/Правила оформления.yml/«Структурные snake_case»).
     /// </summary>
     internal static bool IsLatinSnakeCase(string name)
     {

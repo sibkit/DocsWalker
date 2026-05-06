@@ -1,23 +1,15 @@
 namespace DocsWalker.Core.Graph;
 
 /// <summary>
-/// Происхождение связи. Совпадает с пометкой origin в read-API DocsWalker
-/// (см. docs/DocsWalker.yml/«Модель данных»).
+/// Исходящая связь узла: имя связи + id цели. Связь path хранится с Name="path";
+/// прочие связи — с именем, объявленным в типе узла-источника
+/// (см. docs/DocsWalker.yml/«связь (ref)»).
 /// </summary>
-public enum RefOrigin
-{
-    /// <summary>Прикладная связь, явно записанная в блоке out_refs узла-источника.</summary>
-    Explicit,
-
-    /// <summary>Системная связь path: ребёнок → родитель. В YAML явно не хранится, выводится из вложенности.</summary>
-    System,
-
-    /// <summary>Связь по умолчанию: родитель → ребёнок по имени блока (definitions, examples, fields, content). В YAML не хранится.</summary>
-    Default,
-}
+public readonly record struct OutRef(string Name, int TargetId);
 
 /// <summary>
-/// Направленная типизированная связь между узлами. Тип — имя ref_type из Схемы
-/// (для Explicit / System) или имя default-блока (для Default).
+/// Входящая связь на узел: имя связи + id источника. Получается обратным
+/// проходом по графу через <see cref="Graph.GetInRefs"/>; в YAML не хранится
+/// (см. docs/DocsWalker.yml/«in_refs»).
 /// </summary>
-public sealed record Ref(int FromId, string TypeName, int ToId, RefOrigin Origin);
+public readonly record struct InRef(string Name, int SourceId);

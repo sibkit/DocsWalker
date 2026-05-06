@@ -4,15 +4,17 @@ using GraphModel = DocsWalker.Core.Graph.Graph;
 namespace DocsWalker.Core.Validation;
 
 /// <summary>
-/// Уникальность: id узла глобально уникален в docs/; title section уникален в пределах
-/// document (см. docs/Правила оформления.yml/«Идентификация узлов»). Проверка по id
-/// тривиальна на in-memory словаре <see cref="GraphModel.ById"/>, но включена для
-/// согласованности контракта валидации (валидатор может работать на любом состоянии графа).
+/// Уникальность под refs-модель: id узла глобально уникален в docs/;
+/// title уникален среди узлов одного типа, разделяющих общего path-родителя
+/// (см. docs/Правила оформления.yml/«Title уникален среди siblings»);
+/// дубли внутри одного списка-связи в out_refs.
 /// </summary>
 internal static class UniqueCheck
 {
     public static void Run(GraphModel graph, List<ValidationError> errors)
     {
+        // duplicate_id формально невозможен (Graph.Add бросает на коллизии), но
+        // для согласованности контракта валидатора повторно проверяем.
         var seenIds = new HashSet<int>();
         foreach (var node in graph.ById.Values)
         {
@@ -23,59 +25,43 @@ internal static class UniqueCheck
                     node.SourceFile, node.Id));
         }
 
-        // Уникальность id внутри одного ChildrenBlock — отдельная проверка от глобальной
-        // duplicate_id: id может быть уникален в графе, но дважды упомянут в одном блоке
-        // родителя (например, после ручной правки YAML). Без этой проверки граф «тихо
-        // разъезжается» — узел отдан как ребёнок дважды.
+        // Дубли внутри одного списка-связи: out_refs[name] не должен содержать одну цель дважды.
         foreach (var parent in graph.ById.Values)
         {
-            if (parent.Blocks is null) continue;
-            foreach (var b in parent.Blocks)
+            foreach (var (refName, targets) in parent.OutRefs)
             {
-                if (b is not ChildrenBlock cb) continue;
-                var seen = new HashSet<int>();
-                foreach (var childId in cb.ChildIds)
+                var seenTargets = new HashSet<int>();
+                foreach (var t in targets)
                 {
-                    if (!seen.Add(childId))
+                    if (!seenTargets.Add(t))
                         errors.Add(new ValidationError(
-                            "duplicate_child_in_block",
-                            $"У узла id={parent.Id} в children-блоке '{cb.Name}' id={childId} упомянут более одного раза.",
+                            "duplicate_target_in_ref",
+                            $"У узла id={parent.Id} связь '{refName}': цель id={t} упомянута более одного раза.",
                             parent.SourceFile, parent.Id,
-                            Hint: "Удали повторяющийся id из ChildrenBlock родителя; обычно это след ручной правки YAML."));
+                            Hint: "Удали повторяющийся id из связи; обычно это след ручной правки YAML."));
                 }
             }
         }
 
-        var rootByNode = new Dictionary<int, int>();
+        // Title уникален среди siblings одного типа в одном path-родителе.
+        var seenTitles = new Dictionary<(int Parent, string Type, string Title), int>();
         foreach (var node in graph.ById.Values)
-            rootByNode[node.Id] = FindRootDoc(graph, node);
-
-        var seenTitles = new Dictionary<(int Doc, string Title), int>();
-        foreach (var section in graph.GetByType("section"))
         {
-            if (!rootByNode.TryGetValue(section.Id, out var doc)) continue;
-            var key = (doc, section.Title);
+            if (node.Id == Node.RootId) continue;
+            if (string.IsNullOrEmpty(node.Title)) continue;
+
+            var parentId = node.ParentId;
+            if (parentId is null) continue;
+
+            var key = (parentId.Value, node.TypeName, node.Title);
             if (seenTitles.TryGetValue(key, out var prev))
                 errors.Add(new ValidationError(
-                    "duplicate_section_title",
-                    $"В документе id={doc} секция с title='{section.Title}' встречается дважды (id={prev} и id={section.Id}).",
-                    section.SourceFile, section.Id,
-                    Hint: "Title секции должен быть уникален в пределах документа; переименуй одну из секций через update-node patch.title."));
+                    "duplicate_sibling_title",
+                    $"В path-родителе id={parentId} два узла типа '{node.TypeName}' с одинаковым title='{node.Title}' (id={prev} и id={node.Id}).",
+                    node.SourceFile, node.Id,
+                    Hint: "Title должен быть уникален среди siblings одного типа; переименуй один из узлов через update-node."));
             else
-                seenTitles[key] = section.Id;
+                seenTitles[key] = node.Id;
         }
-    }
-
-    private static int FindRootDoc(GraphModel graph, Node node)
-    {
-        var current = node;
-        var safety = graph.NodeCount + 1;
-        while (current.ParentId is int pid && safety-- > 0)
-        {
-            var parent = graph.GetById(pid);
-            if (parent is null) return current.Id;
-            current = parent;
-        }
-        return current.Id;
     }
 }

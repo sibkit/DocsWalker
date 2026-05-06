@@ -34,7 +34,6 @@ public sealed class Validator
         SchemaCheck.Run(_schema, graph, errors);
         RefsCheck.Run(_schema, graph, errors);
         UniqueCheck.Run(graph, errors);
-        ParentBlockCheck.Run(_schema, graph, errors);
         SequenceCheck.Run(graph, sequence, errors);
         StyleCheck.Run(_schema, graph, errors);
         return new ValidationResult(errors);

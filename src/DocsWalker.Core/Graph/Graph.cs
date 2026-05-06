@@ -1,9 +1,9 @@
 namespace DocsWalker.Core.Graph;
 
 /// <summary>
-/// In-memory модель всего docs/. Узлы хранятся по id, индексы по типу и по родителю
-/// строятся при добавлении. Default- и system-связи здесь не материализованы —
-/// вычисляются на лету через <see cref="GetOutRefs"/> / <see cref="GetInRefs"/>
+/// In-memory модель всего docs/. Узлы хранятся по id, индексы по типу и по path-родителю
+/// строятся при добавлении. Все связи (включая path) материализованы в Node.OutRefs;
+/// in-refs вычисляются обратным проходом через <see cref="GetInRefs"/>
 /// (см. docs/DocsWalker.yml/«Модель данных»).
 /// </summary>
 public sealed class Graph
@@ -19,7 +19,7 @@ public sealed class Graph
 
     /// <summary>
     /// Регистрирует узел в графе. Бросает <see cref="GraphLoadException"/> с кодом
-    /// "duplicate_id" при коллизии id.
+    /// "duplicate_id" при коллизии id и "duplicate_document_title" при дубле title документа.
     /// </summary>
     public void Add(Node node)
     {
@@ -64,6 +64,7 @@ public sealed class Graph
 
     public Node? GetById(int id) => _byId.TryGetValue(id, out var n) ? n : null;
 
+    /// <summary>Возвращает прямых детей узла по обратному проходу out_refs[path].</summary>
     public IReadOnlyList<Node> GetChildren(int parentId) =>
         _byParent.TryGetValue(parentId, out var list) ? list : Array.Empty<Node>();
 
@@ -76,67 +77,38 @@ public sealed class Graph
     public IReadOnlyList<Node> Documents => GetByType("document");
 
     /// <summary>
-    /// Все исходящие связи узла: explicit (из YAML), default (parent → каждый ребёнок,
-    /// тип = имя блока ребёнка в родителе), system path (этот узел → его родитель).
+    /// Все исходящие связи узла — flat-flatten его OutRefs. Связь path представлена
+    /// как обычная пара (path, parent_id). Если узла нет — пустой список.
     /// </summary>
-    public IReadOnlyList<Ref> GetOutRefs(int id)
+    public IReadOnlyList<OutRef> GetOutRefs(int id)
     {
-        if (!_byId.TryGetValue(id, out var node)) return Array.Empty<Ref>();
-        var result = new List<Ref>();
-
-        if (node.ExplicitOutRefs is not null)
+        if (!_byId.TryGetValue(id, out var node)) return Array.Empty<OutRef>();
+        var result = new List<OutRef>();
+        foreach (var (name, targets) in node.OutRefs)
         {
-            foreach (var r in node.ExplicitOutRefs) result.Add(r);
+            foreach (var t in targets) result.Add(new OutRef(name, t));
         }
-
-        // Default: parent → каждый child, тип = ParentBlockName ребёнка.
-        foreach (var child in GetChildren(id))
-        {
-            if (child.ParentBlockName is null) continue;
-            result.Add(new Ref(id, child.ParentBlockName, child.Id, RefOrigin.Default));
-        }
-
-        // System path: child → parent (присутствует у всех, кроме document).
-        if (node.ParentId is int pid)
-        {
-            result.Add(new Ref(id, "path", pid, RefOrigin.System));
-        }
-
         return result;
     }
 
     /// <summary>
-    /// Все входящие связи на узел: explicit (где этот узел — to_id у других),
-    /// default (от родителя по имени блока), system path (от каждого ребёнка).
+    /// Все входящие связи на узел: проход по всем узлам, сбор тех, чьи OutRefs ссылаются на id.
+    /// O(N) для одного запроса; при необходимости можно построить inverted-index.
     /// </summary>
-    public IReadOnlyList<Ref> GetInRefs(int id)
+    public IReadOnlyList<InRef> GetInRefs(int id)
     {
-        if (!_byId.TryGetValue(id, out var node)) return Array.Empty<Ref>();
-        var result = new List<Ref>();
-
-        // Explicit: проходом по всем узлам — на этом шаге O(N), отдельный индекс
-        // (если потребуется по производительности) — задача read-api / write-api.
+        if (!_byId.ContainsKey(id)) return Array.Empty<InRef>();
+        var result = new List<InRef>();
         foreach (var src in _byId.Values)
         {
-            if (src.ExplicitOutRefs is null) continue;
-            foreach (var r in src.ExplicitOutRefs)
+            foreach (var (name, targets) in src.OutRefs)
             {
-                if (r.ToId == id) result.Add(r);
+                foreach (var t in targets)
+                {
+                    if (t == id) result.Add(new InRef(name, src.Id));
+                }
             }
         }
-
-        // Default: от родителя по имени блока, в котором этот узел лежит.
-        if (node.ParentId is int pid && node.ParentBlockName is not null)
-        {
-            result.Add(new Ref(pid, node.ParentBlockName, id, RefOrigin.Default));
-        }
-
-        // System path: каждый ребёнок → этот узел.
-        foreach (var child in GetChildren(id))
-        {
-            result.Add(new Ref(child.Id, "path", id, RefOrigin.System));
-        }
-
         return result;
     }
 }

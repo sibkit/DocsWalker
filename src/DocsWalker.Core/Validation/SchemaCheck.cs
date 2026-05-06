@@ -1,4 +1,3 @@
-using System.Globalization;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
 using GraphModel = DocsWalker.Core.Graph.Graph;
@@ -6,11 +5,11 @@ using GraphModel = DocsWalker.Core.Graph.Graph;
 namespace DocsWalker.Core.Validation;
 
 /// <summary>
-/// Соответствие узлов <see cref="GraphModel"/> Схеме: тип каждого узла объявлен в Схеме
-/// как node-тип; обязательные поля присутствуют; типы значений совместимы (integer, bool,
-/// enum); неизвестные поля и блоки запрещены; обязательные блоки представлены.
-/// Поле-список с of=node-типа трактуется как children-блок и проверяется через
-/// <see cref="GraphModel.GetChildren"/>, а не через <see cref="Node.Fields"/>.
+/// Соответствие узлов <see cref="GraphModel"/> Схеме под refs-модель.
+/// Проверяет: тип узла объявлен; path соответствует path_targets;
+/// каждое имя в OutRefs объявлено в типе как RefDef (или = path);
+/// тип цели каждой связи входит в target_types; cardinality соблюдается;
+/// required-связи заполнены; text_required соблюдён.
 /// </summary>
 internal static class SchemaCheck
 {
@@ -21,219 +20,136 @@ internal static class SchemaCheck
 
         foreach (var node in graph.ById.Values)
         {
+            if (node.Id == Node.RootId)
+                continue; // root — синглтон ядра, не описывается типом в Схеме.
+
             if (!byName.TryGetValue(node.TypeName, out var typeDef))
             {
                 errors.Add(new ValidationError(
                     "unknown_type",
                     $"Узел id={node.Id}: тип '{node.TypeName}' не объявлен в Схеме.",
                     node.SourceFile, node.Id,
-                    Hint: "Сверь имя типа со списком из get-schema; уточни структуру через describe-type."));
-                continue;
-            }
-            if (typeDef is not NodeType nt)
-            {
-                errors.Add(new ValidationError(
-                    "invalid_node_type",
-                    $"Узел id={node.Id}: тип '{node.TypeName}' не является node-типом (kind={typeDef.Kind}).",
-                    node.SourceFile, node.Id));
+                    Hint: "Сверь имя типа со списком из get-schema."));
                 continue;
             }
 
-            CheckNode(node, nt, byName, graph, errors);
+            CheckNode(node, typeDef, byName, graph, errors);
         }
     }
 
     private static void CheckNode(
-        Node node, NodeType type,
+        Node node,
+        TypeDefinition type,
         Dictionary<string, TypeDefinition> byName,
         GraphModel graph,
         List<ValidationError> errors)
     {
+        // title непустой — обязательно для refs-модели (см. «Title как path-сегмент»).
         if (string.IsNullOrEmpty(node.Title))
             errors.Add(new ValidationError(
                 "missing_title",
                 $"Узел id={node.Id} типа '{type.Name}': пустой title.",
                 node.SourceFile, node.Id,
-                Hint: "Укажи непустой title при создании или patch.title через update-node."));
+                Hint: "Title — 1–2-словный path-сегмент. Передавай его при create-node или меняй через update-node."));
 
-        switch (type.Kind)
+        // text_required: пустой text у типа с text_required=true запрещён;
+        // непустой text у типа с text_required=false формально допустим, но это
+        // диагностический сигнал — для структурных типов text должен быть пустым.
+        if (type.TextRequired && string.IsNullOrEmpty(node.Text))
+            errors.Add(new ValidationError(
+                "missing_text",
+                $"Узел id={node.Id} типа '{type.Name}': text обязателен (text_required=true).",
+                node.SourceFile, node.Id));
+        if (!type.TextRequired && !string.IsNullOrEmpty(node.Text)
+            && !string.Equals(type.Name, "document", StringComparison.Ordinal))
         {
-            case TypeKind.Mapping:
-                CheckMappingFields(node, type, byName, graph, errors);
-                CheckBlocks(node, type, errors);
-                break;
-            case TypeKind.SingleKeyMapping:
-                CheckSingleKeyMappingValue(node, type, errors);
-                CheckBlocks(node, type, errors);
-                break;
-            case TypeKind.List:
-                // На текущем шаге list-узлов нет (kind=list используется только для
-                // полей-списков и блоков-списков внутри типов, а не как тип Node).
-                break;
-        }
-    }
-
-    private static void CheckMappingFields(
-        Node node, NodeType type,
-        Dictionary<string, TypeDefinition> byName,
-        GraphModel graph,
-        List<ValidationError> errors)
-    {
-        var allowed = type.Fields ?? Array.Empty<FieldDefinition>();
-        var allowedByName = new Dictionary<string, FieldDefinition>(StringComparer.Ordinal);
-        foreach (var f in allowed) allowedByName[f.Name] = f;
-
-        var present = new Dictionary<string, FieldValue>(StringComparer.Ordinal);
-        if (node.Fields is not null)
-            foreach (var fv in node.Fields) present[fv.Name] = fv;
-
-        foreach (var fdef in allowed)
-        {
-            if (IsNodeChildrenList(fdef, byName))
-            {
-                // Поле-список с of=node-типа представлено через children, а не через Fields.
-                // Required в этом контексте трактуется мягко: структурно блок присутствует
-                // через сами дочерние узлы; пустой список допустим.
-                continue;
-            }
-            if (!present.ContainsKey(fdef.Name))
-            {
-                if (fdef.Required)
-                    errors.Add(new ValidationError(
-                        "missing_field",
-                        $"Узел id={node.Id} типа '{type.Name}': обязательное поле '{fdef.Name}' отсутствует.",
-                        node.SourceFile, node.Id,
-                        Hint: $"Добавь поле '{fdef.Name}' через update-node patch.fields. Структуру типа смотри в describe-type --name={type.Name}."));
-                continue;
-            }
-            CheckFieldValue(node, fdef, present[fdef.Name], errors);
+            // document — особый случай: text=описание документа допустим даже если бы стояло false.
+            // Прочие структурные типы (folder, section) не должны нести text.
+            errors.Add(new ValidationError(
+                "unexpected_text",
+                $"Узел id={node.Id} типа '{type.Name}': text задан, но у типа text_required=false.",
+                node.SourceFile, node.Id));
         }
 
-        if (node.Fields is not null)
-        {
-            foreach (var fv in node.Fields)
-            {
-                if (!allowedByName.ContainsKey(fv.Name))
-                    errors.Add(new ValidationError(
-                        "unknown_field",
-                        $"Узел id={node.Id} типа '{type.Name}': неизвестное поле '{fv.Name}'.",
-                        node.SourceFile, node.Id,
-                        Hint: $"Допустимые поля типа '{type.Name}' смотри в describe-type --name={type.Name}."));
-            }
-        }
-    }
-
-    private static void CheckSingleKeyMappingValue(
-        Node node, NodeType type, List<ValidationError> errors)
-    {
-        // Для single_key_mapping value_type=text узел хранит inline-значение в Node.InlineValue.
-        // Для value_type=list (например, section.value=список блоков) — узел хранит блоки в Node.Blocks
-        // (значение-список валидируется через CheckBlocks). Сейчас loader поддерживает оба варианта.
-        if (type.ValueType == "text")
-        {
-            if (node.InlineValue is null)
-                errors.Add(new ValidationError(
-                    "missing_inline_value",
-                    $"Узел id={node.Id} типа '{type.Name}' (value_type=text): inline-значение отсутствует.",
-                    node.SourceFile, node.Id));
-        }
-        // value_type=integer для single_key_mapping встречается у reference-типа (не node).
-        // Прочие value_type на текущем шаге не используются.
-    }
-
-    private static void CheckBlocks(
-        Node node, NodeType type, List<ValidationError> errors)
-    {
-        if (type.Blocks is null) return;
-
-        var allowedBlocks = new Dictionary<string, BlockDefinition>(StringComparer.Ordinal);
-        foreach (var b in type.Blocks) allowedBlocks[b.Name] = b;
-
-        if (node.Blocks is not null)
-        {
-            foreach (var block in node.Blocks)
-            {
-                if (!allowedBlocks.ContainsKey(block.Name))
-                    errors.Add(new ValidationError(
-                        "unknown_block",
-                        $"Узел id={node.Id} типа '{type.Name}': неизвестный блок '{block.Name}'.",
-                        node.SourceFile, node.Id,
-                        Hint: $"Допустимые блоки типа '{type.Name}' смотри в describe-type --name={type.Name}."));
-            }
-        }
-
-        foreach (var bdef in type.Blocks)
-        {
-            if (!bdef.Required) continue;
-            var has = node.Blocks is not null && node.Blocks.Any(b => b.Name == bdef.Name);
-            if (!has)
-                errors.Add(new ValidationError(
-                    "missing_block",
-                    $"Узел id={node.Id} типа '{type.Name}': обязательный блок '{bdef.Name}' отсутствует.",
-                    node.SourceFile, node.Id,
-                    Hint: $"Добавь блок '{bdef.Name}' через update-node patch.blocks; структуру блока смотри в describe-type --name={type.Name}."));
-        }
-    }
-
-    private static void CheckFieldValue(
-        Node node, FieldDefinition fdef, FieldValue fv, List<ValidationError> errors)
-    {
-        // Поле id — спец-кейс: всегда integer, проверка тривиальна, диагностируется отдельно
-        // на этапе парсинга. Здесь — для in-memory графа: значение уже строка (decimal).
-        if (fdef.Type == "list")
-        {
-            if (fv.Items is null)
-                errors.Add(new ValidationError(
-                    "invalid_field_value",
-                    $"Узел id={node.Id}, поле '{fdef.Name}': ожидался список, получено скалярное значение.",
-                    node.SourceFile, node.Id));
-            return;
-        }
-        if (fv.Items is not null)
+        // path: должен быть, цель должна быть в path_targets.
+        if (!node.OutRefs.TryGetValue(Node.PathRefName, out var pathTargets) || pathTargets.Count == 0)
         {
             errors.Add(new ValidationError(
-                "invalid_field_value",
-                $"Узел id={node.Id}, поле '{fdef.Name}': ожидался скаляр, получен список.",
+                "missing_path",
+                $"Узел id={node.Id} типа '{type.Name}': встроенная связь '{Node.PathRefName}' отсутствует.",
                 node.SourceFile, node.Id));
-            return;
         }
-        if (fv.Scalar is null) return;
-
-        switch (fdef.Type)
+        else if (pathTargets.Count > 1)
         {
-            case "integer":
-                if (!int.TryParse(fv.Scalar, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
-                    errors.Add(new ValidationError(
-                        "invalid_field_value",
-                        $"Узел id={node.Id}, поле '{fdef.Name}': ожидался integer, получено '{fv.Scalar}'.",
-                        node.SourceFile, node.Id,
-                        Hint: "Передавай integer-значение JSON-числом (без кавычек) в patch.fields."));
-                break;
-            case "bool":
-                if (fv.Scalar != "true" && fv.Scalar != "false")
-                    errors.Add(new ValidationError(
-                        "invalid_field_value",
-                        $"Узел id={node.Id}, поле '{fdef.Name}': ожидался bool, получено '{fv.Scalar}'.",
-                        node.SourceFile, node.Id,
-                        Hint: "Допустимые значения bool — true / false (JSON-литералы, без кавычек)."));
-                break;
-            case "enum":
-                if (fdef.Values is not null && !fdef.Values.Contains(fv.Scalar))
-                    errors.Add(new ValidationError(
-                        "invalid_enum_value",
-                        $"Узел id={node.Id}, поле '{fdef.Name}': значение '{fv.Scalar}' не входит в {{{string.Join(", ", fdef.Values)}}}.",
-                        node.SourceFile, node.Id,
-                        Hint: $"Допустимые значения поля '{fdef.Name}': {string.Join(", ", fdef.Values ?? Array.Empty<string>())}."));
-                break;
+            errors.Add(new ValidationError(
+                "invalid_path_cardinality",
+                $"Узел id={node.Id} типа '{type.Name}': связь '{Node.PathRefName}' должна иметь ровно одну цель (cardinality=one), но имеет {pathTargets.Count}.",
+                node.SourceFile, node.Id));
         }
-    }
+        else
+        {
+            var parentId = pathTargets[0];
+            var parentTypeName = parentId == Node.RootId
+                ? Node.RootTypeName
+                : graph.GetById(parentId)?.TypeName;
+            if (parentTypeName is not null && !type.PathTargets.Contains(parentTypeName))
+            {
+                errors.Add(new ValidationError(
+                    "invalid_path_target",
+                    $"Узел id={node.Id} типа '{type.Name}': путь ведёт к узлу типа '{parentTypeName}', не входящему в path_targets ({string.Join(", ", type.PathTargets)}).",
+                    node.SourceFile, node.Id));
+            }
+        }
 
-    private static bool IsNodeChildrenList(
-        FieldDefinition fdef, Dictionary<string, TypeDefinition> byName)
-    {
-        if (fdef.Type != "list" || fdef.Of is null) return false;
-        if (!byName.TryGetValue(fdef.Of, out var t)) return false;
-        if (t is not NodeType nt) return false;
-        return nt.Kind == TypeKind.Mapping || nt.Kind == TypeKind.SingleKeyMapping;
+        // OutRefs (кроме path): каждое имя объявлено в типе; cardinality, required, target_types.
+        var refDefByName = new Dictionary<string, RefDef>(StringComparer.Ordinal);
+        foreach (var rd in type.OutRefs) refDefByName[rd.Name] = rd;
+
+        foreach (var (refName, targets) in node.OutRefs)
+        {
+            if (string.Equals(refName, Node.PathRefName, StringComparison.Ordinal))
+                continue;
+
+            if (!refDefByName.TryGetValue(refName, out var refDef))
+            {
+                errors.Add(new ValidationError(
+                    "unknown_ref",
+                    $"Узел id={node.Id} типа '{type.Name}': связь '{refName}' не объявлена в типе.",
+                    node.SourceFile, node.Id,
+                    Hint: $"Допустимые связи типа '{type.Name}' смотри в get-schema. Для добавления нового имени связи отредактируй docs/Схема.yml."));
+                continue;
+            }
+
+            if (refDef.Cardinality == Cardinality.One && targets.Count > 1)
+                errors.Add(new ValidationError(
+                    "invalid_cardinality",
+                    $"Узел id={node.Id} типа '{type.Name}', связь '{refName}': cardinality=one, но целей {targets.Count}.",
+                    node.SourceFile, node.Id));
+
+            foreach (var targetId in targets)
+            {
+                var targetNode = graph.GetById(targetId);
+                if (targetNode is null) continue; // RefsCheck сообщит об отсутствии цели
+                if (!refDef.TargetTypes.Contains(targetNode.TypeName))
+                    errors.Add(new ValidationError(
+                        "invalid_target_type",
+                        $"Узел id={node.Id} типа '{type.Name}', связь '{refName}': цель id={targetId} имеет тип '{targetNode.TypeName}', не входящий в target_types ({string.Join(", ", refDef.TargetTypes)}).",
+                        node.SourceFile, node.Id));
+            }
+        }
+
+        // Required-связи: должны быть заполнены.
+        foreach (var rd in type.OutRefs)
+        {
+            if (!rd.Required) continue;
+            if (!node.OutRefs.TryGetValue(rd.Name, out var targets) || targets.Count == 0)
+            {
+                errors.Add(new ValidationError(
+                    "missing_required_ref",
+                    $"Узел id={node.Id} типа '{type.Name}': обязательная связь '{rd.Name}' не заполнена.",
+                    node.SourceFile, node.Id,
+                    Hint: $"Передай значение связи '{rd.Name}' при create-node либо добавь через create-ref."));
+            }
+        }
     }
 }
