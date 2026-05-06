@@ -69,8 +69,8 @@ internal static class Commands
                 Req("id",    ParamType.Integer),
                 Opt("title", ParamType.String),
                 Opt("text",  ParamType.String)),
-            Cmd("delete_node",
-                Req("id", ParamType.Integer)),
+            Cmd("delete_nodes",
+                Req("ids", ParamType.IdList)),
             Cmd("move_node",
                 Req("id",   ParamType.Integer),
                 Req("to",   ParamType.Integer),
@@ -83,6 +83,16 @@ internal static class Commands
                 Req("from_id", ParamType.Integer),
                 Req("name",    ParamType.String),
                 Req("to_id",   ParamType.Integer)),
+            // redirect-refs принимает либо --from=<id>, либо --from-subtree=<root_id>
+            // (взаимоисключающие; ровно один обязателен — handler разбирается).
+            // Действие — либо --to=<dst_id>, либо --unlink (тоже взаимоисключающие).
+            // --name=<ref-name> опционально фильтрует переподшивку по имени связи.
+            Cmd("redirect_refs",
+                Opt("from",         ParamType.Integer),
+                Opt("from_subtree", ParamType.Integer),
+                Opt("to",           ParamType.Integer),
+                Opt("name",         ParamType.String),
+                Opt("unlink",       ParamType.String)),
             Cmd("transaction",
                 Req("operations", ParamType.Json)),
         };

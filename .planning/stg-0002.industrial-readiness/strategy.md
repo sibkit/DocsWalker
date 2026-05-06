@@ -53,7 +53,20 @@
 
 `title_source` enum остаётся `{filename, dirname, inline_key}` — без новых значений, без исключений.
 
-Единый формат сериализации смысловых узлов — одна YAML-запись `"(#id) Title": value`. Форма `value` диктуется контрактом типа: при `text_required=true` без `out_refs` value = строка с текстом узла; при наличии `out_refs` value = mapping с сериализованными исходящими связями. Этот формат уже существует у `definition`/`example` в текущих docs; атомизация распространяет его на ex-bullets `statements`/`rules`/`may_rules`/`notes`/`llm`. Конкретный пример формата — в DocsWalker.yml (R4).
+Единый формат сериализации смысловых узлов — одна YAML-запись `"(#id) Title": value`. Форма `value` диктуется контрактом типа:
+- **Atom-форма** — `value = строка с текстом` для типа без semantic-refs (только path в out_refs): `statement`, `definition`, `example`, `may_rule`, `note`, `llm_hint`.
+- **Container-форма** — `value = sequence блоков` иначе. Блоки внутри:
+  - `- text: ...` (если у типа `text_required=true` и текст не пуст) — обязательно первым, если присутствует;
+  - `- <ref-name>:` для каждой semantic-ref. Per-ref подформа: `path-child` (target.path_targets ⊇ source.type) сериализуется как block-seq nested-atomов (как `section.rules`); `cross-ref` (siblings/cross-tree) — как flow-list id (`examples: [188, 189]`).
+
+Пример контейнер-формы для `rule` (text + cross-ref `examples`):
+```yaml
+- "(#125) Запись через API":
+  - text: Любая запись в docs/ выполняется через DocsWalker. Прямая правка YAML-файлов LLM-ом запрещена.
+  - examples: [188]
+```
+
+Path-child связи у узла-источника двунаправленны: помимо `child.out_refs.path = [parent]` ядро держит синхрон с `parent.out_refs[<ref-name>]` (например, `section.out_refs.rules ⊇ [125]`). Эту симметрию ядро обеспечивает на каждой write-операции (create-node / delete-nodes / move-node), а cross-refs (`rule.examples`) живут самостоятельно и трогаются `create-ref` / `delete-ref` / `redirect-refs`.
 
 ### Атомизация bullet-блоков
 Текущие text-блоки section (`statements`, `rules`, `may_rules`, `notes`, `llm`) разворачиваются в новые node-типы:
@@ -156,9 +169,9 @@ Generic-тип связи `ref` (текущий `kind: ref_type, direction: from
 
 ### Read/write API completion
 
-- [*] delete-nodes — заменить одиночный `delete-node` множественным `delete-nodes --ids=<csv>`. Алгоритм валидации: path-замкнутость + dangling cross-refs check. Без авто-каскада. См. раздел «Удаление узлов».
-- [*] redirect-refs — новая команда. Формы `--from/--to`, `--from-subtree/--to`, `--unlink`. См. раздел «Redirect-refs».
-- [*] rule-requires-example — миграция живых docs: каждое существующее `rule` в docs/*.yml получает обязательный `examples` ref ≥1 элемент. Где example нет — создаётся минимальный example рядом или формулируется из текста правила. См. раздел «Schema-правило».
+- [+] delete-nodes — заменить одиночный `delete-node` множественным `delete-nodes --ids=<csv>`. Алгоритм валидации: path-замкнутость + dangling cross-refs check (path-child refs трактуются как структурное зеркало, не блокируют). Без авто-каскада. См. раздел «Удаление узлов».
+- [+] redirect-refs — новая команда. Формы `--from/--to`, `--from-subtree/--to`, `--unlink`. Path-child refs `redirect-refs` не трогает (управляются только структурно). См. раздел «Redirect-refs».
+- [+] rule-requires-example — миграция живых docs выполнена: каждое существующее `rule` в docs/*.yml получило обязательный `examples` ref ≥1 элемент. По ходу шага: расширен формат YAML смысловых узлов (container-form с `text:` блоком + flow-list cross-ref id), внедрена двунаправленная синхронизация path-child refs у родителя при write-операциях. См. раздел «Schema-правило» и «Title как path-сегмент и формат YAML смысловых узлов».
 
 ### Завершающие шаги исходной стратегии
 

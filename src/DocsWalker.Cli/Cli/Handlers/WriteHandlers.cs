@@ -79,11 +79,139 @@ internal static class WriteHandlers
         return Run(root, op);
     }
 
-    public static int DeleteNode(string root, IReadOnlyDictionary<string, string> args)
+    public static int DeleteNodes(string root, IReadOnlyDictionary<string, string> args)
     {
-        var op = new DeleteNodeOp(
-            Id: int.Parse(args["id"], CultureInfo.InvariantCulture));
+        if (!TryParseIdList(args["ids"], out var ids, out var parseError))
+        {
+            Output.WriteError(
+                "invalid_parameter",
+                path: null,
+                $"Параметр '--ids': {parseError}",
+                "Ожидается список id через запятую, например, --ids=42,43,44.");
+            return 1;
+        }
+        var op = new DeleteNodesOp(ids);
         return Run(root, op);
+    }
+
+    public static int RedirectRefs(string root, IReadOnlyDictionary<string, string> args)
+    {
+        var hasFrom = args.TryGetValue("from", out var fromRaw);
+        var hasFromSubtree = args.TryGetValue("from-subtree", out var fromSubtreeRaw);
+        var hasTo = args.TryGetValue("to", out var toRaw);
+        var hasUnlink = args.TryGetValue("unlink", out var unlinkRaw);
+        var name = args.TryGetValue("name", out var nm) ? nm : null;
+
+        if (hasFrom == hasFromSubtree)
+        {
+            Output.WriteError(
+                "invalid_parameter",
+                path: null,
+                "Для redirect-refs требуется ровно одно из '--from=<id>' или '--from-subtree=<root_id>'.",
+                "--from=<id> переподшивает входящие cross-refs одного узла; --from-subtree=<root_id> — всего path-поддерева.");
+            return 1;
+        }
+
+        bool unlink = false;
+        if (hasUnlink)
+        {
+            unlink = string.Equals(unlinkRaw, "true", StringComparison.OrdinalIgnoreCase)
+                  || unlinkRaw == "1";
+            if (!unlink && !string.Equals(unlinkRaw, "false", StringComparison.OrdinalIgnoreCase) && unlinkRaw != "0")
+            {
+                Output.WriteError(
+                    "invalid_parameter",
+                    path: null,
+                    $"Параметр '--unlink': ожидается 'true' или 'false', получено '{unlinkRaw}'.");
+                return 1;
+            }
+        }
+
+        if (unlink == hasTo)
+        {
+            Output.WriteError(
+                "invalid_parameter",
+                path: null,
+                "Для redirect-refs требуется ровно одно из '--to=<dst_id>' или '--unlink=true'.",
+                "--to=<dst_id> переподшивает связи на новый узел; --unlink=true разрывает связи без замены.");
+            return 1;
+        }
+
+        // Сборка набора FromIds: --from=<id> → [id]; --from-subtree=<root_id> → BFS вниз
+        // по path-children, включая root_id (cascading set за счёт path-замкнутости).
+        IReadOnlyList<int> fromIds;
+        try
+        {
+            if (hasFrom)
+            {
+                fromIds = new[] { int.Parse(fromRaw!, CultureInfo.InvariantCulture) };
+            }
+            else
+            {
+                var rootId = int.Parse(fromSubtreeRaw!, CultureInfo.InvariantCulture);
+                fromIds = ResolveSubtreeIds(root, rootId);
+            }
+        }
+        catch (FormatException)
+        {
+            Output.WriteError(
+                "invalid_parameter",
+                path: null,
+                "Значение --from / --from-subtree должно быть целым числом.");
+            return 1;
+        }
+        catch (WriteApiException ex)
+        {
+            Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
+            return 1;
+        }
+        catch (GraphLoadException ex)
+        {
+            Output.WriteError(ex.Code, ex.FilePath, ex.Message);
+            return 1;
+        }
+        catch (SchemaLoadException ex)
+        {
+            Output.WriteError(ex.Code, ex.FilePath, ex.Message);
+            return 1;
+        }
+
+        int? toId = hasTo
+            ? int.Parse(toRaw!, CultureInfo.InvariantCulture)
+            : null;
+
+        var op = new RedirectRefsOp(fromIds, toId, name, unlink);
+        return Run(root, op);
+    }
+
+    /// <summary>
+    /// CLI-helper: разворачивает <c>--from-subtree=&lt;root_id&gt;</c> в полный набор id
+    /// path-поддерева (включая сам root). Используется только в redirect-refs;
+    /// нужен здесь, а не в WriteApi, потому что ядро принимает уже готовый плоский набор.
+    /// </summary>
+    private static IReadOnlyList<int> ResolveSubtreeIds(string root, int rootId)
+    {
+        var ctx = WriteContext.FromRoot(root);
+        var schema = SchemaLoader.LoadSchema(ctx.SchemaPath);
+        var loaded = DocumentLoader.Load(ctx.DocsRoot, schema);
+        var graph = loaded.Graph;
+        if (graph.GetById(rootId) is null && rootId != Node.RootId)
+            throw new WriteApiException(
+                "node_not_found",
+                $"Узел id={rootId} (--from-subtree) не найден.",
+                "Сверь id через get-map / get-nodes.");
+
+        var result = new List<int>();
+        var queue = new Queue<int>();
+        queue.Enqueue(rootId);
+        while (queue.Count > 0)
+        {
+            var id = queue.Dequeue();
+            if (id != Node.RootId) result.Add(id);
+            foreach (var ch in graph.GetChildren(id))
+                queue.Enqueue(ch.Id);
+        }
+        return result;
     }
 
     public static int MoveNode(string root, IReadOnlyDictionary<string, string> args)

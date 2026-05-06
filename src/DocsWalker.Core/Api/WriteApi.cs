@@ -64,7 +64,33 @@ public sealed record CreateNodeOp(
 
 public sealed record UpdateNodeOp(int Id, string? NewTitle, string? NewText) : WriteOp("update-node");
 
-public sealed record DeleteNodeOp(int Id) : WriteOp("delete-node");
+/// <summary>
+/// Удаление набора узлов одной операцией. Алгоритм:
+///   1) path-замкнутость — все path-children каждого узла из набора тоже в наборе
+///      (иначе <c>path_orphans_left</c>);
+///   2) нет dangling cross-refs — ни одной входящей не-path-связи извне набора
+///      (иначе <c>dangling_refs</c>);
+///   3) атомарное удаление всех узлов.
+/// Cascade ни по какому дереву не зашит — собирать удаляемое надо явно через
+/// get_subtree (любой scope) и redirect-refs/delete-ref для cross-refs.
+/// </summary>
+public sealed record DeleteNodesOp(IReadOnlyList<int> Ids) : WriteOp("delete-nodes");
+
+/// <summary>
+/// Массовая переподшивка входящих cross-refs одного источника или поддерева
+/// path-источников на новый узел-цель либо разрыв связей.
+///   - <see cref="FromIds"/> — набор узлов, чьи входящие cross-refs затрагиваются;
+///   - <see cref="ToId"/> — куда перенаправлять (null при <see cref="Unlink"/>=true);
+///   - <see cref="Name"/> — фильтр по имени связи (null = все имена кроме path);
+///   - <see cref="Unlink"/> — true: удалить связи; false: переподшить на ToId.
+/// CLI собирает этот набор из форм <c>--from</c>, <c>--from-subtree</c>,
+/// <c>--unlink</c>, <c>--name</c>; ядро не различает «откуда взялся набор».
+/// </summary>
+public sealed record RedirectRefsOp(
+    IReadOnlyList<int> FromIds,
+    int? ToId,
+    string? Name,
+    bool Unlink) : WriteOp("redirect-refs");
 
 /// <summary>
 /// Перенос узла под нового родителя в указанном дереве (tree-scope).
@@ -238,10 +264,11 @@ public sealed class WriteApi
     {
         CreateNodeOp c => ApplyCreateNode(s, c),
         UpdateNodeOp u => ApplyUpdateNode(s, u),
-        DeleteNodeOp d => ApplyDeleteNode(s, d),
+        DeleteNodesOp d => ApplyDeleteNodes(s, d),
         MoveNodeOp m => ApplyMoveNode(s, m),
         CreateRefOp cr => ApplyCreateRef(s, cr),
         DeleteRefOp dr => ApplyDeleteRef(s, dr),
+        RedirectRefsOp r => ApplyRedirectRefs(s, r),
         _ => throw new WriteApiException(
             "unknown_op",
             $"Неизвестный тип операции '{op.Type}'."),
@@ -351,6 +378,14 @@ public sealed class WriteApi
         };
         s.Add(newNode);
 
+        // Связь path двунаправленна по контракту схемы: помимо new.out_refs.path = parent
+        // нужно обновить parent.out_refs[ref_name], где ref_name — имя path-child связи
+        // в типе родителя, цели которой включают тип нового узла. Это обеспечивает
+        // согласованность между «есть path-ребёнок» и «у родителя в out_refs он перечислен»,
+        // на чём строится emitter (и от чего зависит загрузка YAML обратно).
+        if (newNode.ParentId is int pid && pid != Node.RootId)
+            AppendToParentPathChildRef(s, pid, type.Name, id);
+
         if (string.Equals(type.Name, "document", StringComparison.Ordinal))
             s.MarkDocumentDirty(id);
         else
@@ -362,6 +397,119 @@ public sealed class WriteApi
             ["type"] = type.Name,
             ["title"] = op.Title,
         });
+    }
+
+    /// <summary>
+    /// Добавляет id нового path-ребёнка <paramref name="newChildId"/> (тип
+    /// <paramref name="newChildType"/>) в <c>out_refs[ref_name]</c> родителя
+    /// <paramref name="parentId"/>. ref_name — имя единственной path-child связи
+    /// в типе родителя, чьи target_types включают тип ребёнка. Если такой связи нет —
+    /// no-op (тип ребёнка не вписывается в контракт типа родителя — это уже отвергнуто
+    /// валидацией path_targets выше по стеку).
+    /// </summary>
+    private static void AppendToParentPathChildRef(WriteState s, int parentId, string newChildType, int newChildId)
+    {
+        var parent = s.GetNode(parentId);
+        if (parent is null) return;
+        var parentType = s.ResolveType(parent.TypeName);
+
+        var refName = FindPathChildRefName(s, parentType, newChildType);
+        if (refName is null) return;
+
+        var existing = parent.OutRefs.TryGetValue(refName, out var current)
+            ? current.ToList()
+            : new List<int>();
+        if (existing.Contains(newChildId)) return;
+        existing.Add(newChildId);
+
+        var newOutRefs = CloneRefs(parent.OutRefs);
+        newOutRefs[refName] = existing;
+        s.Replace(new Node
+        {
+            Id = parent.Id,
+            TypeName = parent.TypeName,
+            Title = parent.Title,
+            Text = parent.Text,
+            OutRefs = newOutRefs,
+            SourceFile = parent.SourceFile,
+        });
+    }
+
+    /// <summary>
+    /// Удаляет id <paramref name="childId"/> из <c>out_refs[ref_name]</c> родителя
+    /// <paramref name="parentId"/>. Используется при delete-nodes / move-node для зачистки
+    /// path-child записей у бывшего родителя. Обратная пара
+    /// <see cref="AppendToParentPathChildRef"/>.
+    /// </summary>
+    private static void RemoveFromParentPathChildRef(WriteState s, int parentId, string childType, int childId)
+    {
+        if (parentId == Node.RootId) return;
+        var parent = s.GetNode(parentId);
+        if (parent is null) return;
+        var parentType = s.ResolveType(parent.TypeName);
+
+        var refName = FindPathChildRefName(s, parentType, childType);
+        if (refName is null) return;
+        if (!parent.OutRefs.TryGetValue(refName, out var current) || !current.Contains(childId)) return;
+
+        var filtered = current.Where(t => t != childId).ToList();
+        var newOutRefs = CloneRefs(parent.OutRefs);
+        if (filtered.Count == 0) newOutRefs.Remove(refName);
+        else newOutRefs[refName] = filtered;
+
+        s.Replace(new Node
+        {
+            Id = parent.Id,
+            TypeName = parent.TypeName,
+            Title = parent.Title,
+            Text = parent.Text,
+            OutRefs = newOutRefs,
+            SourceFile = parent.SourceFile,
+        });
+    }
+
+    /// <summary>
+    /// Возвращает true, если связь <paramref name="refName"/> у типа
+    /// <paramref name="sourceTypeName"/> объявлена как path-child (target.path_targets ⊇
+    /// source.type). Используется в delete-nodes для игнорирования структурного
+    /// зеркала path при проверке dangling cross-refs.
+    /// </summary>
+    private static bool IsPathChildRefName(WriteState s, string sourceTypeName, string refName)
+    {
+        var srcType = s.Schema.Types.FirstOrDefault(t => string.Equals(t.Name, sourceTypeName, StringComparison.Ordinal));
+        if (srcType is null) return false;
+        var rd = srcType.OutRefs.FirstOrDefault(r => string.Equals(r.Name, refName, StringComparison.Ordinal));
+        if (rd is null) return false;
+        foreach (var ttn in rd.TargetTypes)
+        {
+            var tt = s.Schema.Types.FirstOrDefault(t => string.Equals(t.Name, ttn, StringComparison.Ordinal));
+            if (tt is null) continue;
+            if (tt.PathTargets.Any(pt => string.Equals(pt, sourceTypeName, StringComparison.Ordinal)))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Находит имя path-child связи в типе родителя, цели которой включают тип
+    /// <paramref name="childType"/>. Path-child связь = такая, через которую цели становятся
+    /// path-детьми источника (target.path_targets ⊇ parent.type). Каждый child-type у
+    /// родителя проходит ровно через одну такую связь — иначе схема была бы неоднозначной.
+    /// </summary>
+    private static string? FindPathChildRefName(WriteState s, TypeDefinition parentType, string childType)
+    {
+        foreach (var rd in parentType.OutRefs)
+        {
+            if (string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal)) continue;
+            if (!rd.TargetTypes.Any(tt => string.Equals(tt, childType, StringComparison.Ordinal))) continue;
+            // Дополнительно убедимся, что это path-child ref — иначе это cross-ref, а они
+            // здесь не имеют отношения к path-детству.
+            var ct = s.Schema.Types.FirstOrDefault(t => string.Equals(t.Name, childType, StringComparison.Ordinal));
+            if (ct is null) continue;
+            if (ct.PathTargets.Any(pt => string.Equals(pt, parentType.Name, StringComparison.Ordinal)))
+                return rd.Name;
+        }
+        return null;
     }
 
     /// <summary>
@@ -617,64 +765,313 @@ public sealed class WriteApi
         });
     }
 
-    private static WriteOpResult ApplyDeleteNode(WriteState s, DeleteNodeOp op)
+    private static WriteOpResult ApplyDeleteNodes(WriteState s, DeleteNodesOp op)
     {
-        var node = s.GetNode(op.Id)
-            ?? throw new WriteApiException(
-                "node_not_found",
-                $"Узел id={op.Id} не найден.",
-                "Сверь id через get-map / get-nodes.");
-
-        if (string.Equals(node.TypeName, "document", StringComparison.Ordinal))
+        if (op.Ids.Count == 0)
             throw new WriteApiException(
-                "delete_document_unsupported",
-                $"Удаление документа id={op.Id} ('{node.Title}') в этой версии write-API не поддерживается.",
-                "Для удаления документа используй отдельную команду delete-document.");
+                "empty_ids",
+                "Список ids для delete-nodes пуст.",
+                "Передай хотя бы один id; собрать набор удобно через get-subtree.");
 
-        var children = s.GetChildren(op.Id).ToList();
-        if (children.Count > 0)
-            throw new WriteApiException(
-                "has_children",
-                $"Узел id={op.Id} имеет {children.Count} path-детей; каскадное удаление не поддерживается.",
-                "Сначала удали или перенеси детей через delete-node / move-node, затем повтори delete-node.");
-
-        var inRefs = s.ListIncomingRefs(op.Id, includePath: false).ToList();
-        if (inRefs.Count > 0)
-            throw new WriteApiException(
-                "incoming_refs",
-                $"Узел id={op.Id} имеет {inRefs.Count} входящих связ(и/ей); удаление запрещено.",
-                "Сначала удали входящие связи через delete-ref, затем повтори delete-node.");
-
-        // R10: удаление folder требует отдельной FS-операции и dirty folders.yml.
-        if (string.Equals(node.TypeName, "folder", StringComparison.Ordinal))
+        // Дедуплицируем, сохраняя порядок появления (детерминированный для логов и JSON-результата).
+        var ordered = new List<int>(op.Ids.Count);
+        var set = new HashSet<int>();
+        foreach (var id in op.Ids)
         {
-            var rel = BuildFolderRelativePath(s, node.Id);
+            if (set.Add(id)) ordered.Add(id);
+        }
+
+        // 1) Все id существуют, root в наборе быть не может.
+        var nodes = new List<Node>(ordered.Count);
+        foreach (var id in ordered)
+        {
+            if (id == Node.RootId)
+                throw new WriteApiException(
+                    "cannot_delete_root",
+                    "Корневой узел id=0 удалить нельзя.");
+            var n = s.GetNode(id)
+                ?? throw new WriteApiException(
+                    "node_not_found",
+                    $"Узел id={id} не найден.",
+                    "Сверь id через get-map / get-nodes.");
+            nodes.Add(n);
+        }
+
+        // 2) Удаление document-узлов в этой версии не поддерживается (отдельная команда).
+        foreach (var n in nodes)
+        {
+            if (string.Equals(n.TypeName, "document", StringComparison.Ordinal))
+                throw new WriteApiException(
+                    "delete_document_unsupported",
+                    $"Удаление документа id={n.Id} ('{n.Title}') в этой версии write-API не поддерживается.",
+                    "Для удаления документа появится отдельная команда delete-document.");
+        }
+
+        // 3) Path-замкнутость: для каждого узла из набора все path-children — тоже в наборе.
+        var orphans = new List<(int Parent, int Child)>();
+        foreach (var n in nodes)
+        {
+            foreach (var child in s.GetChildren(n.Id))
+            {
+                if (!set.Contains(child.Id))
+                    orphans.Add((n.Id, child.Id));
+            }
+        }
+        if (orphans.Count > 0)
+        {
+            var detail = string.Join("; ",
+                orphans.Take(20).Select(o => $"id={o.Parent}→child={o.Child}"));
+            var more = orphans.Count > 20 ? $" (всего {orphans.Count})" : string.Empty;
+            throw new WriteApiException(
+                "path_orphans_left",
+                $"После удаления остались бы path-сироты: {detail}{more}.",
+                "Добавь отсутствующие id в --ids или ограничь набор до замкнутого по path.");
+        }
+
+        // 4) Dangling cross-refs: ни одной входящей не-path-связи извне набора.
+        //    path-child refs (например, section.rules → rule) — структурное зеркало path,
+        //    их игнорируем; реальные cross-refs (например, rule.examples → example) ловим.
+        var dangling = new List<(int Source, string Name, int Target)>();
+        foreach (var n in nodes)
+        {
+            foreach (var (sourceId, name) in s.ListIncomingRefs(n.Id, includePath: false))
+            {
+                if (set.Contains(sourceId)) continue;
+                // Если это path-child ref у источника — пропускаем (структурное зеркало).
+                var src = s.GetNode(sourceId);
+                if (src is not null && IsPathChildRefName(s, src.TypeName, name)) continue;
+                dangling.Add((sourceId, name, n.Id));
+            }
+        }
+        if (dangling.Count > 0)
+        {
+            var detail = string.Join("; ",
+                dangling.Take(20).Select(d => $"id={d.Source} ref '{d.Name}' → id={d.Target}"));
+            var more = dangling.Count > 20 ? $" (всего {dangling.Count})" : string.Empty;
+            throw new WriteApiException(
+                "dangling_refs",
+                $"На узлы в наборе ссылаются извне: {detail}{more}.",
+                "Перенаправь связи через redirect-refs --to=<dst> или сними через delete-ref, затем повтори delete-nodes.");
+        }
+
+        // 5) Folder-узлы: deepest first — иначе FsDeleteEmptyDirectory упадёт на непустом
+        //    верхнем каталоге. Глубину считаем по длине rel-пути на актуальном состоянии,
+        //    до Remove'ов.
+        var folderEntries = nodes
+            .Where(n => string.Equals(n.TypeName, "folder", StringComparison.Ordinal))
+            .Select(n => (Node: n, Rel: BuildFolderRelativePath(s, n.Id)))
+            .OrderByDescending(t => t.Rel.Length)
+            .ToList();
+
+        // 6) Пометка dirty: для каждого не-folder — поднимаемся до document. Делаем до
+        //    Remove'ов, иначе MarkDocumentDirtyForNode не найдёт узел.
+        foreach (var n in nodes)
+        {
+            if (string.Equals(n.TypeName, "folder", StringComparison.Ordinal))
+                continue;
+            s.MarkDocumentDirtyForNode(n.Id);
+        }
+
+        // 7) Регистрация FS-операций для folder в порядке «сначала глубже».
+        foreach (var (folder, rel) in folderEntries)
+        {
             var absolutePath = Path.Combine(s.DocsRoot,
                 rel.Replace('/', Path.DirectorySeparatorChar));
-            if (Directory.Exists(absolutePath))
-            {
-                bool isEmpty = !Directory.EnumerateFileSystemEntries(absolutePath).Any();
-                if (!isEmpty)
-                    throw new WriteApiException(
-                        "folder_not_empty",
-                        $"Каталог '{absolutePath}' не пуст; удаление folder допустимо только для пустого каталога.",
-                        "Сначала удали все документы и подкаталоги внутри.");
-            }
             s.AddFsOperation(new FsDeleteEmptyDirectory(absolutePath));
             s.MarkFoldersDirty();
-            s.Remove(op.Id);
-            return new WriteOpResult("delete-node", new JsonObject
+        }
+
+        // 8) Снятие записи из parent.out_refs[ref_name] для каждого удаляемого узла,
+        //    чей parent не в самом наборе (parent в наборе — он тоже удаляется, чистить
+        //    бесполезно). Делается до Remove'ов, иначе s.GetNode(parent) вернёт null.
+        foreach (var n in nodes)
+        {
+            if (n.ParentId is int pid && pid != Node.RootId && !set.Contains(pid))
+                RemoveFromParentPathChildRef(s, pid, n.TypeName, n.Id);
+        }
+
+        // 9) Атомарное удаление из state.
+        foreach (var n in nodes)
+            s.Remove(n.Id);
+
+        return new WriteOpResult("delete-nodes", new JsonObject
+        {
+            ["ids"] = new JsonArray(ordered.Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()),
+        });
+    }
+
+    /// <summary>
+    /// Массовая переподшивка/разрыв входящих cross-refs для набора FromIds.
+    /// Алгоритм:
+    ///   1) Резолвим набор FromIds (set источников-целей переподшивки).
+    ///   2) Перебираем все узлы графа; в out_refs каждого ищем ссылки на узлы из set
+    ///      (по фильтру Name, если указан); пропускаем системную связь path.
+    ///   3) Для каждой такой связи: при <see cref="RedirectRefsOp.Unlink"/>=true —
+    ///      удаляем элементы из targets; иначе заменяем их на ToId с дедупликацией.
+    ///   4) Самоссылки запрещены: если после переподшивки источник стал бы ссылаться сам
+    ///      на себя, отвергаем (<c>self_ref</c>).
+    ///   5) Cardinality=one: если после переподшивки в targets > 1 — отвергаем
+    ///      (<c>invalid_cardinality</c>).
+    /// Не правит сами узлы из FromIds (они становятся «изолированными» по cross-refs —
+    /// типичный pre-step перед delete-nodes).
+    /// </summary>
+    private static WriteOpResult ApplyRedirectRefs(WriteState s, RedirectRefsOp op)
+    {
+        if (op.FromIds.Count == 0)
+            throw new WriteApiException(
+                "empty_from",
+                "Набор FromIds для redirect-refs пуст.",
+                "Передай --from=<id>, либо --from-subtree=<root_id>.");
+
+        var fromSet = new HashSet<int>(op.FromIds);
+
+        // Системная связь path — не переподшиваема (управляется move-node).
+        if (op.Name is not null && string.Equals(op.Name, Node.PathRefName, StringComparison.Ordinal))
+            throw new WriteApiException(
+                "system_ref_name",
+                "Связь 'path' нельзя переподшивать через redirect-refs.",
+                "Используй move-node для смены родителя.");
+
+        // Валидация ToId / Unlink: ровно одно из них.
+        if (!op.Unlink)
+        {
+            if (op.ToId is not int toId)
+                throw new WriteApiException(
+                    "missing_target",
+                    "Для redirect-refs без --unlink требуется --to=<dst_id>.");
+            if (toId != Node.RootId && s.GetNode(toId) is null)
+                throw new WriteApiException(
+                    "node_not_found",
+                    $"Узел-цель id={toId} не найден.",
+                    "Сверь to_id через get-map / get-nodes.");
+            if (fromSet.Contains(toId))
+                throw new WriteApiException(
+                    "self_redirect",
+                    $"Узел-цель id={toId} входит в набор FromIds — переподшивка на сам себя запрещена.");
+        }
+        else
+        {
+            if (op.ToId is not null)
+                throw new WriteApiException(
+                    "conflicting_options",
+                    "Опции --unlink и --to= взаимоисключающие.");
+        }
+
+        // Сначала проверяем наличие самих FromIds.
+        foreach (var id in fromSet)
+        {
+            if (id != Node.RootId && s.GetNode(id) is null)
+                throw new WriteApiException(
+                    "node_not_found",
+                    $"Узел из набора FromIds id={id} не найден.",
+                    "Сверь from_id / from-subtree через get-map / get-nodes.");
+        }
+
+        // Собираем правки: для каждого узла-источника — новая копия OutRefs.
+        var changes = new List<(int SourceId, string RefName, int RemovedCount)>();
+        var nodesToReplace = new Dictionary<int, Node>();
+
+        foreach (var srcNode in s.AllNodes.ToList())
+        {
+            // Не правим сами узлы из набора (они и так уйдут на удаление, либо будут изолированы).
+            if (fromSet.Contains(srcNode.Id)) continue;
+
+            Dictionary<string, IReadOnlyList<int>>? newOutRefs = null;
+
+            foreach (var (refName, targets) in srcNode.OutRefs)
             {
-                ["id"] = op.Id,
+                if (string.Equals(refName, Node.PathRefName, StringComparison.Ordinal))
+                    continue;
+                if (op.Name is not null && !string.Equals(refName, op.Name, StringComparison.Ordinal))
+                    continue;
+                // path-child refs — структурное зеркало path, ими управляет ядро через
+                // create-node / delete-nodes / move-node. Свободно переподшивать их нельзя
+                // (это ломает синхрон с path-child'ами), redirect-refs их пропускает.
+                if (IsPathChildRefName(s, srcNode.TypeName, refName))
+                    continue;
+
+                // Сколько целей этой связи попадает в FromIds?
+                int hits = 0;
+                foreach (var t in targets) if (fromSet.Contains(t)) hits++;
+                if (hits == 0) continue;
+
+                newOutRefs ??= CloneRefs(srcNode.OutRefs);
+
+                if (op.Unlink)
+                {
+                    var filtered = targets.Where(t => !fromSet.Contains(t)).ToList();
+                    if (filtered.Count == 0) newOutRefs.Remove(refName);
+                    else newOutRefs[refName] = filtered;
+                }
+                else
+                {
+                    int toId = op.ToId!.Value;
+                    var rebuilt = new List<int>(targets.Count);
+                    var seen = new HashSet<int>();
+                    foreach (var t in targets)
+                    {
+                        var mapped = fromSet.Contains(t) ? toId : t;
+                        if (seen.Add(mapped)) rebuilt.Add(mapped);
+                    }
+                    // Cardinality=one: после переподшивки не должно быть > 1.
+                    var srcType = s.ResolveType(srcNode.TypeName);
+                    var rd = srcType.OutRefs.FirstOrDefault(r =>
+                        string.Equals(r.Name, refName, StringComparison.Ordinal));
+                    if (rd is not null && rd.Cardinality == Cardinality.One && rebuilt.Count > 1)
+                        throw new WriteApiException(
+                            "invalid_cardinality",
+                            $"Узел id={srcNode.Id} связь '{refName}' имеет cardinality=one; после переподшивки получилось {rebuilt.Count} целей.",
+                            "Сначала сними часть связей через delete-ref, затем повтори redirect-refs.");
+                    newOutRefs[refName] = rebuilt;
+                }
+
+                changes.Add((srcNode.Id, refName, hits));
+            }
+
+            if (newOutRefs is not null)
+            {
+                nodesToReplace[srcNode.Id] = new Node
+                {
+                    Id = srcNode.Id,
+                    TypeName = srcNode.TypeName,
+                    Title = srcNode.Title,
+                    Text = srcNode.Text,
+                    OutRefs = newOutRefs,
+                    SourceFile = srcNode.SourceFile,
+                };
+            }
+        }
+
+        if (nodesToReplace.Count == 0)
+            throw new WriteApiException(
+                "no_effect",
+                "Ни одной cross-ref на узлы из FromIds не найдено — переподшивать нечего.",
+                "Сверь набор источников через get-in-refs --id=<from_id>.");
+
+        foreach (var (id, updated) in nodesToReplace)
+        {
+            s.Replace(updated);
+            s.MarkDocumentDirtyForNode(id);
+        }
+
+        var changesArr = new JsonArray();
+        foreach (var c in changes)
+        {
+            changesArr.Add((JsonNode?)new JsonObject
+            {
+                ["source_id"] = c.SourceId,
+                ["name"] = c.RefName,
+                ["removed_count"] = c.RemovedCount,
             });
         }
 
-        s.MarkDocumentDirtyForNode(op.Id);
-        s.Remove(op.Id);
-
-        return new WriteOpResult("delete-node", new JsonObject
+        return new WriteOpResult("redirect-refs", new JsonObject
         {
-            ["id"] = op.Id,
+            ["from_ids"] = new JsonArray(op.FromIds.Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()),
+            ["to_id"] = op.ToId,
+            ["unlink"] = op.Unlink,
+            ["name"] = op.Name,
+            ["changes"] = changesArr,
         });
     }
 
@@ -750,6 +1147,12 @@ public sealed class WriteApi
             SourceFile = newSourceFile,
         };
         s.Replace(moved);
+
+        // Симметричная переподшивка path-child записей в out_refs обоих родителей.
+        if (oldParentId != Node.RootId)
+            RemoveFromParentPathChildRef(s, oldParentId, node.TypeName, node.Id);
+        if (op.NewParentId != Node.RootId)
+            AppendToParentPathChildRef(s, op.NewParentId, node.TypeName, node.Id);
 
         if (!string.Equals(newSourceFile, node.SourceFile, StringComparison.Ordinal))
             UpdateSubtreeSourceFile(s, op.Id, newSourceFile);
@@ -1065,6 +1468,12 @@ public sealed class WriteApi
             SourceFile = folder.SourceFile,
         };
         s.Replace(moved);
+
+        // Симметричная переподшивка path-child записей у обоих folder-родителей.
+        if (oldParentId != Node.RootId)
+            RemoveFromParentPathChildRef(s, oldParentId, folder.TypeName, folder.Id);
+        if (op.NewParentId != Node.RootId)
+            AppendToParentPathChildRef(s, op.NewParentId, folder.TypeName, folder.Id);
 
         CascadeFolderSourceFile(s, folder.Id, oldRel, newRel);
 

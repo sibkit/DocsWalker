@@ -383,52 +383,107 @@ public static class DocumentLoader
     }
 
     /// <summary>
-    /// Читает узел смыслового container-типа (section и подобные). Формат —
-    /// single_key_mapping `"(#id) title": [list of blocks]`. Внутри каждый блок —
-    /// single_key_mapping с именем связи, объявленной в типе как RefDef, и списком атомов.
+    /// Читает узел смыслового container-типа (section). Формат — single_key_mapping
+    /// "(#id) title": [list of blocks]. Дальше делегирует в <see cref="ReadSemanticBody"/>,
+    /// чтобы один путь чтения покрывал и top-level (section), и nested (rule с examples).
     /// </summary>
     private static int ReadSemanticContainer(
         YamlReader r, Graph graph, TypeIndex idx, string sourceFile, int parentId, string typeName)
     {
         var type = idx.GetType(typeName, sourceFile);
-        r.Expect<MappingStart>();
+        return ReadSemanticBody(r, graph, idx, sourceFile, parentId, type);
+    }
 
+    /// <summary>
+    /// Универсальное чтение смыслового узла с title_source=inline_key. Поддерживает:
+    ///   - <b>atom-form</b> (<c>"(#id) title": text</c>) — для типов с text_required=true и
+    ///     без semantic-refs;
+    ///   - <b>container-form</b> (<c>"(#id) title":\n  - block...</c>) — внутри допустим
+    ///     блок <c>text: ...</c> и блоки semantic-refs (path-child = nested-atoms,
+    ///     cross-ref = id-list flow).
+    /// Распознавание формы — по следующему событию после ключа: Scalar = atom, SequenceStart
+    /// = container.
+    /// </summary>
+    private static int ReadSemanticBody(
+        YamlReader r, Graph graph, TypeIndex idx, string sourceFile, int parentId, TypeDefinition type)
+    {
+        if (type.TitleSource != TitleSource.InlineKey)
+            throw new GraphLoadException(
+                "unsupported_title_source",
+                sourceFile,
+                $"Тип '{type.Name}' имеет title_source={type.TitleSource}; loader поддерживает только inline_key для смысловых узлов.");
+
+        r.Expect<MappingStart>();
         var rawKey = r.NextScalarValue();
         if (!TitleFormat.TryParse(InlineKeyFormat, rawKey, out var id, out var title))
             throw new GraphLoadException(
                 "invalid_title_format",
                 sourceFile,
-                $"Ключ '{rawKey}' не соответствует формату '(#id) title' для типа '{typeName}'.");
+                $"Ключ '{rawKey}' не соответствует формату '(#id) title' для типа '{type.Name}'.");
 
+        string text = string.Empty;
         var outRefs = new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal)
         {
             [Node.PathRefName] = new[] { parentId },
         };
 
-        r.Expect<SequenceStart>();
-        var seenBlocks = new HashSet<string>(StringComparer.Ordinal);
-        while (r.Peek() is MappingStart)
+        var nextEvent = r.Peek();
+        if (nextEvent is Scalar)
         {
-            r.Expect<MappingStart>();
-            var blockName = r.NextScalarValue();
-            if (string.Equals(blockName, Node.PathRefName, StringComparison.Ordinal))
-                throw new GraphLoadException(
-                    "reserved_ref_name",
-                    sourceFile,
-                    $"В узле id={id} ('{type.Name}') встречен блок 'path' — связь path управляется только структурой docs/, не записывается в YAML.");
-            if (!seenBlocks.Add(blockName))
-                throw new GraphLoadException(
-                    "duplicate_block",
-                    sourceFile,
-                    $"В узле id={id} ('{type.Name}') блок '{blockName}' встречается дважды.");
-
-            var refDef = FindRefDef(type, blockName, sourceFile, id);
-            var atomIds = ReadAtoms(r, graph, idx, sourceFile, id, refDef);
-            outRefs[blockName] = atomIds;
-
-            r.Expect<MappingEnd>();
+            text = r.NextScalarValue();
         }
-        r.Expect<SequenceEnd>();
+        else if (nextEvent is SequenceStart)
+        {
+            r.Expect<SequenceStart>();
+            var seenBlocks = new HashSet<string>(StringComparer.Ordinal);
+            while (r.Peek() is MappingStart)
+            {
+                r.Expect<MappingStart>();
+                var blockName = r.NextScalarValue();
+
+                if (string.Equals(blockName, TextFieldName, StringComparison.Ordinal))
+                {
+                    text = r.NextScalarValue();
+                }
+                else if (string.Equals(blockName, Node.PathRefName, StringComparison.Ordinal))
+                {
+                    throw new GraphLoadException(
+                        "reserved_ref_name",
+                        sourceFile,
+                        $"В узле id={id} ('{type.Name}') встречен блок 'path' — связь path управляется только структурой docs/, не записывается в YAML.");
+                }
+                else
+                {
+                    if (!seenBlocks.Add(blockName))
+                        throw new GraphLoadException(
+                            "duplicate_block",
+                            sourceFile,
+                            $"В узле id={id} ('{type.Name}') блок '{blockName}' встречается дважды.");
+
+                    var refDef = FindRefDef(type, blockName, sourceFile, id);
+                    if (IsPathChildRef(idx, type.Name, refDef))
+                    {
+                        var atomIds = ReadAtoms(r, graph, idx, sourceFile, id, refDef);
+                        outRefs[blockName] = atomIds;
+                    }
+                    else
+                    {
+                        var ids = ReadIdListFlow(r, sourceFile, blockName, id);
+                        outRefs[blockName] = ids;
+                    }
+                }
+                r.Expect<MappingEnd>();
+            }
+            r.Expect<SequenceEnd>();
+        }
+        else
+        {
+            throw new GraphLoadException(
+                "yaml_unexpected",
+                sourceFile,
+                $"В узле id={id} ('{type.Name}'): после ключа ожидался скаляр (atom-form) или sequence (container-form), получено {nextEvent?.GetType().Name ?? "null"}.");
+        }
+
         r.Expect<MappingEnd>();
 
         graph.Add(new Node
@@ -436,11 +491,48 @@ public static class DocumentLoader
             Id = id,
             TypeName = type.Name,
             Title = title,
-            Text = string.Empty,
+            Text = text,
             OutRefs = outRefs,
             SourceFile = sourceFile,
         });
         return id;
+    }
+
+    /// <summary>
+    /// Читает flow-list целых id для cross-ref блока: <c>name: [188, 189]</c>.
+    /// </summary>
+    private static IReadOnlyList<int> ReadIdListFlow(YamlReader r, string sourceFile, string refName, int parentId)
+    {
+        r.Expect<SequenceStart>();
+        var ids = new List<int>();
+        while (r.Peek() is Scalar)
+        {
+            var raw = r.NextScalarValue();
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
+                throw new GraphLoadException(
+                    "invalid_id_in_list",
+                    sourceFile,
+                    $"В узле id={parentId} связь '{refName}': ожидалось целое число в id-list, получено '{raw}'.");
+            ids.Add(v);
+        }
+        r.Expect<SequenceEnd>();
+        return ids;
+    }
+
+    /// <summary>
+    /// path-child ref: связь, через которую цели становятся path-детьми источника
+    /// (target.path_targets ⊇ source.type). Только такие refs сериализуются и
+    /// читаются как nested-atoms; cross-refs — как id-list flow.
+    /// </summary>
+    private static bool IsPathChildRef(TypeIndex idx, string sourceType, RefDef rd)
+    {
+        foreach (var targetTypeName in rd.TargetTypes)
+        {
+            if (!idx.TryGetType(targetTypeName, out var targetType)) continue;
+            if (targetType.PathTargets.Any(pt => string.Equals(pt, sourceType, StringComparison.Ordinal)))
+                return true;
+        }
+        return false;
     }
 
     private static RefDef FindRefDef(TypeDefinition type, string name, string sourceFile, int parentId)
@@ -472,51 +564,14 @@ public static class DocumentLoader
         var ids = new List<int>();
         while (r.Peek() is MappingStart)
         {
-            ids.Add(ReadAtom(r, graph, sourceFile, parentId, atomType));
+            // Делегируем в общий ReadSemanticBody — он сам распознает atom vs container
+            // форму по следующему событию (Scalar или SequenceStart). Это позволяет атомам
+            // с semantic-refs (например, rule с examples) корректно читаться как nested
+            // элементы блока ref'а path-родителя.
+            ids.Add(ReadSemanticBody(r, graph, idx, sourceFile, parentId, atomType));
         }
         r.Expect<SequenceEnd>();
         return ids;
-    }
-
-    /// <summary>
-    /// Читает атом-лист — single_key_mapping `"(#id) title": text`.
-    /// Применимо к смысловым типам с text_required=true и пустым OutRefs (statement, rule, definition, …).
-    /// </summary>
-    private static int ReadAtom(
-        YamlReader r, Graph graph, string sourceFile, int parentId, TypeDefinition atomType)
-    {
-        if (atomType.TitleSource != TitleSource.InlineKey)
-            throw new GraphLoadException(
-                "unsupported_atom_type",
-                sourceFile,
-                $"Тип '{atomType.Name}' имеет title_source={atomType.TitleSource}; loader атомов поддерживает только inline_key.");
-
-        r.Expect<MappingStart>();
-        var rawKey = r.NextScalarValue();
-        if (!TitleFormat.TryParse(InlineKeyFormat, rawKey, out var id, out var title))
-            throw new GraphLoadException(
-                "invalid_title_format",
-                sourceFile,
-                $"Ключ '{rawKey}' не соответствует формату '(#id) title' для атома типа '{atomType.Name}'.");
-
-        var text = r.NextScalarValue();
-        r.Expect<MappingEnd>();
-
-        var outRefs = new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal)
-        {
-            [Node.PathRefName] = new[] { parentId },
-        };
-
-        graph.Add(new Node
-        {
-            Id = id,
-            TypeName = atomType.Name,
-            Title = title,
-            Text = text,
-            OutRefs = outRefs,
-            SourceFile = sourceFile,
-        });
-        return id;
     }
 
     private static int ReadIntScalar(YamlReader r, string field, string sourceFile)

@@ -3,18 +3,49 @@ text: Технологический стек проекта DocsWalker.
 sections:
   - "(#65) Версия .NET":
     - rules:
-      - "(#87) Целевой LTS": Все компоненты DocsWalker собираются на актуальной LTS-версии .NET. На момент старта проекта — .NET 10. Конкретная версия SDK фиксируется в общем global.json (на момент бутстрапа — 10.0.201). TargetFramework каждого проекта — net10.0.
-      - "(#88) Единое обновление": Переход на новую LTS-версию выполняется единым обновлением для всех проектов решения.
+      - "(#87) Целевой LTS":
+        - text: Все компоненты DocsWalker собираются на актуальной LTS-версии .NET. На момент старта проекта — .NET 10. Конкретная версия SDK фиксируется в общем global.json (на момент бутстрапа — 10.0.201). TargetFramework каждого проекта — net10.0.
+        - examples: [259]
+      - "(#88) Единое обновление":
+        - text: Переход на новую LTS-версию выполняется единым обновлением для всех проектов решения.
+        - examples: [260]
+    - examples:
+      - "(#259) global.json": global.json фиксирует SDK 10.0.201; TargetFramework=net10.0 во всех csproj.
+      - "(#260) Bump": Переход с .NET 10 на .NET 12 правит TargetFramework во всех csproj и global.json одним коммитом.
   - "(#66) Нативная компиляция":
     - rules:
-      - "(#89) AOT для CLI": CLI-хост (DocsWalker.Cli) публикуется через Native AOT (PublishAot=true в csproj).
-      - "(#90) AOT для ядра": Библиотека ядра (DocsWalker.Core) помечается IsAotCompatible=true. Код, использующий рефлексию для сериализации/десериализации, не допускается. Для System.Text.Json используются source-генераторы (JsonSerializerContext).
-      - "(#91) Тесты на CLR": Тестовый проект (DocsWalker.Tests) собирается и запускается на стандартном CLR (xUnit с Native AOT не совместим). Это не отменяет требований к AOT-совместимости кода в src/.
+      - "(#89) AOT для CLI":
+        - text: CLI-хост (DocsWalker.Cli) публикуется через Native AOT (PublishAot=true в csproj).
+        - examples: [261]
+      - "(#90) AOT для ядра":
+        - text: Библиотека ядра (DocsWalker.Core) помечается IsAotCompatible=true. Код, использующий рефлексию для сериализации/десериализации, не допускается. Для System.Text.Json используются source-генераторы (JsonSerializerContext).
+        - examples: [262]
+      - "(#91) Тесты на CLR":
+        - text: Тестовый проект (DocsWalker.Tests) собирается и запускается на стандартном CLR (xUnit с Native AOT не совместим). Это не отменяет требований к AOT-совместимости кода в src/.
+        - examples: [263]
+    - examples:
+      - "(#261) PublishAot": В DocsWalker.Cli.csproj — <PublishAot>true</PublishAot>.
+      - "(#262) source-gen": Для System.Text.Json используется JsonSerializerContext; через рефлексию сериализация запрещена.
+      - "(#263) Тесты на CLR": DocsWalker.Tests запускается dotnet test, не через AOT-publish.
   - "(#67) YAML-парсер":
     - rules:
-      - "(#92) SharpYaml": Парсинг и сериализация YAML — через библиотеку SharpYaml (NuGet, источник xoofx/SharpYaml).
-      - "(#93) Event-stream API": Используется event-stream API SharpYaml (SharpYaml.Parser.CreateParser → IParser, события из SharpYaml.Events). Использование object-mapping API SharpYaml через рефлексию не допускается — несовместимо с Native AOT.
+      - "(#92) SharpYaml":
+        - text: Парсинг и сериализация YAML — через библиотеку SharpYaml (NuGet, источник xoofx/SharpYaml).
+        - examples: [264]
+      - "(#93) Event-stream API":
+        - text: Используется event-stream API SharpYaml (SharpYaml.Parser.CreateParser → IParser, события из SharpYaml.Events). Использование object-mapping API SharpYaml через рефлексию не допускается — несовместимо с Native AOT.
+        - examples: [265]
+    - examples:
+      - "(#264) PackageReference": В csproj указан <PackageReference Include="SharpYaml" .../>.
+      - "(#265) Парсер": В коде — SharpYaml.Parser.CreateParser, события из SharpYaml.Events; Serializer.Deserialize<T> не вызывается.
   - "(#68) Тесты":
     - rules:
-      - "(#94) xUnit": xUnit. Запускается через dotnet test.
-      - "(#95) Smoke-тесты": Smoke-тесты на минимальное подмножество YAML, поддерживаемое DocsWalker, обязательны и должны быть зелёными до любого продвижения по реализации. Подмножество — block-mapping, block-sequence, flow-sequence, flow-mapping, скаляры в стилях unquoted/single-quoted/double-quoted, integer, true/false, комментарии #.
+      - "(#94) xUnit":
+        - text: xUnit. Запускается через dotnet test.
+        - examples: [266]
+      - "(#95) Smoke-тесты":
+        - text: Smoke-тесты на минимальное подмножество YAML, поддерживаемое DocsWalker, обязательны и должны быть зелёными до любого продвижения по реализации. Подмножество — block-mapping, block-sequence, flow-sequence, flow-mapping, скаляры в стилях unquoted/single-quoted/double-quoted, integer, true/false, комментарии
+        - examples: [267]
+    - examples:
+      - "(#266) Запуск xUnit": dotnet test src/DocsWalker.Tests — стандартный xUnit-runner.
+      - "(#267) YAML-фичи": Тесты проверяют block-mapping, flow-sequence, скаляры в quoted/unquoted стилях, integer, true/false, комментарии.

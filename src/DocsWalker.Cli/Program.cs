@@ -69,10 +69,11 @@ internal static class Dispatcher
             "check_integrity" => ReadHandlers.CheckIntegrity(rootPath),
             "create_node"     => WriteHandlers.CreateNode(rootPath, parsed.Params),
             "update_node"     => WriteHandlers.UpdateNode(rootPath, parsed.Params),
-            "delete_node"     => WriteHandlers.DeleteNode(rootPath, parsed.Params),
+            "delete_nodes"    => WriteHandlers.DeleteNodes(rootPath, parsed.Params),
             "move_node"       => WriteHandlers.MoveNode(rootPath, parsed.Params),
             "create_ref"      => WriteHandlers.CreateRef(rootPath, parsed.Params),
             "delete_ref"      => WriteHandlers.DeleteRef(rootPath, parsed.Params),
+            "redirect_refs"   => WriteHandlers.RedirectRefs(rootPath, parsed.Params),
             "transaction"     => WriteHandlers.Transaction(rootPath, parsed.Params),
             _                 => NotImplemented(spec),
         };

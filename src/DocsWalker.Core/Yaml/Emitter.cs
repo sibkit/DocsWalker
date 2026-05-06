@@ -90,8 +90,13 @@ public sealed class Emitter
 
     /// <summary>
     /// Эмитит смысловой узел (title_source=inline_key) под dash <paramref name="dashIndent"/>.
-    /// Атом-форма для типа с text_required=true и пустым out_refs:
-    /// <c>"(#id) title": text</c>; иначе контейнерная форма со списком ref-блоков.
+    /// Решение по форме — по типу:
+    ///   - <b>atom</b> (только text, без semantic-refs): <c>"(#id) title": text</c>.
+    ///   - <b>container</b> (есть semantic-refs или нет text): <c>"(#id) title":\n  - block...</c>.
+    /// В container-форме сначала идёт <c>- text: ...</c> (если text_required и текст не пуст),
+    /// затем по одному блоку на каждую заполненную semantic-ref. Per-ref форма:
+    ///   - path-child ref (target.path_targets ⊇ source.type) — nested-atoms (sequence атомов);
+    ///   - cross-ref (siblings/cross-tree) — flow-list id (<c>name: [188, 189]</c>).
     /// </summary>
     private void WriteSemanticNode(int dashIndent, Node node)
     {
@@ -99,7 +104,10 @@ public sealed class Emitter
         var key = TitleFormat.Format(DocumentLoader.InlineKeyFormat, node.Id, node.Title);
         var encodedKey = Quoting.Format(key, forceDoubleQuoted: true);
 
-        bool isAtomForm = type.TextRequired && type.OutRefs.Count == 0;
+        bool typeHasSemanticRefs = type.OutRefs.Any(rd =>
+            !string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal));
+        bool isAtomForm = type.TextRequired && !typeHasSemanticRefs;
+
         if (isAtomForm)
         {
             WriteLine(dashIndent, "- " + encodedKey + ": " + Quoting.Format(node.Text));
@@ -107,19 +115,32 @@ public sealed class Emitter
         }
 
         var orderedRefs = EnumerateOrderedRefs(node).ToList();
-        if (orderedRefs.Count == 0)
+        bool hasText = type.TextRequired && !string.IsNullOrEmpty(node.Text);
+
+        if (orderedRefs.Count == 0 && !hasText)
         {
             WriteLine(dashIndent, "- " + encodedKey + ": []");
             return;
         }
+
         WriteLine(dashIndent, "- " + encodedKey + ":");
         var blockDashIndent = dashIndent + 2;
+        if (hasText)
+        {
+            WriteLine(blockDashIndent, "- text: " + Quoting.Format(node.Text));
+        }
         foreach (var (refName, targetIds) in orderedRefs)
-            WriteRefBlockNested(blockDashIndent, refName, targetIds);
+        {
+            var rd = type.OutRefs.FirstOrDefault(r => string.Equals(r.Name, refName, StringComparison.Ordinal));
+            if (rd is not null && !IsPathChildRef(type.Name, rd))
+                WriteRefIdList(blockDashIndent, refName, targetIds);
+            else
+                WriteRefBlockNested(blockDashIndent, refName, targetIds);
+        }
     }
 
     /// <summary>
-    /// Эмитит блок-связь как элемент sequence на dash <paramref name="dashIndent"/>:
+    /// Эмитит block-seq path-child связи как элемент sequence на dash <paramref name="dashIndent"/>:
     /// <c>- name:</c> + sequence дочерних узлов на dash <paramref name="dashIndent"/>+2.
     /// </summary>
     private void WriteRefBlockNested(int dashIndent, string refName, IReadOnlyList<int> targetIds)
@@ -136,6 +157,37 @@ public sealed class Emitter
             var child = ResolveStructuralChild(targetId, refName);
             WriteSemanticNode(atomDashIndent, child);
         }
+    }
+
+    /// <summary>
+    /// Эмитит cross-ref как flow-list id: <c>- name: [188, 189]</c>. Цели не сериализуются
+    /// здесь — они уже эмитятся в собственном path-родителе (siblings/cross-tree).
+    /// </summary>
+    private void WriteRefIdList(int dashIndent, string refName, IReadOnlyList<int> targetIds)
+    {
+        if (targetIds.Count == 0)
+        {
+            WriteLine(dashIndent, "- " + refName + ": []");
+            return;
+        }
+        var ids = string.Join(", ", targetIds.Select(t => t.ToString(CultureInfo.InvariantCulture)));
+        WriteLine(dashIndent, "- " + refName + ": [" + ids + "]");
+    }
+
+    /// <summary>
+    /// path-child ref: связь, через которую цели становятся path-детьми источника
+    /// (target.path_targets ⊇ source.type). Только такие refs сериализуются как nested-atoms;
+    /// остальные — id-list flow.
+    /// </summary>
+    private bool IsPathChildRef(string sourceType, RefDef rd)
+    {
+        foreach (var targetTypeName in rd.TargetTypes)
+        {
+            if (!_typeByName.TryGetValue(targetTypeName, out var targetType)) continue;
+            if (targetType.PathTargets.Any(pt => string.Equals(pt, sourceType, StringComparison.Ordinal)))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>

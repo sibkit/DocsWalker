@@ -18,11 +18,13 @@ namespace DocsWalker.Core.Api;
 ///     "text": "...",
 ///     "refs": { "path": [1] }
 ///   },
-///   { "op": "update-node", "id": 42, "title": "...", "text": "..." },
-///   { "op": "delete-node", "id": 42 },
-///   { "op": "move-node",   "id": 42, "new_parent_id": 8, "tree": "path" },
-///   { "op": "create-ref",  "from_id": 42, "name": "related", "to_id": 8 },
-///   { "op": "delete-ref",  "from_id": 42, "name": "related", "to_id": 8 }
+///   { "op": "update-node",    "id": 42, "title": "...", "text": "..." },
+///   { "op": "delete-nodes",   "ids": [42, 43, 44] },
+///   { "op": "move-node",      "id": 42, "new_parent_id": 8, "tree": "path" },
+///   { "op": "create-ref",     "from_id": 42, "name": "related", "to_id": 8 },
+///   { "op": "delete-ref",     "from_id": 42, "name": "related", "to_id": 8 },
+///   { "op": "redirect-refs",  "from_ids": [42], "to_id": 100, "name": "related" },
+///   { "op": "redirect-refs",  "from_ids": [42], "unlink": true }
 /// ]
 /// </code>
 /// </summary>
@@ -63,12 +65,13 @@ public static class TransactionParser
         var opName = ReadRequiredString(obj, "op");
         return opName switch
         {
-            "create-node"   => ParseCreateNode(obj),
-            "update-node"   => ParseUpdateNode(obj),
-            "delete-node"   => ParseDeleteNode(obj),
-            "move-node"     => ParseMoveNode(obj),
-            "create-ref"    => ParseCreateRef(obj),
-            "delete-ref"    => ParseDeleteRef(obj),
+            "create-node"    => ParseCreateNode(obj),
+            "update-node"    => ParseUpdateNode(obj),
+            "delete-nodes"   => ParseDeleteNodes(obj),
+            "move-node"      => ParseMoveNode(obj),
+            "create-ref"     => ParseCreateRef(obj),
+            "delete-ref"     => ParseDeleteRef(obj),
+            "redirect-refs"  => ParseRedirectRefs(obj),
             _ => throw new WriteApiException(
                     "unknown_op",
                     $"Неизвестное имя операции '{opName}'."),
@@ -124,8 +127,17 @@ public static class TransactionParser
             NewTitle: ReadOptionalString(obj, "title"),
             NewText: ReadOptionalString(obj, "text"));
 
-    private static DeleteNodeOp ParseDeleteNode(JsonObject obj) =>
-        new(ReadRequiredInt(obj, "id"));
+    private static DeleteNodesOp ParseDeleteNodes(JsonObject obj) =>
+        new(ReadRequiredIntArray(obj, "ids"));
+
+    private static RedirectRefsOp ParseRedirectRefs(JsonObject obj)
+    {
+        var fromIds = ReadRequiredIntArray(obj, "from_ids");
+        int? toId = ReadOptionalInt(obj, "to_id");
+        var name = ReadOptionalString(obj, "name");
+        bool unlink = ReadOptionalBool(obj, "unlink") ?? false;
+        return new RedirectRefsOp(fromIds, toId, name, unlink);
+    }
 
     private static MoveNodeOp ParseMoveNode(JsonObject obj) =>
         new(
@@ -189,5 +201,52 @@ public static class TransactionParser
         throw new WriteApiException(
             "invalid_field_type",
             $"Поле '{field}' должно быть объектом.");
+    }
+
+    private static int? ReadOptionalInt(JsonObject obj, string field)
+    {
+        if (!obj.TryGetPropertyValue(field, out var node) || node is null) return null;
+        if (node is JsonValue jv)
+        {
+            if (jv.TryGetValue<int>(out var i)) return i;
+            if (jv.TryGetValue<long>(out var l)) return checked((int)l);
+        }
+        throw new WriteApiException(
+            "invalid_field_type",
+            $"Поле '{field}' должно быть целым числом.");
+    }
+
+    private static bool? ReadOptionalBool(JsonObject obj, string field)
+    {
+        if (!obj.TryGetPropertyValue(field, out var node) || node is null) return null;
+        if (node is JsonValue jv && jv.TryGetValue<bool>(out var b)) return b;
+        throw new WriteApiException(
+            "invalid_field_type",
+            $"Поле '{field}' должно быть булевым (true/false).");
+    }
+
+    private static IReadOnlyList<int> ReadRequiredIntArray(JsonObject obj, string field)
+    {
+        if (!obj.TryGetPropertyValue(field, out var node) || node is null)
+            throw new WriteApiException(
+                "missing_field",
+                $"Поле '{field}' обязательно.");
+        if (node is not JsonArray arr)
+            throw new WriteApiException(
+                "invalid_field_type",
+                $"Поле '{field}' должно быть массивом целых чисел.");
+        var list = new List<int>(arr.Count);
+        for (int i = 0; i < arr.Count; i++)
+        {
+            if (arr[i] is JsonValue jv)
+            {
+                if (jv.TryGetValue<int>(out var iv)) { list.Add(iv); continue; }
+                if (jv.TryGetValue<long>(out var lv)) { list.Add(checked((int)lv)); continue; }
+            }
+            throw new WriteApiException(
+                "invalid_field_type",
+                $"Поле '{field}'[{i}] должно быть целым числом.");
+        }
+        return list;
     }
 }
