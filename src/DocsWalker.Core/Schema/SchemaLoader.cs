@@ -19,12 +19,13 @@ public sealed class SchemaLoadException : Exception
 }
 
 /// <summary>
-/// Парсер мета-схемы и Схемы под refs-модель v4. Использует event-stream API SharpYaml
-/// (см. docs/Стек.yml/«YAML-парсер»). Никакой reflection — AOT-совместимо.
+/// Парсер мета-схемы и Схемы под refs-модель v5 (с tree-scopes). Использует
+/// event-stream API SharpYaml (см. docs/Стек.yml/«YAML-парсер»). Никакой
+/// reflection — AOT-совместимо.
 /// </summary>
 public static class SchemaLoader
 {
-    public const int SupportedMetaSchemaVersion = 4;
+    public const int SupportedMetaSchemaVersion = 5;
 
     public static MetaSchemaDocument LoadMetaSchema(string filePath) =>
         LoadFile(filePath, ParseMetaSchema);
@@ -86,8 +87,8 @@ public static class SchemaLoader
                 case "name": name = r.NextScalarValue(); break;
                 case "description": description = r.NextScalarValue(); break;
                 case "primitive_types": primitiveTypes = ReadStringList(r); break;
-                // Структура schema_root / type_definition / ref_def фиксирована v4 и
-                // заложена в код валидатора; пропускаем — храним только верхние поля.
+                // Структура schema_root / type_definition / ref_def / tree_definition фиксирована
+                // v5 и заложена в код валидатора; пропускаем — храним только верхние поля.
                 default: r.SkipValue(); break;
             }
         }
@@ -121,6 +122,7 @@ public static class SchemaLoader
         r.Expect<MappingStart>();
 
         string? description = null;
+        IReadOnlyList<TreeDefinition>? trees = null;
         IReadOnlyList<TypeDefinition>? types = null;
 
         while (r.Peek() is Scalar)
@@ -129,6 +131,7 @@ public static class SchemaLoader
             switch (key)
             {
                 case "description": description = r.NextScalarValue(); break;
+                case "trees": trees = ReadTreeList(r); break;
                 case "types": types = ReadTypeList(r); break;
                 default: r.SkipValue(); break;
             }
@@ -139,9 +142,43 @@ public static class SchemaLoader
         r.Expect<StreamEnd>();
 
         Require(filePath, "description", description is not null);
+        Require(filePath, "trees", trees is not null);
         Require(filePath, "types", types is not null);
 
-        return new SchemaDocument(description!, types!);
+        return new SchemaDocument(description!, trees!, types!);
+    }
+
+    private static IReadOnlyList<TreeDefinition> ReadTreeList(YamlReader r)
+    {
+        r.Expect<SequenceStart>();
+        var list = new List<TreeDefinition>();
+        while (r.Peek() is MappingStart)
+        {
+            list.Add(ReadTree(r));
+        }
+        r.Expect<SequenceEnd>();
+        return list;
+    }
+
+    private static TreeDefinition ReadTree(YamlReader r)
+    {
+        r.Expect<MappingStart>();
+        string? name = null;
+        string? description = null;
+        while (r.Peek() is Scalar)
+        {
+            var key = r.NextScalarValue();
+            switch (key)
+            {
+                case "name": name = r.NextScalarValue(); break;
+                case "description": description = r.NextScalarValue(); break;
+                default: r.SkipValue(); break;
+            }
+        }
+        r.Expect<MappingEnd>();
+        if (name is null)
+            throw NewError("invalid_schema", "tree_definition без поля 'name'.");
+        return new TreeDefinition(name, description);
     }
 
     private static IReadOnlyList<TypeDefinition> ReadTypeList(YamlReader r)
@@ -164,7 +201,6 @@ public static class SchemaLoader
         string? description = null;
         TitleSource? titleSource = null;
         bool? textRequired = null;
-        IReadOnlyList<string>? pathTargets = null;
         IReadOnlyList<RefDef>? outRefs = null;
 
         while (r.Peek() is Scalar)
@@ -176,7 +212,6 @@ public static class SchemaLoader
                 case "description": description = r.NextScalarValue(); break;
                 case "title_source": titleSource = ParseTitleSource(r.NextScalarValue()); break;
                 case "text_required": textRequired = ReadBool(r, key); break;
-                case "path_targets": pathTargets = ReadStringList(r); break;
                 case "out_refs": outRefs = ReadRefDefList(r); break;
                 default: r.SkipValue(); break;
             }
@@ -190,15 +225,12 @@ public static class SchemaLoader
             throw NewError("invalid_schema", $"Тип '{name}' без поля 'title_source'.");
         if (textRequired is null)
             throw NewError("invalid_schema", $"Тип '{name}' без поля 'text_required'.");
-        if (pathTargets is null)
-            throw NewError("invalid_schema", $"Тип '{name}' без поля 'path_targets'.");
 
         return new TypeDefinition(
             name,
             description,
             titleSource.Value,
             textRequired.Value,
-            pathTargets,
             outRefs ?? Array.Empty<RefDef>());
     }
 
@@ -220,6 +252,7 @@ public static class SchemaLoader
 
         string? name = null;
         IReadOnlyList<string>? targetTypes = null;
+        string? tree = null;
         Cardinality? cardinality = null;
         bool? required = null;
         string? description = null;
@@ -231,6 +264,7 @@ public static class SchemaLoader
             {
                 case "name": name = r.NextScalarValue(); break;
                 case "target_types": targetTypes = ReadStringList(r); break;
+                case "tree": tree = r.NextScalarValue(); break;
                 case "cardinality": cardinality = ParseCardinality(r.NextScalarValue()); break;
                 case "required": required = ReadBool(r, key); break;
                 case "description": description = r.NextScalarValue(); break;
@@ -244,12 +278,27 @@ public static class SchemaLoader
             throw NewError("invalid_schema", "ref_def без поля 'name'.");
         if (targetTypes is null)
             throw NewError("invalid_schema", $"ref_def '{name}' без поля 'target_types'.");
-        if (cardinality is null)
-            throw NewError("invalid_schema", $"ref_def '{name}' без поля 'cardinality'.");
-        if (required is null)
-            throw NewError("invalid_schema", $"ref_def '{name}' без поля 'required'.");
 
-        return new RefDef(name, targetTypes, cardinality.Value, required.Value, description);
+        if (tree is not null)
+        {
+            if (cardinality is not null)
+                throw NewError(
+                    "invalid_schema",
+                    $"ref_def '{name}': при заданном tree поле 'cardinality' указывать запрещено (подразумевается one).");
+            if (required is not null)
+                throw NewError(
+                    "invalid_schema",
+                    $"ref_def '{name}': при заданном tree поле 'required' указывать запрещено (подразумевается true).");
+            // tree-связь автоматически one + required.
+            return new RefDef(name, targetTypes, tree, Cardinality.One, true, description);
+        }
+
+        if (cardinality is null)
+            throw NewError("invalid_schema", $"ref_def '{name}' без поля 'cardinality' (обязательно при отсутствии tree).");
+        if (required is null)
+            throw NewError("invalid_schema", $"ref_def '{name}' без поля 'required' (обязательно при отсутствии tree).");
+
+        return new RefDef(name, targetTypes, null, cardinality.Value, required.Value, description);
     }
 
     private static IReadOnlyList<string> ReadStringList(YamlReader r)
@@ -328,9 +377,22 @@ public static class SchemaJson
         {
             ["description"] = doc.Description,
         };
+        var trees = new JsonArray();
+        foreach (var tr in doc.Trees) trees.Add((JsonNode?)TreeDefinitionToJson(tr));
+        obj["trees"] = trees;
         var types = new JsonArray();
         foreach (var t in doc.Types) types.Add((JsonNode?)TypeDefinitionToJson(t));
         obj["types"] = types;
+        return obj;
+    }
+
+    private static JsonObject TreeDefinitionToJson(TreeDefinition t)
+    {
+        var obj = new JsonObject
+        {
+            ["name"] = t.Name,
+        };
+        if (t.Description is not null) obj["description"] = t.Description;
         return obj;
     }
 
@@ -343,7 +405,6 @@ public static class SchemaJson
         if (t.Description is not null) obj["description"] = t.Description;
         obj["title_source"] = TitleSourceToString(t.TitleSource);
         obj["text_required"] = t.TextRequired;
-        obj["path_targets"] = StringsToJson(t.PathTargets);
         if (t.OutRefs.Count > 0)
         {
             var arr = new JsonArray();
@@ -359,9 +420,16 @@ public static class SchemaJson
         {
             ["name"] = rd.Name,
             ["target_types"] = StringsToJson(rd.TargetTypes),
-            ["cardinality"] = CardinalityToString(rd.Cardinality),
-            ["required"] = rd.Required,
         };
+        if (rd.Tree is not null)
+        {
+            obj["tree"] = rd.Tree;
+        }
+        else
+        {
+            obj["cardinality"] = CardinalityToString(rd.Cardinality);
+            obj["required"] = rd.Required;
+        }
         if (rd.Description is not null) obj["description"] = rd.Description;
         return obj;
     }

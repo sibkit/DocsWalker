@@ -1,6 +1,6 @@
-meta_schema_version: 4
+meta_schema_version: 5
 name: DocsWalker Meta-Schema
-description: Описывает форму schema-файла проекта (например, docs/Схема.yml). Schema-файл задаёт типы узлов проекта; узлы связаны направленными исходящими связями (out_refs) с явно объявленным контрактом в типе узла-источника.
+description: Описывает форму schema-файла проекта (например, docs/Схема.yml). Schema-файл задаёт типы узлов проекта; узлы связаны направленными исходящими связями (out_refs) с явно объявленным контрактом в типе узла-источника. Часть связей объединяется в именованные деревья (tree-scope) поверх графа.
 primitive_types:
   - string
   - text
@@ -14,6 +14,15 @@ schema_root:
       type: string
       required: true
       description: Однострочное описание схемы.
+    - name: trees
+      type: list
+      of: tree_definition
+      required: true
+      description: |
+        Декларация именованных деревьев scope'а поверх графа. Каждое дерево
+        образовано связями с tree=<name> в любых типах. Дерево path
+        обязательно объявляется и используется ядром как физическое размещение
+        узлов.
     - name: types
       type: list
       of: type_definition
@@ -23,10 +32,24 @@ schema_root:
     - Дополнительные ключи на корневом уровне не допускаются.
     - Имена типов уникальны в пределах schema-файла.
     - Идентификация schema-файла — по имени файла (см. Правила оформления/Идентификация документа); внутреннего поля schema/document не объявляется.
-    - 'Имя ''root'' зарезервировано: обозначает корневой синглтон ядра DocsWalker (узел с id=0). Не объявляется как тип, но допустимо в path_targets и target_types.'
-    - 'Связь ''path'' — встроенная связь ядра. У каждого узла кроме root она обязательна и cardinality=one. В типах не объявляется через out_refs; её допустимые цели контролируются через path_targets.'
+    - 'Имя ''root'' зарезервировано: обозначает корневой синглтон ядра DocsWalker (узел с id=0). Не объявляется как тип, но допустимо в target_types.'
+    - 'Дерево с именем path обязательно присутствует в trees: оно соответствует встроенному scope хранилища ядра.'
+tree_definition:
+  description: Объявление именованного дерева. Дерево образовано всеми ref_def с tree=<name> в любых типах.
+  fields:
+    - name: name
+      type: string
+      required: true
+      description: Имя scope'а (snake_case). Используется в ref_def.tree и в API (get_subtree, move_node, …).
+    - name: description
+      type: text
+      required: false
+      description: Назначение дерева.
+  constraints:
+    - 'Имя ''path'' зарезервировано за встроенным scope хранилища.'
+    - Имена деревьев уникальны в пределах schema-файла.
 type_definition:
-  description: Описание одного типа узла. Тип задаёт, где узел может находиться (path_targets), какие исходящие связи у него допустимы (out_refs) и требуется ли непустой text.
+  description: Описание одного типа узла. Тип задаёт, какие исходящие связи у него допустимы (out_refs) и требуется ли непустой text. Размещение узла в дереве хранилища задаётся обязательной связью name=path с tree=path в out_refs.
   fields:
     - name: name
       type: string
@@ -48,20 +71,15 @@ type_definition:
       type: bool
       required: true
       description: 'Обязателен ли непустой text у узла этого типа: у структурных типов (folder, section) — обычно false; у смысловых (statement, rule, definition, note, …) — true.'
-    - name: path_targets
-      type: list
-      of: string
-      required: true
-      description: Имена типов (включая зарезервированное ''root''), которые могут быть на конце встроенной связи path у узла этого типа — то есть где этот узел может располагаться в иерархии. Пустой список запрещён.
     - name: out_refs
       type: list
       of: ref_def
       required: false
-      description: Список объявлений исходящих связей (кроме встроенной path). Если опущен — узел типа не имеет дополнительных out_refs.
+      description: Список объявлений исходящих связей. Включает обязательную для всех типов кроме root связь name=path (tree=path), задающую размещение в дереве хранилища, и любые другие named-refs (горизонтальные и tree-scope).
   constraints:
     - 'title_source=inline_key допустим, только если узел типа размещается внутри YAML родителя как ключ mapping (а не как отдельный файл/каталог).'
     - Имена связей в out_refs уникальны в пределах одного type_definition.
-    - 'Имя ''path'' зарезервировано — не используется в out_refs.'
+    - 'Связь name=path обязана иметь tree=path; присутствует у каждого type_definition кроме типа root.'
 ref_def:
   description: Объявление одной исходящей связи в типе узла-источника.
   fields:
@@ -74,18 +92,29 @@ ref_def:
       of: string
       required: true
       description: Имена типов (включая ''root''), на которые может ссылаться эта связь. Пустой список запрещён.
+    - name: tree
+      type: string
+      required: false
+      description: |
+        Имя дерева (scope) из schema_root.trees, в котором участвует эта связь.
+        Если задан — связь автоматически cardinality=one + required=true; конвенция
+        направления: child → parent.
     - name: cardinality
       type: enum
       values:
         - one
         - many
-      required: true
-      description: 'Допустимое число целей связи у одного узла-источника: ровно одна (one) или ноль и более (many).'
+      required: false
+      description: 'Допустимое число целей связи у одного узла-источника: ровно одна (one) или ноль и более (many). Указывается, только если tree не задан.'
     - name: required
       type: bool
-      required: true
-      description: 'Обязательно ли заполнить связь хотя бы одной целью при создании узла. Для cardinality=one и required=true — ровно одна цель; для cardinality=many и required=true — не менее одной.'
+      required: false
+      description: 'Обязательно ли заполнить связь хотя бы одной целью при создании узла. Указывается, только если tree не задан. Для cardinality=one и required=true — ровно одна цель; для cardinality=many и required=true — не менее одной.'
     - name: description
       type: text
       required: false
       description: Назначение связи.
+  constraints:
+    - 'Если задан tree — указывать cardinality и required запрещено: они подразумеваются (cardinality=one, required=true).'
+    - 'Если tree не задан — cardinality и required обязательны.'
+    - 'Поле tree (если задано) ссылается на существующее имя в schema_root.trees.'

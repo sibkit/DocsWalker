@@ -22,8 +22,6 @@ public sealed class ReadApiException : Exception
     }
 }
 
-public sealed record DocumentSummary(int Id, string Title);
-
 /// <summary>
 /// Элемент карты документации: узел и его дети по path-связям.
 /// Дети упорядочены так же, как в <see cref="Graph.GetChildren"/>.
@@ -70,17 +68,6 @@ public sealed class ReadApi
     public ReadApi(GraphModel graph)
     {
         _graph = graph;
-    }
-
-    public IReadOnlyList<DocumentSummary> ListDocuments()
-    {
-        var docs = _graph.Documents;
-        var result = new List<DocumentSummary>(docs.Count);
-        foreach (var d in docs.OrderBy(d => d.Title, StringComparer.Ordinal))
-        {
-            result.Add(new DocumentSummary(d.Id, d.Title));
-        }
-        return result;
     }
 
     public IReadOnlyList<MapNode> GetMap()
@@ -178,6 +165,101 @@ public sealed class ReadApi
         var sub = new List<NodeSubtree>(children.Count);
         foreach (var c in children) sub.Add(BuildSubtree(c));
         return new NodeSubtree(node, sub);
+    }
+
+    /// <summary>
+    /// Полное поддерево узла в указанном дереве (tree-scope). По умолчанию <c>"path"</c> —
+    /// эквивалент <see cref="GetByPath"/> по id, но без разрешения текстового пути.
+    /// Для <c>tree="path"</c> используется обратный проход path-родителей (<see cref="Graph.GetChildren(int)"/>);
+    /// для прочих scope'ов — обход через scope-индекс <see cref="Graph.GetScopeChildren"/>.
+    /// </summary>
+    public NodeSubtree GetSubtree(int rootId, string tree = Node.PathRefName)
+    {
+        ValidateTree(tree);
+        var node = _graph.GetById(rootId)
+            ?? throw new ReadApiException("node_not_found", $"Узел с id={rootId} не найден.");
+        return BuildSubtreeByScope(node, tree);
+    }
+
+    private NodeSubtree BuildSubtreeByScope(Node node, string tree)
+    {
+        IReadOnlyList<Node> children;
+        if (string.Equals(tree, Node.PathRefName, StringComparison.Ordinal))
+        {
+            children = _graph.GetChildren(node.Id);
+        }
+        else
+        {
+            var ids = _graph.GetScopeChildren(node.Id, tree);
+            var list = new List<Node>(ids.Count);
+            foreach (var id in ids)
+            {
+                if (_graph.GetById(id) is { } ch) list.Add(ch);
+            }
+            children = list;
+        }
+        var sub = new List<NodeSubtree>(children.Count);
+        foreach (var c in children) sub.Add(BuildSubtreeByScope(c, tree));
+        return new NodeSubtree(node, sub);
+    }
+
+    /// <summary>
+    /// Цепочка родителей узла в указанном дереве (tree-scope), от ближайшего родителя
+    /// до корня дерева включительно. Для <c>tree="path"</c> — путь до root (id=0).
+    /// Если узел сам — корень scope (нет scope-ref), возвращает пустой список.
+    /// </summary>
+    public IReadOnlyList<Node> GetAncestors(int nodeId, string tree = Node.PathRefName)
+    {
+        ValidateTree(tree);
+        if (_graph.GetById(nodeId) is null)
+            throw new ReadApiException("node_not_found", $"Узел с id={nodeId} не найден.");
+
+        var result = new List<Node>();
+        int? cursor = nodeId;
+        var safety = _graph.NodeCount + 1;
+        while (safety-- > 0)
+        {
+            int? parentId;
+            if (string.Equals(tree, Node.PathRefName, StringComparison.Ordinal))
+            {
+                if (cursor is not int cid) break;
+                if (cid == Node.RootId) break;
+                var c = _graph.GetById(cid);
+                parentId = c?.ParentId;
+            }
+            else
+            {
+                if (cursor is not int cid) break;
+                parentId = _graph.GetScopeParent(cid, tree);
+            }
+
+            if (parentId is not int pid) break;
+            if (pid == Node.RootId)
+            {
+                // root присутствует в графе только концептуально (id=0); в _byId его нет —
+                // не добавляем фантомный узел в результат, ancestors-цепочка path заканчивается прямо над ним.
+                break;
+            }
+            var parent = _graph.GetById(pid);
+            if (parent is null) break;
+            result.Add(parent);
+            cursor = pid;
+        }
+        return result;
+    }
+
+    private void ValidateTree(string tree)
+    {
+        if (string.IsNullOrEmpty(tree))
+            throw new ReadApiException(
+                "invalid_parameter",
+                "Параметр 'tree' не должен быть пустым.",
+                "Передай '--tree=<scope>' с именем дерева из get-schema.trees, либо опусти для дефолтного 'path'.");
+        if (!_graph.KnownTrees.Contains(tree))
+            throw new ReadApiException(
+                "unknown_tree",
+                $"Неизвестное дерево '{tree}'.",
+                $"Доступные tree-scope'ы: {string.Join(", ", _graph.KnownTrees.OrderBy(x => x, StringComparer.Ordinal))}.");
     }
 
     /// <summary>

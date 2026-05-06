@@ -51,6 +51,7 @@ public static class DocumentLoader
 
         var idx = TypeIndex.Build(schema);
         var graph = new Graph();
+        graph.AttachSchema(schema);
         var loaded = new List<string>();
 
         // R10: загружаем folder-узлы из .docswalker/folders.yml. folders.yml —
@@ -410,6 +411,11 @@ public static class DocumentLoader
         {
             r.Expect<MappingStart>();
             var blockName = r.NextScalarValue();
+            if (string.Equals(blockName, Node.PathRefName, StringComparison.Ordinal))
+                throw new GraphLoadException(
+                    "reserved_ref_name",
+                    sourceFile,
+                    $"В узле id={id} ('{type.Name}') встречен блок 'path' — связь path управляется только структурой docs/, не записывается в YAML.");
             if (!seenBlocks.Add(blockName))
                 throw new GraphLoadException(
                     "duplicate_block",

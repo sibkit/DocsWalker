@@ -4,21 +4,48 @@ using DocsWalker.Core.Schema;
 namespace DocsWalker.Core.Validation;
 
 /// <summary>
-/// Соответствие <see cref="SchemaDocument"/> мета-схеме v4 и self-consistency Схемы.
-/// Под refs-модель проверяет: имена типов snake_case, дубли, корректные ссылки в
-/// path_targets и target_types, зарезервированные имена (root, path), уникальность
-/// имён связей внутри типа.
+/// Соответствие <see cref="SchemaDocument"/> мета-схеме v5 и self-consistency Схемы.
+/// Под refs-модель + tree-scopes проверяет: имена типов snake_case, дубли, корректные
+/// ссылки в target_types; зарезервированные имена (root); уникальность имён связей
+/// внутри типа; декларация деревьев (включая обязательное дерево <c>path</c>);
+/// для каждого не-root типа — наличие обязательной связи <c>name=path</c> с
+/// <c>tree=path</c>; согласованность tree/cardinality/required в RefDef.
 /// </summary>
 internal static class MetaSchemaCheck
 {
     public static void Run(MetaSchemaDocument meta, SchemaDocument schema, List<ValidationError> errors)
     {
-        // Версия мета-схемы должна быть v4 (refs-модель). Если SchemaLoader пропустил
-        // другую версию — здесь подстраховываемся.
+        // Версия мета-схемы должна быть v5 (refs-модель + tree-scopes). Если SchemaLoader
+        // пропустил другую версию — здесь подстраховываемся.
         if (meta.Version != SchemaLoader.SupportedMetaSchemaVersion)
             errors.Add(new ValidationError(
                 "unsupported_meta_schema_version",
                 $"Поддерживается только meta_schema_version={SchemaLoader.SupportedMetaSchemaVersion}; в мета-схеме — {meta.Version}."));
+
+        // Проверка декларации деревьев.
+        var trees = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tr in schema.Trees)
+        {
+            if (string.IsNullOrEmpty(tr.Name))
+            {
+                errors.Add(new ValidationError(
+                    "invalid_meta_schema",
+                    "В Схеме встречено tree_definition с пустым именем."));
+                continue;
+            }
+            if (!trees.Add(tr.Name))
+                errors.Add(new ValidationError(
+                    "duplicate_tree_name",
+                    $"Дерево '{tr.Name}' объявлено в Схеме дважды."));
+            if (!IsLatinSnakeCase(tr.Name))
+                errors.Add(new ValidationError(
+                    "invalid_meta_schema",
+                    $"Имя дерева '{tr.Name}' должно быть на латинице, snake_case."));
+        }
+        if (!trees.Contains(TreeDefinition.PathTreeName))
+            errors.Add(new ValidationError(
+                "path_tree_missing",
+                $"В Схеме отсутствует обязательное дерево '{TreeDefinition.PathTreeName}'."));
 
         var declared = new Dictionary<string, TypeDefinition>(StringComparer.Ordinal);
         foreach (var t in schema.Types)
@@ -54,44 +81,38 @@ internal static class MetaSchemaCheck
 
         foreach (var t in declared.Values)
         {
-            ValidatePathTargets(t, declared, errors);
-            ValidateOutRefs(t, declared, errors);
+            ValidateOutRefs(t, declared, trees, errors);
+            ValidatePathRef(t, errors);
         }
     }
 
-    private static void ValidatePathTargets(
+    private static void ValidatePathRef(
         TypeDefinition t,
-        Dictionary<string, TypeDefinition> declared,
         List<ValidationError> errors)
     {
-        if (t.PathTargets.Count == 0)
+        var pathRef = t.FindPathRef();
+        if (pathRef is null)
         {
             errors.Add(new ValidationError(
-                "invalid_meta_schema",
-                $"Тип '{t.Name}': path_targets не может быть пустым (изолированных узлов не бывает)."));
+                "missing_path_ref",
+                $"Тип '{t.Name}': отсутствует обязательная связь 'path' (tree=path) — изолированных типов не бывает.",
+                Hint: "Добавь в out_refs запись name: path, tree: path, target_types: [...]."));
             return;
         }
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var target in t.PathTargets)
-        {
-            if (!seen.Add(target))
-                errors.Add(new ValidationError(
-                    "invalid_meta_schema",
-                    $"Тип '{t.Name}': path_targets содержит '{target}' дважды."));
-
-            if (string.Equals(target, Node.RootTypeName, StringComparison.Ordinal))
-                continue;
-            if (!declared.ContainsKey(target))
-                errors.Add(new ValidationError(
-                    "unknown_type",
-                    $"Тип '{t.Name}': path_targets ссылается на неизвестный тип '{target}'."));
-        }
+        if (!string.Equals(pathRef.Tree, TreeDefinition.PathTreeName, StringComparison.Ordinal))
+            errors.Add(new ValidationError(
+                "invalid_meta_schema",
+                $"Тип '{t.Name}': связь 'path' обязана иметь tree=path."));
+        if (pathRef.TargetTypes.Count == 0)
+            errors.Add(new ValidationError(
+                "invalid_meta_schema",
+                $"Тип '{t.Name}': у связи 'path' пустой target_types — изолированных узлов не бывает."));
     }
 
     private static void ValidateOutRefs(
         TypeDefinition t,
         Dictionary<string, TypeDefinition> declared,
+        HashSet<string> declaredTrees,
         List<ValidationError> errors)
     {
         var seenNames = new HashSet<string>(StringComparer.Ordinal);
@@ -104,13 +125,6 @@ internal static class MetaSchemaCheck
                     $"Тип '{t.Name}': встречена связь без имени."));
                 continue;
             }
-            if (string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal))
-            {
-                errors.Add(new ValidationError(
-                    "reserved_ref_name",
-                    $"Тип '{t.Name}': имя связи '{Node.PathRefName}' зарезервировано — встроенная связь, не объявляется."));
-                continue;
-            }
             if (!seenNames.Add(rd.Name))
                 errors.Add(new ValidationError(
                     "invalid_meta_schema",
@@ -119,6 +133,21 @@ internal static class MetaSchemaCheck
                 errors.Add(new ValidationError(
                     "invalid_meta_schema",
                     $"Тип '{t.Name}': имя связи '{rd.Name}' должно быть на латинице, snake_case."));
+
+            // Зарезервированное имя 'path' допустимо только при tree=path.
+            if (string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal)
+                && !string.Equals(rd.Tree, TreeDefinition.PathTreeName, StringComparison.Ordinal))
+            {
+                errors.Add(new ValidationError(
+                    "reserved_ref_name",
+                    $"Тип '{t.Name}': имя 'path' зарезервировано за встроенной связью с tree=path; не используется как обычная связь."));
+            }
+
+            // tree, если задан, должен быть объявлен.
+            if (rd.Tree is not null && !declaredTrees.Contains(rd.Tree))
+                errors.Add(new ValidationError(
+                    "unknown_tree_scope",
+                    $"Тип '{t.Name}', связь '{rd.Name}': дерево '{rd.Tree}' не объявлено в schema.trees."));
 
             if (rd.TargetTypes.Count == 0)
             {

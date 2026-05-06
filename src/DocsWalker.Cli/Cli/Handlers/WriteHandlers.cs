@@ -88,9 +88,13 @@ internal static class WriteHandlers
 
     public static int MoveNode(string root, IReadOnlyDictionary<string, string> args)
     {
+        var tree = args.TryGetValue("tree", out var tr) && !string.IsNullOrEmpty(tr)
+            ? tr
+            : Node.PathRefName;
         var op = new MoveNodeOp(
             Id: int.Parse(args["id"], CultureInfo.InvariantCulture),
-            NewParentId: int.Parse(args["new-path"], CultureInfo.InvariantCulture));
+            NewParentId: int.Parse(args["to"], CultureInfo.InvariantCulture),
+            Tree: tree);
         return Run(root, op);
     }
 

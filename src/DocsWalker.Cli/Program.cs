@@ -46,10 +46,17 @@ internal static class Dispatcher
         {
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
             "get_schema"      => SchemaHandlers.GetSchema(rootPath),
-            "list_documents"  => ReadHandlers.ListDocuments(rootPath),
             "get_map"         => ReadHandlers.GetMap(rootPath),
             "get_nodes"       => ReadHandlers.GetNodes(rootPath, parsed.Params["ids"]),
             "get_by_path"     => ReadHandlers.GetByPath(rootPath, parsed.Params["path"]),
+            "get_subtree"     => ReadHandlers.GetSubtree(
+                                    rootPath,
+                                    int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
+                                    parsed.Params.TryGetValue("tree", out var ts) ? ts : null),
+            "get_ancestors"   => ReadHandlers.GetAncestors(
+                                    rootPath,
+                                    int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
+                                    parsed.Params.TryGetValue("tree", out var ta) ? ta : null),
             "get_refs"        => ReadHandlers.GetRefs(
                                     rootPath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),

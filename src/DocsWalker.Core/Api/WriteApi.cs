@@ -66,7 +66,14 @@ public sealed record UpdateNodeOp(int Id, string? NewTitle, string? NewText) : W
 
 public sealed record DeleteNodeOp(int Id) : WriteOp("delete-node");
 
-public sealed record MoveNodeOp(int Id, int NewParentId) : WriteOp("move-node");
+/// <summary>
+/// Перенос узла под нового родителя в указанном дереве (tree-scope).
+/// <paramref name="Tree"/> = "path" (default) — реструктуризация хранилища с
+/// каскадным rewrite SourceFile у потомков; для прочих scope'ов — атомарная
+/// правка одного scope-ref'а узла без FS-операций.
+/// </summary>
+public sealed record MoveNodeOp(int Id, int NewParentId, string Tree = Node.PathRefName)
+    : WriteOp("move-node");
 
 public sealed record CreateRefOp(int FromId, string Name, int ToId) : WriteOp("create-ref");
 
@@ -679,6 +686,10 @@ public sealed class WriteApi
                 $"Узел id={op.Id} не найден.",
                 "Сверь id через get-map / get-nodes.");
 
+        // Не-path scope: атомарная правка одного scope-ref'а; никаких FS-операций.
+        if (!string.Equals(op.Tree, Node.PathRefName, StringComparison.Ordinal))
+            return ApplyMoveNonPath(s, op, node);
+
         if (string.Equals(node.TypeName, "document", StringComparison.Ordinal))
             throw new WriteApiException(
                 "cannot_move_document",
@@ -855,6 +866,129 @@ public sealed class WriteApi
             ["name"] = op.Name,
             ["to_id"] = op.ToId,
         });
+    }
+
+    /// <summary>
+    /// Перенос узла в дереве (tree-scope), отличном от <c>path</c>: меняет один scope-ref
+    /// узла без FS-операций и без каскадных правок SourceFile у потомков.
+    /// Проверяет существование scope-ref'а в типе узла, target_types нового родителя,
+    /// отсутствие цикла в scope (новый родитель не в субдереве переносимого узла по этому
+    /// scope) и отличие нового родителя от текущего.
+    /// </summary>
+    private static WriteOpResult ApplyMoveNonPath(WriteState s, MoveNodeOp op, Node node)
+    {
+        var type = s.ResolveType(node.TypeName);
+        // Найти scope-ref у типа.
+        RefDef? scopeRef = null;
+        foreach (var rd in type.OutRefs)
+        {
+            if (rd.Tree is null) continue;
+            if (string.Equals(rd.Tree, op.Tree, StringComparison.Ordinal))
+            {
+                scopeRef = rd;
+                break;
+            }
+        }
+        if (scopeRef is null)
+            throw new WriteApiException(
+                "unknown_tree",
+                $"Тип '{type.Name}' не объявляет связь в дереве '{op.Tree}'.",
+                "Сверь набор tree-связей типа в get-schema; если дерево объявлено, у узла этого типа в нём нет родителя — узел не переносится.");
+
+        if (op.NewParentId == op.Id)
+            throw new WriteApiException(
+                "invalid_move",
+                $"Узел id={op.Id} нельзя сделать собственным родителем в дереве '{op.Tree}'.");
+
+        if (op.NewParentId != Node.RootId && s.GetNode(op.NewParentId) is null)
+            throw new WriteApiException(
+                "parent_not_found",
+                $"Новый родитель id={op.NewParentId} не найден.",
+                "Сверь new_parent_id через get-map / get-nodes.");
+
+        // Тип нового родителя должен входить в target_types scope-ref'а.
+        var newParentTypeName = op.NewParentId == Node.RootId
+            ? Node.RootTypeName
+            : s.GetNode(op.NewParentId)!.TypeName;
+        if (!scopeRef.TargetTypes.Any(t => string.Equals(t, newParentTypeName, StringComparison.Ordinal)))
+            throw new WriteApiException(
+                "invalid_target_type",
+                $"Связь '{scopeRef.Name}' дерева '{op.Tree}' допускает родителей типов {{{string.Join(", ", scopeRef.TargetTypes)}}}; новый родитель id={op.NewParentId} имеет тип '{newParentTypeName}'.");
+
+        // Текущее значение scope-ref'а (если задано) — для no_effect и снятия старого индекса.
+        int? oldParentId = null;
+        if (node.OutRefs.TryGetValue(scopeRef.Name, out var existing) && existing.Count > 0)
+            oldParentId = existing[0];
+        if (oldParentId == op.NewParentId)
+            throw new WriteApiException(
+                "no_effect",
+                $"Узел id={op.Id} уже имеет связь '{scopeRef.Name}' = {op.NewParentId} в дереве '{op.Tree}'.");
+
+        // Cycle pre-check: пройти вверх от нового родителя по scope-ref'ам этого дерева;
+        // если встретим op.Id — цикл. Лимит — число узлов состояния (защита от lockstep).
+        if (FormsCycleInScope(s, op.Tree, op.NewParentId, op.Id))
+            throw new WriteApiException(
+                "tree_cycle",
+                $"Перенос id={op.Id} под id={op.NewParentId} в дереве '{op.Tree}' образует цикл.",
+                "Выбери родителя вне субдерева переносимого узла в этом scope.");
+
+        var newOutRefs = CloneRefs(node.OutRefs);
+        newOutRefs[scopeRef.Name] = new[] { op.NewParentId };
+        var moved = new Node
+        {
+            Id = node.Id,
+            TypeName = node.TypeName,
+            Title = node.Title,
+            Text = node.Text,
+            OutRefs = newOutRefs,
+            SourceFile = node.SourceFile,
+        };
+        s.Replace(moved);
+        // scope-ref сериализуется в YAML того же документа, что и сам узел.
+        s.MarkDocumentDirtyForNode(node.Id);
+
+        return new WriteOpResult("move-node", new JsonObject
+        {
+            ["id"] = node.Id,
+            ["new_parent_id"] = op.NewParentId,
+            ["tree"] = op.Tree,
+        });
+    }
+
+    /// <summary>
+    /// Проверяет, образует ли назначение «<paramref name="movingId"/> → <paramref name="newParentId"/>»
+    /// цикл в scope <paramref name="scope"/>: поднимаемся вверх по scope-ref'ам от
+    /// <paramref name="newParentId"/>, ища <paramref name="movingId"/>. Возвращает true при
+    /// обнаружении.
+    /// </summary>
+    private static bool FormsCycleInScope(WriteState s, string scope, int newParentId, int movingId)
+    {
+        var visited = new HashSet<int>();
+        int? cursor = newParentId;
+        var safety = 1_000_000;
+        while (cursor is int cid && safety-- > 0)
+        {
+            if (cid == movingId) return true;
+            if (cid == Node.RootId) return false;
+            if (!visited.Add(cid)) return false; // существующий цикл — не наша забота, RefsCheck отловит
+            var n = s.GetNode(cid);
+            if (n is null) return false;
+            cursor = ResolveScopeParent(s, n, scope);
+        }
+        return false;
+    }
+
+    private static int? ResolveScopeParent(WriteState s, Node node, string scope)
+    {
+        var t = s.ResolveType(node.TypeName);
+        foreach (var rd in t.OutRefs)
+        {
+            if (rd.Tree is null) continue;
+            if (!string.Equals(rd.Tree, scope, StringComparison.Ordinal)) continue;
+            if (!node.OutRefs.TryGetValue(rd.Name, out var targets) || targets.Count == 0) return null;
+            return targets[0];
+        }
+        return null;
     }
 
     private static bool IsDescendantOf(WriteState s, int candidateId, int ancestorId)

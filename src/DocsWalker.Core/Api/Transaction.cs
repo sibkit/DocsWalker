@@ -20,7 +20,7 @@ namespace DocsWalker.Core.Api;
 ///   },
 ///   { "op": "update-node", "id": 42, "title": "...", "text": "..." },
 ///   { "op": "delete-node", "id": 42 },
-///   { "op": "move-node",   "id": 42, "new_parent_id": 8 },
+///   { "op": "move-node",   "id": 42, "new_parent_id": 8, "tree": "path" },
 ///   { "op": "create-ref",  "from_id": 42, "name": "related", "to_id": 8 },
 ///   { "op": "delete-ref",  "from_id": 42, "name": "related", "to_id": 8 }
 /// ]
@@ -130,7 +130,8 @@ public static class TransactionParser
     private static MoveNodeOp ParseMoveNode(JsonObject obj) =>
         new(
             Id: ReadRequiredInt(obj, "id"),
-            NewParentId: ReadRequiredInt(obj, "new_parent_id"));
+            NewParentId: ReadRequiredInt(obj, "new_parent_id"),
+            Tree: ReadOptionalString(obj, "tree") ?? DocsWalker.Core.Graph.Node.PathRefName);
 
     private static CreateRefOp ParseCreateRef(JsonObject obj) =>
         new(

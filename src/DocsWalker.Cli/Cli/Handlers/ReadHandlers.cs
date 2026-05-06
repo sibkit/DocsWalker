@@ -14,16 +14,6 @@ namespace DocsWalker.Cli.Cli.Handlers;
 /// </summary>
 internal static class ReadHandlers
 {
-    public static int ListDocuments(string root)
-    {
-        return WithApi(root, api =>
-        {
-            var docs = api.ReadApi.ListDocuments();
-            Output.WriteSuccess(ReadApiJson.ListDocumentsToJson(docs));
-            return 0;
-        });
-    }
-
     public static int GetMap(string root)
     {
         return WithApi(root, api =>
@@ -61,6 +51,44 @@ internal static class ReadHandlers
             {
                 var subtree = api.ReadApi.GetByPath(path);
                 Output.WriteSuccess(ReadApiJson.SubtreeToJson(subtree));
+                return 0;
+            }
+            catch (ReadApiException ex)
+            {
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
+                return 1;
+            }
+        });
+    }
+
+    public static int GetSubtree(string root, int id, string? tree)
+    {
+        var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
+        return WithApi(root, api =>
+        {
+            try
+            {
+                var subtree = api.ReadApi.GetSubtree(id, scope);
+                Output.WriteSuccess(ReadApiJson.SubtreeToJson(subtree, scope));
+                return 0;
+            }
+            catch (ReadApiException ex)
+            {
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
+                return 1;
+            }
+        });
+    }
+
+    public static int GetAncestors(string root, int id, string? tree)
+    {
+        var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
+        return WithApi(root, api =>
+        {
+            try
+            {
+                var ancestors = api.ReadApi.GetAncestors(id, scope);
+                Output.WriteSuccess(ReadApiJson.AncestorsToJson(ancestors, scope));
                 return 0;
             }
             catch (ReadApiException ex)

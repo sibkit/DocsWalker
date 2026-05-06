@@ -138,9 +138,10 @@ internal static class SchemaCheck
             }
         }
 
-        // Required-связи: должны быть заполнены.
+        // Required-связи: должны быть заполнены. path обрабатывается отдельной веткой выше.
         foreach (var rd in type.OutRefs)
         {
+            if (string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal)) continue;
             if (!rd.Required) continue;
             if (!node.OutRefs.TryGetValue(rd.Name, out var targets) || targets.Count == 0)
             {

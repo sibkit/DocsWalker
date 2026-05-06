@@ -37,7 +37,6 @@ internal static class Commands
         return new List<CommandSpec>
         {
             // Чтение
-            Cmd("list_documents"),
             Cmd("get_meta_schema"),
             Cmd("get_schema"),
             Cmd("get_map"),
@@ -45,6 +44,12 @@ internal static class Commands
                 Req("ids", ParamType.IdList)),
             Cmd("get_by_path",
                 Req("path", ParamType.String)),
+            Cmd("get_subtree",
+                Req("id",   ParamType.Integer),
+                Opt("tree", ParamType.String)),
+            Cmd("get_ancestors",
+                Req("id",   ParamType.Integer),
+                Opt("tree", ParamType.String)),
             Cmd("get_refs",
                 Req("id",   ParamType.Integer),
                 Opt("name", ParamType.String)),
@@ -67,8 +72,9 @@ internal static class Commands
             Cmd("delete_node",
                 Req("id", ParamType.Integer)),
             Cmd("move_node",
-                Req("id",       ParamType.Integer),
-                Req("new_path", ParamType.Integer)),
+                Req("id",   ParamType.Integer),
+                Req("to",   ParamType.Integer),
+                Opt("tree", ParamType.String)),
             Cmd("create_ref",
                 Req("from_id", ParamType.Integer),
                 Req("name",    ParamType.String),

@@ -1,20 +1,34 @@
-description: Описание типов узлов проекта DocsWalker. Schema-файл валидируется по docs/.docswalker/meta-schema.yml (v4) и сам валидирует все остальные docs/*.yml.
+description: Описание типов узлов проекта DocsWalker. Schema-файл валидируется по docs/.docswalker/meta-schema.yml (v5) и сам валидирует все остальные docs/*.yml.
+trees:
+  - name: path
+    description: |
+      Дерево хранилища. Каждый узел кроме root имеет ровно один path-ref,
+      указывающий на его родителя. Только это дерево используется ядром
+      для физического размещения узлов в файловой системе и для каскадных
+      проверок при удалении.
 types:
   - name: folder
     description: Каталог в docs/. Структурный узел, группирует documents и подпапки. Title — имя каталога. Узел не несёт собственного текста.
     title_source: dirname
     text_required: false
-    path_targets:
-      - root
-      - folder
+    out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - root
+          - folder
+        description: Размещение каталога в дереве хранилища.
   - name: document
     description: YAML-файл в docs/. Один файл — один документ. Title — имя файла без расширения. text — однострочное описание-summary документа.
     title_source: filename
     text_required: true
-    path_targets:
-      - root
-      - folder
     out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - root
+          - folder
+        description: Размещение документа в дереве хранилища.
       - name: sections
         target_types:
           - section
@@ -25,9 +39,12 @@ types:
     description: Раздел документа. Структурный узел, контейнер атомов. Title — короткое название раздела (1–3 слова), text — пустой (смысл несут атомы внутри).
     title_source: inline_key
     text_required: false
-    path_targets:
-      - document
     out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - document
+        description: Размещение раздела в документе.
       - name: statements
         target_types:
           - statement
@@ -74,41 +91,75 @@ types:
     description: Утверждение в section. Атом-лист. text — формулировка утверждения; title — 1–2-словное сжатие.
     title_source: inline_key
     text_required: true
-    path_targets:
-      - section
+    out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - section
+        description: Размещение утверждения в разделе.
   - name: rule
     description: Правило в section. Атом-лист. text — формулировка правила; title — 1–2-словное сжатие.
     title_source: inline_key
     text_required: true
-    path_targets:
-      - section
+    out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - section
+        description: Размещение правила в разделе.
+      - name: examples
+        target_types:
+          - example
+        cardinality: many
+        required: true
+        description: Примеры применения правила. Минимум один.
   - name: may_rule
     description: Допускающее правило в section. Атом-лист.
     title_source: inline_key
     text_required: true
-    path_targets:
-      - section
+    out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - section
+        description: Размещение правила в разделе.
   - name: note
     description: Заметка в section. Атом-лист.
     title_source: inline_key
     text_required: true
-    path_targets:
-      - section
+    out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - section
+        description: Размещение заметки в разделе.
   - name: definition
     description: Определение термина в section. Атом-лист. title — определяемый термин, text — содержание определения.
     title_source: inline_key
     text_required: true
-    path_targets:
-      - section
+    out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - section
+        description: Размещение определения в разделе.
   - name: example
     description: Пример в section. Атом-лист. title — подпись или ссылка примера, text — содержимое примера.
     title_source: inline_key
     text_required: true
-    path_targets:
-      - section
+    out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - section
+        description: Размещение примера в разделе.
   - name: llm_hint
     description: Указание для LLM в section. Атом-лист.
     title_source: inline_key
     text_required: true
-    path_targets:
-      - section
+    out_refs:
+      - name: path
+        tree: path
+        target_types:
+          - section
+        description: Размещение указания в разделе.

@@ -12,21 +12,6 @@ namespace DocsWalker.Core.Api;
 /// </summary>
 public static class ReadApiJson
 {
-    public static JsonArray ListDocumentsToJson(IReadOnlyList<DocumentSummary> docs)
-    {
-        var arr = new JsonArray();
-        foreach (var d in docs)
-        {
-            var obj = new JsonObject
-            {
-                ["id"] = d.Id,
-                ["title"] = d.Title,
-            };
-            arr.Add((JsonNode?)obj);
-        }
-        return arr;
-    }
-
     public static JsonArray MapToJson(IReadOnlyList<MapNode> nodes)
     {
         var arr = new JsonArray();
@@ -92,6 +77,32 @@ public static class ReadApiJson
         foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeToJson(c));
         obj["children"] = children;
         return obj;
+    }
+
+    /// <summary>
+    /// Сериализация get-subtree с указанием scope: оборачивает поддерево в объект
+    /// <c>{tree: <name>, root: {...subtree...}}</c>, чтобы LLM подтверждала, по какому
+    /// дереву прошёл обход.
+    /// </summary>
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree) => new()
+    {
+        ["tree"] = tree,
+        ["root"] = SubtreeToJson(subtree),
+    };
+
+    /// <summary>
+    /// Сериализация get-ancestors: <c>{tree: <name>, ancestors: [...node...]}</c>,
+    /// от ближайшего родителя к корню дерева.
+    /// </summary>
+    public static JsonObject AncestorsToJson(IReadOnlyList<Node> ancestors, string tree)
+    {
+        var arr = new JsonArray();
+        foreach (var n in ancestors) arr.Add((JsonNode?)NodeToJson(n));
+        return new JsonObject
+        {
+            ["tree"] = tree,
+            ["ancestors"] = arr,
+        };
     }
 
     public static JsonObject RefSetToJson(RefSet set)

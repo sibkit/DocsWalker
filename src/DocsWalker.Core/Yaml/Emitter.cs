@@ -151,6 +151,9 @@ public sealed class Emitter
         {
             foreach (var rd in type.OutRefs)
             {
+                // path — встроенная структурная связь, не сериализуется в YAML
+                // (выводится из размещения файла в docs/ при загрузке).
+                if (string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal)) continue;
                 if (node.OutRefs.TryGetValue(rd.Name, out var targets) && targets.Count > 0)
                 {
                     emitted.Add(rd.Name);
