@@ -507,16 +507,13 @@ public sealed class WriteApi
                 "Title документа = имя файла; переименование требует переименования YAML-файла, появится в отдельной команде.");
         }
 
-        // R10: rename folder требует FS-операций и каскадного rewrite SourceFile у потомков —
-        // выполняется в отдельном шаге R11.
-        if (string.Equals(node.TypeName, "folder", StringComparison.Ordinal)
-            && op.NewTitle is not null
-            && !string.Equals(op.NewTitle, node.Title, StringComparison.Ordinal))
+        // R11: rename folder — переименование dirname + правка folders.yml +
+        // cascade SourceFile у потомков. Идёт через отдельную ветку, потому
+        // что folder не привязан к документу (свой SourceFile = folders.yml,
+        // у потомков SourceFile содержит rel-цепочку каталога).
+        if (string.Equals(node.TypeName, "folder", StringComparison.Ordinal))
         {
-            throw new WriteApiException(
-                "not_supported",
-                $"Переименование folder id={op.Id} ('{node.Title}') в текущей версии не поддержано.",
-                "Появится в шаге R11. Для смены имени каталога временно используй прямую правку folders.yml + FS.");
+            return ApplyRenameFolder(s, op, node, newTitle);
         }
 
         var updated = new Node
@@ -530,6 +527,81 @@ public sealed class WriteApi
         };
         s.Replace(updated);
         s.MarkDocumentDirtyForNode(node.Id);
+
+        return new WriteOpResult("update-node", new JsonObject
+        {
+            ["id"] = node.Id,
+            ["title"] = newTitle,
+        });
+    }
+
+    /// <summary>
+    /// Переименование folder-узла: смена title → переименование каталога на FS,
+    /// правка записи в folders.yml, cascade SourceFile у всех path-потомков
+    /// (документы и узлы внутри них). Текст folder-а не меняется (у folder
+    /// text всегда пуст).
+    /// </summary>
+    private static WriteOpResult ApplyRenameFolder(
+        WriteState s, UpdateNodeOp op, Node node, string newTitle)
+    {
+        if (op.NewText is not null && !string.Equals(op.NewText, node.Text, StringComparison.Ordinal))
+            throw new WriteApiException(
+                "invalid_field",
+                $"У folder id={op.Id} нельзя задать text — у folder контракт text_required=false и значение всегда пусто.",
+                "Передавай только --title для переименования каталога.");
+
+        if (op.NewTitle is null || string.Equals(op.NewTitle, node.Title, StringComparison.Ordinal))
+            throw new WriteApiException(
+                "no_effect",
+                $"Update-node для folder id={op.Id} без смены title не вносит изменений.",
+                "Передай --title=<new_name> для переименования каталога.");
+
+        var parentId = node.ParentId
+            ?? throw new WriteApiException(
+                "internal_inconsistency",
+                $"У folder id={op.Id} отсутствует связь path.");
+
+        // Коллизия: уже есть folder с тем же title под этим parent (исключая сам узел).
+        foreach (var sibling in s.GetChildren(parentId))
+        {
+            if (sibling.Id == node.Id) continue;
+            if (string.Equals(sibling.TypeName, "folder", StringComparison.Ordinal)
+                && string.Equals(sibling.Title, newTitle, StringComparison.Ordinal))
+            {
+                throw new WriteApiException(
+                    "duplicate_folder_name",
+                    $"Под parent id={parentId} уже существует folder с title '{newTitle}' (id={sibling.Id}).",
+                    "Выбери другое имя.");
+            }
+        }
+
+        var oldRel = BuildFolderRelativePath(s, node.Id);
+        var parentRel = parentId == Node.RootId ? string.Empty : BuildFolderRelativePath(s, parentId);
+        var newRel = parentRel.Length == 0 ? newTitle : parentRel + "/" + newTitle;
+        var oldAbs = Path.Combine(s.DocsRoot, oldRel.Replace('/', Path.DirectorySeparatorChar));
+        var newAbs = Path.Combine(s.DocsRoot, newRel.Replace('/', Path.DirectorySeparatorChar));
+
+        if (!string.Equals(oldAbs, newAbs, StringComparison.Ordinal) && Directory.Exists(newAbs))
+            throw new WriteApiException(
+                "fs_collision",
+                $"Целевой каталог '{newAbs}' уже существует на FS.",
+                "Убери коллизию вручную или выбери другое имя.");
+
+        var updated = new Node
+        {
+            Id = node.Id,
+            TypeName = node.TypeName,
+            Title = newTitle,
+            Text = node.Text,
+            OutRefs = node.OutRefs,
+            SourceFile = node.SourceFile,
+        };
+        s.Replace(updated);
+
+        CascadeFolderSourceFile(s, node.Id, oldRel, newRel);
+
+        s.AddFsOperation(new FsMoveDirectory(oldAbs, newAbs));
+        s.MarkFoldersDirty();
 
         return new WriteOpResult("update-node", new JsonObject
         {
@@ -613,14 +685,6 @@ public sealed class WriteApi
                 $"Узел id={op.Id} ('{node.Title}') — документ; перенос документов не поддерживается.",
                 "Документ нельзя перенести как узел; используй create-document/delete-document для смены файла.");
 
-        // R10: перенос folder требует переноса каталога на FS и каскадного rewrite SourceFile —
-        // выполняется в отдельном шаге R11.
-        if (string.Equals(node.TypeName, "folder", StringComparison.Ordinal))
-            throw new WriteApiException(
-                "not_supported",
-                $"Перенос folder id={op.Id} ('{node.Title}') в текущей версии не поддержан.",
-                "Появится в шаге R11.");
-
         if (op.NewParentId == op.Id)
             throw new WriteApiException(
                 "invalid_move",
@@ -647,6 +711,13 @@ public sealed class WriteApi
             throw new WriteApiException(
                 "no_effect",
                 $"Узел id={op.Id} уже имеет path={op.NewParentId}.");
+
+        // R11: перенос folder идёт по отдельной ветке — у folder нет SourceFile-документа,
+        // и в дополнение к Replace требуется FS-перенос каталога и cascade SourceFile.
+        if (string.Equals(node.TypeName, "folder", StringComparison.Ordinal))
+        {
+            return ApplyMoveFolder(s, op, node, oldParentId);
+        }
 
         var newSourceFile = node.SourceFile;
         if (op.NewParentId != Node.RootId)
@@ -798,6 +869,119 @@ public sealed class WriteApi
             current = s.GetNode(pid);
         }
         return false;
+    }
+
+    /// <summary>
+    /// Перенос folder-узла под нового родителя: проверяет path_targets и
+    /// коллизию имени, переписывает связь path, каскадно правит SourceFile у
+    /// потомков и регистрирует <see cref="FsMoveDirectory"/>. Базовые проверки
+    /// (cycle, parent_not_found, no_effect, cannot_move_root) выполнены
+    /// вызывающим <see cref="ApplyMoveNode"/>.
+    /// </summary>
+    private static WriteOpResult ApplyMoveFolder(
+        WriteState s, MoveNodeOp op, Node folder, int oldParentId)
+    {
+        var folderType = s.ResolveType("folder");
+        var newParentTypeName = op.NewParentId == Node.RootId
+            ? Node.RootTypeName
+            : s.GetNode(op.NewParentId)!.TypeName;
+        if (!folderType.PathTargets.Any(p => string.Equals(p, newParentTypeName, StringComparison.Ordinal)))
+            throw new WriteApiException(
+                "invalid_path_target",
+                $"Folder можно перенести только под root или другой folder; новый родитель id={op.NewParentId} имеет тип '{newParentTypeName}'.",
+                $"Допустимые типы родителя: {string.Join(", ", folderType.PathTargets)}.");
+
+        // Коллизия: под новым parent уже есть folder с таким же title.
+        foreach (var sibling in s.GetChildren(op.NewParentId))
+        {
+            if (sibling.Id == folder.Id) continue;
+            if (string.Equals(sibling.TypeName, "folder", StringComparison.Ordinal)
+                && string.Equals(sibling.Title, folder.Title, StringComparison.Ordinal))
+            {
+                throw new WriteApiException(
+                    "duplicate_folder_name",
+                    $"Под parent id={op.NewParentId} уже существует folder с title '{folder.Title}' (id={sibling.Id}).",
+                    "Сначала переименуй один из folder, затем повтори перенос.");
+            }
+        }
+
+        var oldRel = BuildFolderRelativePath(s, folder.Id);
+        var newParentRel = op.NewParentId == Node.RootId
+            ? string.Empty
+            : BuildFolderRelativePath(s, op.NewParentId);
+        var newRel = newParentRel.Length == 0 ? folder.Title : newParentRel + "/" + folder.Title;
+        var oldAbs = Path.Combine(s.DocsRoot, oldRel.Replace('/', Path.DirectorySeparatorChar));
+        var newAbs = Path.Combine(s.DocsRoot, newRel.Replace('/', Path.DirectorySeparatorChar));
+
+        if (!string.Equals(oldAbs, newAbs, StringComparison.Ordinal) && Directory.Exists(newAbs))
+            throw new WriteApiException(
+                "fs_collision",
+                $"Целевой каталог '{newAbs}' уже существует на FS.",
+                "Убери коллизию вручную или перенеси folder в другое место.");
+
+        var newOutRefs = CloneRefs(folder.OutRefs);
+        newOutRefs[Node.PathRefName] = new[] { op.NewParentId };
+        var moved = new Node
+        {
+            Id = folder.Id,
+            TypeName = folder.TypeName,
+            Title = folder.Title,
+            Text = folder.Text,
+            OutRefs = newOutRefs,
+            SourceFile = folder.SourceFile,
+        };
+        s.Replace(moved);
+
+        CascadeFolderSourceFile(s, folder.Id, oldRel, newRel);
+
+        s.AddFsOperation(new FsMoveDirectory(oldAbs, newAbs));
+        s.MarkFoldersDirty();
+
+        return new WriteOpResult("move-node", new JsonObject
+        {
+            ["id"] = folder.Id,
+            ["new_parent_id"] = op.NewParentId,
+        });
+    }
+
+    /// <summary>
+    /// Префиксная замена SourceFile у всех path-потомков folder-узла после
+    /// его rename/move. Узлы folder-типа (SourceFile = ".docswalker/folders.yml")
+    /// под условие префикса не попадают и пропускаются автоматически.
+    /// </summary>
+    private static void CascadeFolderSourceFile(WriteState s, int folderId, string oldRel, string newRel)
+    {
+        if (string.Equals(oldRel, newRel, StringComparison.Ordinal)) return;
+
+        var oldPrefix = oldRel + "/";
+        var newPrefix = newRel + "/";
+
+        var queue = new Queue<int>();
+        foreach (var ch in s.GetChildren(folderId)) queue.Enqueue(ch.Id);
+        var safety = 1_000_000;
+        while (queue.Count > 0 && safety-- > 0)
+        {
+            var id = queue.Dequeue();
+            var n = s.GetNode(id);
+            if (n is null) continue;
+
+            if (n.SourceFile.StartsWith(oldPrefix, StringComparison.Ordinal))
+            {
+                var newSourceFile = newPrefix + n.SourceFile.Substring(oldPrefix.Length);
+                var updated = new Node
+                {
+                    Id = n.Id,
+                    TypeName = n.TypeName,
+                    Title = n.Title,
+                    Text = n.Text,
+                    OutRefs = n.OutRefs,
+                    SourceFile = newSourceFile,
+                };
+                s.Replace(updated);
+            }
+
+            foreach (var c in s.GetChildren(id)) queue.Enqueue(c.Id);
+        }
     }
 
     private static void UpdateSubtreeSourceFile(WriteState s, int rootId, string newSourceFile)

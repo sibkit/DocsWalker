@@ -11,9 +11,9 @@ public sealed record AtomicWriteTarget(string AbsolutePath, string Content);
 
 /// <summary>
 /// Базовый тип FS-операций, применяемых в составе атомарной транзакции записи
-/// (см. <see cref="AtomicWriter.WriteAndApply"/>). В R10 поддерживаются только
-/// создание и удаление пустого каталога — этого достаточно для create/delete
-/// folder. Перенос/переименование каталогов появятся в R11.
+/// (см. <see cref="AtomicWriter.WriteAndApply"/>). Поддержаны: создание каталога,
+/// удаление пустого каталога, перенос (rename/move) каталога. Этого достаточно
+/// для create/delete/rename/move folder.
 /// </summary>
 public abstract record FsOperation;
 
@@ -22,6 +22,14 @@ public sealed record FsCreateDirectory(string AbsolutePath) : FsOperation;
 
 /// <summary>Удалить пустой каталог. Если каталог не пуст — операция падает.</summary>
 public sealed record FsDeleteEmptyDirectory(string AbsolutePath) : FsOperation;
+
+/// <summary>
+/// Переместить (rename / move) каталог из <paramref name="SourceAbsolutePath"/> в
+/// <paramref name="DestinationAbsolutePath"/> через <see cref="Directory.Move"/>.
+/// Применяется в фазе fs-pre до записи tmp-файлов — это нужно, чтобы dirty-документы
+/// внутри переносимого каталога легли уже на новый путь.
+/// </summary>
+public sealed record FsMoveDirectory(string SourceAbsolutePath, string DestinationAbsolutePath) : FsOperation;
 
 /// <summary>
 /// Ошибка атомарной записи. Несёт код, исходный путь и человекочитаемое сообщение.
@@ -54,6 +62,12 @@ public sealed class AtomicWriteException : Exception
 /// каталога) через <see cref="WriteAndApply"/>. CreateDirectory применяется до
 /// фазы tmp (так что tmp-файл может лечь в новый каталог); DeleteEmptyDirectory —
 /// после rename.
+///
+/// R11: добавлен <see cref="FsMoveDirectory"/> (rename/move каталога). Применяется
+/// в фазе fs-pre сразу после CreateDirectory и до фазы tmp — это позволяет
+/// dirty-документу внутри переносимого каталога лечь на новый путь, а не на
+/// несуществующий старый. FS-операции одного типа применяются в порядке
+/// регистрации в <see cref="WriteState"/>.
 /// </summary>
 public static class AtomicWriter
 {
@@ -66,10 +80,11 @@ public static class AtomicWriter
     /// Атомарно записывает <paramref name="targets"/> и применяет
     /// <paramref name="fsOperations"/>. Порядок:
     ///   1) <see cref="FsCreateDirectory"/> — все, в порядке поступления;
-    ///   2) фаза tmp + rename для targets;
-    ///   3) <see cref="FsDeleteEmptyDirectory"/> — все, в порядке поступления.
-    /// При ошибке на фазе 1 — ничего не записано (но каталоги, созданные до
-    /// ошибки, остаются — они идемпотентны и не нарушают согласованности).
+    ///   2) <see cref="FsMoveDirectory"/> — все, в порядке поступления;
+    ///   3) фаза tmp + rename для targets;
+    ///   4) <see cref="FsDeleteEmptyDirectory"/> — все, в порядке поступления.
+    /// При ошибке на фазе 1–2 — ничего не записано (но каталоги, созданные/
+    /// перенесённые до ошибки, остаются как есть; обратного отката нет).
     /// </summary>
     public static void WriteAndApply(
         IReadOnlyList<AtomicWriteTarget> targets,
@@ -79,7 +94,7 @@ public static class AtomicWriter
         ArgumentNullException.ThrowIfNull(fsOperations);
         if (targets.Count == 0 && fsOperations.Count == 0) return;
 
-        // Фаза fs-pre: CreateDirectory.
+        // Фаза fs-pre/1: CreateDirectory.
         foreach (var op in fsOperations)
         {
             if (op is not FsCreateDirectory create) continue;
@@ -93,6 +108,25 @@ public static class AtomicWriter
                     "fs_create_directory_failed",
                     create.AbsolutePath,
                     $"Не удалось создать каталог '{create.AbsolutePath}': {ex.Message}",
+                    ex);
+            }
+        }
+
+        // Фаза fs-pre/2: MoveDirectory. Выполняется до tmp-фазы, чтобы dirty-документ
+        // внутри переносимого каталога лёг по новому пути.
+        foreach (var op in fsOperations)
+        {
+            if (op is not FsMoveDirectory move) continue;
+            try
+            {
+                Directory.Move(move.SourceAbsolutePath, move.DestinationAbsolutePath);
+            }
+            catch (Exception ex)
+            {
+                throw new AtomicWriteException(
+                    "fs_move_directory_failed",
+                    move.SourceAbsolutePath,
+                    $"Не удалось перенести каталог '{move.SourceAbsolutePath}' → '{move.DestinationAbsolutePath}': {ex.Message}",
                     ex);
             }
         }
