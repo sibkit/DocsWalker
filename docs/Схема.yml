@@ -1,180 +1,114 @@
-description: Описание узлов, связей и форм значений документов проекта DocsWalker. Schema-файл, валидируется по docs/.docswalker/meta-schema.yml и сам валидирует все остальные docs/*.yml.
+description: Описание типов узлов проекта DocsWalker. Schema-файл валидируется по docs/.docswalker/meta-schema.yml (v4) и сам валидирует все остальные docs/*.yml.
 types:
+  - name: folder
+    description: Каталог в docs/. Структурный узел, группирует documents и подпапки. Title — имя каталога. Узел не несёт собственного текста.
+    title_source: dirname
+    text_required: false
+    path_targets:
+      - root
+      - folder
   - name: document
-    kind: mapping
-    node: true
+    description: YAML-файл в docs/. Один файл — один документ. Title — имя файла без расширения. text — однострочное описание-summary документа.
     title_source: filename
-    description: Корневой узел YAML-файла docs/. Один файл — один документ. Title документа — имя файла без расширения относительно корня docs/.
-    fields:
-      - name: id
-        type: integer
-        required: true
-        description: Sequence-id узла, выдаваемый DocsWalker.
-      - name: description
-        type: string
-        required: true
-        description: Однострочное описание документа.
-      - name: content
-        type: list
-        of: section
-        required: true
-        description: Список разделов документа.
-    constraints:
-      - Дополнительные ключи в корневом mapping не допускаются.
-      - Имя файла без расширения уникально в пределах docs/ и служит title документа.
+    text_required: true
+    path_targets:
+      - root
+      - folder
+    out_refs:
+      - name: sections
+        target_types:
+          - section
+        cardinality: many
+        required: false
+        description: Список разделов документа в порядке появления в YAML.
   - name: section
-    kind: single_key_mapping
-    node: true
+    description: Раздел документа. Структурный узел, контейнер атомов. Title — короткое название раздела (1–3 слова), text — пустой (смысл несут атомы внутри).
     title_source: inline_key
-    title_format: "(#{id}) {title}"
-    key_type: string
-    description: 'Раздел документа. Single-key mapping: ключ — склейка id и заголовка по шаблону title_format, значение — список блоков. Допустимые блоки перечислены в blocks.'
-    blocks:
+    text_required: false
+    path_targets:
+      - document
+    out_refs:
       - name: statements
-        of: text
+        target_types:
+          - statement
+        cardinality: many
         required: false
         description: Утверждения о предмете раздела.
       - name: rules
-        of: text
+        target_types:
+          - rule
+        cardinality: many
         required: false
         description: Правила раздела. Модальность (обязательная или запрещающая) выражается формулировкой текста.
       - name: may_rules
-        of: text
+        target_types:
+          - may_rule
+        cardinality: many
         required: false
         description: Допускающие правила.
       - name: notes
-        of: text
+        target_types:
+          - note
+        cardinality: many
         required: false
         description: Заметки.
       - name: definitions
-        of: definition
+        target_types:
+          - definition
+        cardinality: many
         required: false
-        description: Определения терминов. Каждый элемент — узел; принадлежность к блоку порождает связь по умолчанию типа "definitions" от section к definition.
+        description: Определения терминов.
       - name: examples
-        of: example
+        target_types:
+          - example
+        cardinality: many
         required: false
-        description: Примеры. Каждый элемент — узел; принадлежность к блоку порождает связь по умолчанию типа "examples".
-      - name: fields
-        of: field
-        required: false
-        description: Описание полей структурного типа (используется в schema-файле). Каждый элемент — узел; принадлежность к блоку порождает связь по умолчанию типа "fields".
-      - name: out_refs
-        of: reference
-        required: false
-        description: 'Явные перекрёстные связи раздела с другими узлами. Каждая запись — single_key_mapping {имя_ref_type: id_цели}.'
+        description: Примеры.
       - name: llm
-        of: text
+        target_types:
+          - llm_hint
+        cardinality: many
         required: false
         description: Указания для LLM, не подлежащие изложению пользователю.
-    constraints:
-      - id уникален в пределах docs/.
-      - title уникален в пределах document.
-      - В одной section не может быть двух блоков с одинаковым name.
-      - Внутри section допустимы дополнительные YAML-подразделы, не пересекающиеся с именами блоков и не нарушающие правил оформления.
+  - name: statement
+    description: Утверждение в section. Атом-лист. text — формулировка утверждения; title — 1–2-словное сжатие.
+    title_source: inline_key
+    text_required: true
+    path_targets:
+      - section
+  - name: rule
+    description: Правило в section. Атом-лист. text — формулировка правила; title — 1–2-словное сжатие.
+    title_source: inline_key
+    text_required: true
+    path_targets:
+      - section
+  - name: may_rule
+    description: Допускающее правило в section. Атом-лист.
+    title_source: inline_key
+    text_required: true
+    path_targets:
+      - section
+  - name: note
+    description: Заметка в section. Атом-лист.
+    title_source: inline_key
+    text_required: true
+    path_targets:
+      - section
   - name: definition
-    kind: single_key_mapping
-    node: true
+    description: Определение термина в section. Атом-лист. title — определяемый термин, text — содержание определения.
     title_source: inline_key
-    title_format: "(#{id}) {title}"
-    key_type: string
-    value_type: text
-    description: Узел-определение внутри section. Ключ — склейка id и определяемого термина, значение — содержание определения.
-    constraints:
-      - id уникален в пределах docs/.
+    text_required: true
+    path_targets:
+      - section
   - name: example
-    kind: single_key_mapping
-    node: true
+    description: Пример в section. Атом-лист. title — подпись или ссылка примера, text — содержимое примера.
     title_source: inline_key
-    title_format: "(#{id}) {title}"
-    key_type: string
-    value_type: text
-    description: Узел-пример внутри section. Ключ — склейка id и подписи примера, значение — содержимое примера.
-    constraints:
-      - id уникален в пределах docs/.
-  - name: field
-    kind: mapping
-    node: true
-    title_source: field
-    title_field: name
-    description: Узел-описание одного поля структурного типа. Используется в schema-файле и в meta-схеме.
-    fields:
-      - name: id
-        type: integer
-        required: true
-        description: Sequence-id узла, выдаваемый DocsWalker.
-      - name: name
-        type: identifier
-        required: true
-        description: Имя поля (snake_case). Title узла берётся из этого поля.
-      - name: type
-        type: string
-        required: true
-        description: Имя типа из Схемы или примитива.
-      - name: of
-        type: string
-        required: false
-        description: Имя типа элемента — указывается только при type=list.
-      - name: values
-        type: list
-        of: string
-        required: false
-        description: Перечень допустимых значений — указывается только при type=enum.
-      - name: required
-        type: bool
-        required: true
-        description: Обязательность поля.
-      - name: default
-        type: text
-        required: false
-        description: Значение по умолчанию.
-      - name: description
-        type: text
-        required: true
-        description: Назначение поля.
-    constraints:
-      - id уникален в пределах docs/.
-      - default допустим только при required=false.
-      - of обязательно при type=list.
-      - values обязательно при type=enum.
-  - name: reference
-    kind: single_key_mapping
-    key_type: string
-    value_type: integer
-    description: 'Сериализация одной направленной связи в блоке out_refs узла-источника. Ключ — имя ref_type, объявленного в Схеме; значение — id узла-цели.'
-    constraints:
-      - Ключ должен быть именем существующего ref_type из Схемы (кроме system=true).
-      - Значение должно быть id существующего узла docs/.
-      - Путь и человекочитаемые подсказки в YAML не хранятся; путь к узлу — производная иерархии, доступная через API DocsWalker.
-  - name: path
-    kind: ref_type
-    direction: child_to_parent
-    system: true
-    description: Системная связь узла с его родителем по YAML-вложенности. Производная — в файлах явно не хранится. Создаётся и удаляется DocsWalker автоматически при создании или удалении узла. Не используется в блоках out_refs.
-  - name: ref
-    kind: ref_type
-    direction: from_to
-    system: false
-    description: 'Перекрёстная ссылка одного узла на другой. Сериализуется в блоке out_refs как single_key_mapping {ref: id_цели}.'
-  - name: text
-    kind: primitive
-    description: Текстовое значение. Прозаическая строка любой длины, помещаемая на одной строке YAML.
-    constraints:
-      - Многострочные YAML-блоки литерала "|" в docs/ не используются.
-  - name: string
-    kind: primitive
-    description: 'Однострочная YAML-строка. Кавычки ставятся, если значение содержит спецсимволы YAML (например "#" в начале).'
-  - name: identifier
-    kind: primitive
-    description: Короткая строка в нижнем регистре, snake_case или kebab-case. Допустимы цифры и дефис.
-  - name: integer
-    kind: primitive
-    description: Целое неотрицательное число. Используется для id узлов и для значения связи в reference. В YAML записывается десятичной формой; при кодировании в title_format подставляется как есть.
-  - name: bool
-    kind: primitive
-    description: YAML-булевское значение — true или false.
-  - name: enum
-    kind: primitive
-    description: Строковое значение из заранее заданного набора. Конкретный набор задаётся в описании поля через values.
-  - name: list
-    kind: primitive
-    description: YAML-список значений одного типа. Тип элемента задаётся в описании поля через of.
+    text_required: true
+    path_targets:
+      - section
+  - name: llm_hint
+    description: Указание для LLM в section. Атом-лист.
+    title_source: inline_key
+    text_required: true
+    path_targets:
+      - section

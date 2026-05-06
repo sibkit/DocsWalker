@@ -44,14 +44,28 @@
 
 Конструкции `fields`, `blocks`, `key_type`, `value_type`, `direction`, `system` в типах — уходят. Различие system/default/explicit на уровне Схемы исчезает: связь либо объявлена в типе, либо нет.
 
+### Title как path-сегмент и формат YAML смысловых узлов
+`title` — это сжатие `text` до 1–2 слов, path-сегмент узла, а не отдельная сущность и не display-name. Используется в path-навигации (`/Document/Section/Atom-title`) и для дискаверабельности через имя, а не только id. Если для bullet нет естественного title — это сигнал, что bullet шумный и должен слиться с соседом или быть удалён; «нет title» как нормальный кейс не существует.
+
+Дихотомия типов:
+- **Структурные** (`root`, `folder`, `document`) — `title_source` ∈ `{filename, dirname}`; узел физически = файл или каталог.
+- **Смысловые** (`section`, `definition`, `example`, `statement`, `rule`, `may_rule`, `note`, `llm_hint`) — `title_source = inline_key`; узел физически = mapping-ключ в YAML родителя.
+
+`title_source` enum остаётся `{filename, dirname, inline_key}` — без новых значений, без исключений.
+
+Единый формат сериализации смысловых узлов — одна YAML-запись `"(#id) Title": value`. Форма `value` диктуется контрактом типа: при `text_required=true` без `out_refs` value = строка с текстом узла; при наличии `out_refs` value = mapping с сериализованными исходящими связями. Этот формат уже существует у `definition`/`example` в текущих docs; атомизация распространяет его на ex-bullets `statements`/`rules`/`may_rules`/`notes`/`llm`. Конкретный пример формата — в DocsWalker.yml (R4).
+
 ### Атомизация bullet-блоков
 Текущие text-блоки section (`statements`, `rules`, `may_rules`, `notes`, `llm`) разворачиваются в новые node-типы:
-- `statement`, `rule`, `may_rule`, `note`, `llm_hint` — каждый node-тип с `text_required=true`, `path_targets=[section]`.
+- `statement`, `rule`, `may_rule`, `note`, `llm_hint` — каждый node-тип с `text_required=true`, `path_targets=[section]`, `title_source=inline_key`.
 - В `section` вместо блоков появляются исходящие связи `statements`, `rules`, `may_rules`, `notes`, `llm`; каждая связь cardinality=many, target_types=[<соответствующий тип>].
-- Каждый bullet старого YAML получает свой id (sequence пересчитывается под максимальный).
+- Каждый bullet старого YAML получает свой id (sequence пересчитывается под максимальный) и 1–2-словный title; сериализуется по формату `"(#id) Title": text` (см. раздел про title).
 
 ### Уход типа field
 Тип `field` из текущей Схемы уходит. Контракт типа полностью описывается через объявление связей в самом `type_definition` — описывать «field» как отдельный node-тип не нужно. Все field-узлы исчезают после миграции.
+
+### Cross-refs (отказ от generic `ref`)
+Generic-тип связи `ref` (текущий `kind: ref_type, direction: from_to`) уходит. Каждая связь — это named контракт, объявленный в типе узла-источника. На R3 у `section`/`document`/прочих смысловых типов **никакие cross-refs не объявляются** — оставляем минимальный набор связей под атомизацию. На R5 каждое существующее `{ref: id}` в живых docs смотрится по одному: либо переименование в семантически точный named ref (с декларацией в Схеме того же шага), либо удаление как избыточный — то есть cross-refs появляются спросом, а не сразу.
 
 ### Что остаётся как есть
 - YAML — единственная форма хранения.
@@ -65,7 +79,7 @@
 
 - [+] (R1) revert-docs-axes-rewrite — откатить правки docs/{.docswalker/meta-schema.yml, Схема.yml, DocsWalker.yml, Правила оформления.yml} от коммитов `4baa335` / `0f59bd8` / `d7a0158` (axes-* шаги). Цель — вернуться к версии до axes-refactor для чистой переработки под refs-модель. Способ — `git checkout ce3f05e^ -- <files>` или явная правка под содержимое до axes (на выбор реализатора).
 - [+] (R2) refs-model-meta-schema — переписать `docs/.docswalker/meta-schema.yml` под refs-модель: `type_definition` имеет `name, title_source, text_required, path_targets, out_refs[]`; раздел `axis_definition` уходит; `field_definition` / `block_definition` уходят; `ref_kind` / `ref_direction` уходят. Поднять `meta_schema_version` до 4.
-- [*] (R3) refs-model-schema — переписать `docs/Схема.yml`: убрать тип `field`; добавить типы `statement` / `rule` / `may_rule` / `note` / `llm_hint`; описать out_refs-контракты для `document` / `section` / `definition` / `example` / `folder`; убрать blocks/fields/value_type у типов; убрать раздел axes (если был добавлен).
+- [+] (R3) refs-model-schema — переписать `docs/Схема.yml`: убрать тип `field`; добавить типы `statement` / `rule` / `may_rule` / `note` / `llm_hint`; описать out_refs-контракты для `document` / `section` / `definition` / `example` / `folder`; убрать blocks/fields/value_type у типов; убрать раздел axes (если был добавлен).
 - [*] (R4) refs-model-docswalker-doc — переписать `docs/DocsWalker.yml` под новую терминологию (refs/out_refs, без axis); описание API под новую модель; описание атомизации bullets.
 - [*] (R5) migrate-docs-to-atoms — переписать существующие `docs/*.yml` (DocsWalker.yml, Стек.yml, Правила оформления.yml) под атомарную модель: каждый bullet → отдельный узел с id; sequence.txt пересчитывается.
 - [*] (R6) refs-model-core-graph — переписать ядро (`Schema/*`, `Graph/Node`, `Graph/DocumentLoader`, `Validation/*`) под refs-модель. Node = `{id, type, title, text, out_refs}`. Удалить `NodeBlock`/`TextBlock`/`ChildrenBlock`/`OutRefsBlock`, `Ref`/`RefOrigin` (или переименовать `Ref` в простую запись `(name, targetId)`). Промежуточные коммиты с красной сборкой допустимы (auto-режим, без обратной совместимости). Никакого shim.
