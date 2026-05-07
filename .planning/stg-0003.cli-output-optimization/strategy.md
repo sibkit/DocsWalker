@@ -44,7 +44,7 @@
 ## Шаги
 
 - [+] (01) cli-output-spec
-- [*] drop-cli-envelope
+- [+] (02) drop-cli-envelope
 - [*] get-refs-map-form
 - [*] omit-defaults-empties
 - [*] trim-error-describe-type

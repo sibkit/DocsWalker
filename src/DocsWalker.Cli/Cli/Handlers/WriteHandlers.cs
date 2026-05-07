@@ -11,11 +11,11 @@ namespace DocsWalker.Cli.Cli.Handlers;
 
 /// <summary>
 /// Обработчики write-команд CLI: каждая дёргает <see cref="WriteApi"/> с одной операцией,
-/// сериализует результат в общий success-конверт и переводит структурированные ошибки
-/// (<see cref="WriteApiException"/>, <see cref="WriteValidationException"/>,
-/// <see cref="GraphLoadException"/>, <see cref="SchemaLoadException"/>,
-/// <see cref="AtomicWriteException"/>, <see cref="SequenceCounterException"/>) в JSON
-/// формы <see cref="ErrorEnvelope"/>.
+/// сериализует результат напрямую в stdout (envelope-free, см. <see cref="Output"/>) и
+/// переводит структурированные ошибки (<see cref="WriteApiException"/>,
+/// <see cref="WriteValidationException"/>, <see cref="GraphLoadException"/>,
+/// <see cref="SchemaLoadException"/>, <see cref="AtomicWriteException"/>,
+/// <see cref="SequenceCounterException"/>) в плоский JSON-объект ошибки в stderr.
 /// </summary>
 internal static class WriteHandlers
 {
@@ -279,9 +279,19 @@ internal static class WriteHandlers
             var ctx = WriteContext.FromRoot(root);
             var api = new WriteApi(ctx);
             var result = api.Apply(ops, dryRun);
-            Output.WriteSuccess(
-                transaction ? TransactionResultToJson(result) : SingleResultToJson(result),
-                applied: result.Applied);
+            if (transaction)
+            {
+                // Для transaction результат — top-level массив; applied уже впечён в
+                // каждый элемент TransactionResultToJson'ом. Single-arg WriteSuccess
+                // печатает массив как есть.
+                Output.WriteSuccess(TransactionResultToJson(result));
+            }
+            else
+            {
+                // Одиночная write-команда: result — JsonObject, two-arg overload
+                // подмешивает applied как top-level-поле.
+                Output.WriteSuccess(SingleResultToJson(result), applied: result.Applied);
+            }
             return 0;
         }
         catch (WriteValidationException ex)
@@ -385,9 +395,11 @@ internal static class WriteHandlers
     }
 
     /// <summary>
-    /// Для команды `transaction` — массив объектов формы `{op: имя, ...поля результата}`
-    /// в порядке исходных операций. Поле `op` отличает шейп от одиночной команды и
-    /// позволяет LLM сопоставить элемент массива с входной операцией.
+    /// Для команды `transaction` — массив объектов формы
+    /// <c>{op: имя, ...поля результата операции, applied}</c> в порядке исходных операций
+    /// (top-level массив без обёртки). Поле <c>op</c> отличает шейп от одиночной команды;
+    /// <c>applied</c> повторяется в каждом элементе — значение одно (transaction атомарна),
+    /// но envelope-free контракт требует, чтобы оно было видно на каждом результате.
     /// </summary>
     private static JsonNode TransactionResultToJson(WriteResult result)
     {
@@ -397,6 +409,7 @@ internal static class WriteHandlers
             var flat = new JsonObject { ["op"] = op.Type };
             foreach (var kv in op.Data)
                 flat[kv.Key] = kv.Value?.DeepClone();
+            flat["applied"] = JsonValue.Create(result.Applied);
             arr.Add((JsonNode?)flat);
         }
         return arr;
