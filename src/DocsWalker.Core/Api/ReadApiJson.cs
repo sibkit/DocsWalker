@@ -148,24 +148,24 @@ public static class ReadApiJson
         };
     }
 
-    public static JsonObject RefSetToJson(RefSet set)
+    public static JsonObject RefSetToJson(RefSet set) => new()
     {
-        var inArr = new JsonArray();
-        foreach (var v in set.In) inArr.Add((JsonNode?)RefViewToJson(v));
-        var outArr = new JsonArray();
-        foreach (var v in set.Out) outArr.Add((JsonNode?)RefViewToJson(v));
-        return new JsonObject
-        {
-            ["in"] = inArr,
-            ["out"] = outArr,
-        };
-    }
-
-    private static JsonObject RefViewToJson(RefView v) => new()
-    {
-        ["name"] = v.Name,
-        ["target_id"] = v.TargetId,
+        ["in"] = RefMapToJson(set.In),
+        ["out"] = RefMapToJson(set.Out),
     };
+
+    public static JsonObject RefMapToJson(IReadOnlyDictionary<string, IReadOnlyList<int>> map)
+    {
+        var obj = new JsonObject();
+        foreach (var name in map.Keys.OrderBy(k => k, StringComparer.Ordinal))
+        {
+            var ids = new JsonArray();
+            foreach (var id in map[name].OrderBy(x => x))
+                ids.Add((JsonNode?)JsonValue.Create(id));
+            obj[name] = ids;
+        }
+        return obj;
+    }
 
     /// <summary>
     /// Сериализация результата check-integrity. Для LLM ключевая часть — массив errors,

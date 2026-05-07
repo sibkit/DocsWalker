@@ -45,7 +45,7 @@
 
 - [+] (01) cli-output-spec
 - [+] (02) drop-cli-envelope
-- [*] get-refs-map-form
+- [+] (03) get-refs-map-form
 - [*] omit-defaults-empties
 - [*] trim-error-describe-type
 - [ ] update-stale-cli-examples — пример #73 использует устаревший `--new-path`; ревизовать bare-command examples в секции CLI-интерфейс под актуальный API.

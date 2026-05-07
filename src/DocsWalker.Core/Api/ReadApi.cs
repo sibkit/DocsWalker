@@ -39,16 +39,14 @@ public sealed record MapNode(
     IReadOnlyList<MapNode> Children);
 
 /// <summary>
-/// Связь в форме, удобной для read-API: имя связи и id противоположного узла.
-/// «Противоположный узел» = цель для исходящих, источник для входящих;
-/// направление определяется тем, в какой коллекции (<see cref="RefSet.Out"/>
-/// или <see cref="RefSet.In"/>) лежит запись.
+/// Связи узла, сгруппированные по имени связи: для каждого имени — отсортированный
+/// по возрастанию список id противоположных узлов («цель» для исходящих,
+/// «источник» для входящих). Совпадает по форме с <c>out_refs</c> в get-nodes
+/// и describe-type — единый контракт «связь → список целей» по всему API.
 /// </summary>
-public sealed record RefView(string Name, int TargetId);
-
 public sealed record RefSet(
-    IReadOnlyList<RefView> In,
-    IReadOnlyList<RefView> Out);
+    IReadOnlyDictionary<string, IReadOnlyList<int>> In,
+    IReadOnlyDictionary<string, IReadOnlyList<int>> Out);
 
 /// <summary>
 /// Полное поддерево узла: сам узел плюс дочерние поддеревья (по выбранному tree-scope).
@@ -341,31 +339,43 @@ public sealed class ReadApi
         var outRefs = _graph.GetOutRefs(id);
         var inRefs = _graph.GetInRefs(id);
 
-        var outViews = new List<RefView>(outRefs.Count);
-        foreach (var r in outRefs)
+        return new RefSet(
+            BuildRefMap(inRefs, name, r => r.Name, r => r.SourceId),
+            BuildRefMap(outRefs, name, r => r.Name, r => r.TargetId));
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<int>> BuildRefMap<T>(
+        IReadOnlyList<T> refs,
+        string? nameFilter,
+        Func<T, string> getName,
+        Func<T, int> getId)
+    {
+        var grouped = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        foreach (var r in refs)
         {
-            if (name is not null && !string.Equals(r.Name, name, StringComparison.Ordinal)) continue;
-            outViews.Add(new RefView(r.Name, r.TargetId));
+            var n = getName(r);
+            if (nameFilter is not null && !string.Equals(n, nameFilter, StringComparison.Ordinal)) continue;
+            if (!grouped.TryGetValue(n, out var ids))
+            {
+                ids = new List<int>();
+                grouped[n] = ids;
+            }
+            ids.Add(getId(r));
         }
 
-        var inViews = new List<RefView>(inRefs.Count);
-        foreach (var r in inRefs)
-        {
-            if (name is not null && !string.Equals(r.Name, name, StringComparison.Ordinal)) continue;
-            inViews.Add(new RefView(r.Name, r.SourceId));
-        }
-
-        return new RefSet(inViews, outViews);
+        var result = new Dictionary<string, IReadOnlyList<int>>(grouped.Count, StringComparer.Ordinal);
+        foreach (var (k, ids) in grouped)
+            result[k] = ids;
+        return result;
     }
 
     /// <summary>
-    /// Только входящие связи; эквивалент <see cref="GetRefs"/>, но <see cref="RefSet.Out"/> пустой.
+    /// Только входящие связи в форме map &lt;имя_связи → source-ids&gt; (без обёртки in/out,
+    /// поскольку направление и так фиксировано). Совпадает по форме с <c>out_refs</c>
+    /// в get-nodes и describe-type.
     /// </summary>
-    public RefSet GetInRefs(int id, string? name = null)
-    {
-        var full = GetRefs(id, name);
-        return new RefSet(full.In, Array.Empty<RefView>());
-    }
+    public IReadOnlyDictionary<string, IReadOnlyList<int>> GetInRefs(int id, string? name = null)
+        => GetRefs(id, name).In;
 
     /// <summary>
     /// Человекочитаемый путь от документа-корня до узла включительно, разделитель '/'.

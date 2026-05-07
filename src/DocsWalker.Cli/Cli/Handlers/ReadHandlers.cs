@@ -123,8 +123,8 @@ internal static class ReadHandlers
         {
             try
             {
-                var set = api.ReadApi.GetInRefs(id, name);
-                Output.WriteSuccess(ReadApiJson.RefSetToJson(set));
+                var map = api.ReadApi.GetInRefs(id, name);
+                Output.WriteSuccess(ReadApiJson.RefMapToJson(map));
                 return 0;
             }
             catch (ReadApiException ex)

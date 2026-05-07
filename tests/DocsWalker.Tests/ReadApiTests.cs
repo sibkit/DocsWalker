@@ -128,7 +128,8 @@ public class ReadApiTests
         var api = BuildApi();
         // Section "Стек реализации" id=45 — родитель DocsWalker (id=1).
         var set = api.GetRefs(45);
-        Assert.Contains(set.Out, v => v.Name == Node.PathRefName && v.TargetId == 1);
+        Assert.True(set.Out.TryGetValue(Node.PathRefName, out var pathTargets));
+        Assert.Contains(1, pathTargets!);
     }
 
     [Fact]
@@ -136,8 +137,8 @@ public class ReadApiTests
     {
         var api = BuildApi();
         var set = api.GetRefs(45, name: Node.PathRefName);
-        Assert.All(set.Out, v => Assert.Equal(Node.PathRefName, v.Name));
-        Assert.All(set.In, v => Assert.Equal(Node.PathRefName, v.Name));
+        Assert.All(set.Out.Keys, n => Assert.Equal(Node.PathRefName, n));
+        Assert.All(set.In.Keys, n => Assert.Equal(Node.PathRefName, n));
     }
 
     [Fact]
@@ -145,9 +146,8 @@ public class ReadApiTests
     {
         var api = BuildApi();
         // У DocsWalker (id=1) есть path-children (sections); GetInRefs должен вернуть их.
-        var set = api.GetInRefs(1);
-        Assert.Empty(set.Out);
-        Assert.Contains(set.In, v => v.Name == Node.PathRefName);
+        var map = api.GetInRefs(1);
+        Assert.True(map.ContainsKey(Node.PathRefName));
     }
 
     [Fact]
