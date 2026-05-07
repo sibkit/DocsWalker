@@ -48,8 +48,9 @@
 - [+] (03) get-refs-map-form
 - [+] (04) omit-defaults-empties
 - [+] (05) trim-error-describe-type
-- [ ] update-stale-cli-examples — пример #73 использует устаревший `--new-path`; ревизовать bare-command examples в секции CLI-интерфейс под актуальный API.
-- [ ] define-get-subtree — добавить узел-определение get_subtree в секции «Операции чтения» (id=17); CLI-команда реализована, но определения в docs нет.
+- [+] (06) update-stale-cli-examples
+- [+] (07) define-get-subtree
+- [+] (08) define-get-ancestors
 
 ## Итоговый порядок выполнения
 
@@ -60,6 +61,7 @@
 5. **`trim-error-describe-type`** — изолированное изменение в `ErrorEnrichment` плюс минимальное расширение write-handler'ов, чтобы пробрасывать `RefName` из Core-ошибок.
 6. **`update-stale-cli-examples`** — docs-only ревизия bare-command examples в секции CLI-интерфейс. Не блокирует и не блокируется code-шагами; ставится в конец как cleanup-хвост, замеченный при step-01.
 7. **`define-get-subtree`** — docs-only добавление узла-определения get_subtree в секции «Операции чтения». Тоже cleanup-хвост step-01; делаем после `omit-defaults-empties`, чтобы текст определения сразу учитывал новые правила сериализации (`subtree_tokens` опускается при равенстве `tokens`, `children=[]` опускается).
+8. **`define-get-ancestors`** — docs-only добавление узла-определения get_ancestors в секции «Операции чтения». Симметричный пробел с `define-get-subtree`: команда живая (`get_ancestors` в R15 stg-0002), а определения в docs нет. Делаем сразу после п.7 — оба определения берут id из `sequence.txt` последовательно одной правкой.
 
 ## Точка возобновления (для новой сессии после сброса контекста)
 
