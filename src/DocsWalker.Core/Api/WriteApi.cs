@@ -111,7 +111,14 @@ public sealed record DeleteRefOp(int FromId, string Name, int ToId) : WriteOp("d
 /// </summary>
 public sealed record WriteOpResult(string Type, JsonObject Data);
 
-public sealed record WriteResult(IReadOnlyList<WriteOpResult> OpResults);
+/// <summary>
+/// Результат пачки write-операций. <see cref="Applied"/>=false означает dry-run:
+/// pipeline отработал до валидатора включительно, но <see cref="Store.AtomicWriter"/>
+/// и обновление sequence.txt пропущены — на FS ничего не изменилось. Поле передаётся
+/// в success-конверт CLI как <c>applied</c> и позволяет LLM явно отличить «успешно
+/// проверено» от «успешно записано».
+/// </summary>
+public sealed record WriteResult(IReadOnlyList<WriteOpResult> OpResults, bool Applied);
 
 /// <summary>
 /// Параметры окружения write-операций: пути к docs/, Схема.yml, sequence.txt и
@@ -161,6 +168,13 @@ public sealed class WriteContext
 /// </summary>
 public sealed class WriteApi
 {
+    /// <summary>
+    /// Таймаут ожидания межпроцессного lock'а (см. <see cref="CrossProcessLock"/>).
+    /// 30 секунд достаточно, чтобы пропустить чужую большую транзакцию, и не настолько
+    /// долго, чтобы LLM решила, что процесс завис.
+    /// </summary>
+    public static readonly TimeSpan CrossProcessLockTimeout = TimeSpan.FromSeconds(30);
+
     private readonly WriteContext _ctx;
     private readonly object _processLock = new();
 
@@ -169,7 +183,15 @@ public sealed class WriteApi
         _ctx = ctx;
     }
 
-    public WriteResult Apply(IReadOnlyList<WriteOp> ops)
+    /// <summary>
+    /// Применяет пачку операций. <paramref name="dryRun"/>=true прогоняет весь pipeline
+    /// (резервирование id → применение операций → сборка графа → валидация) ровно как
+    /// при настоящей записи, но пропускает фазу <see cref="AtomicWriter.WriteAndApply"/>
+    /// и обновление sequence.txt — файлы docs/ остаются неизменными. Возвращаемый
+    /// <see cref="WriteResult"/> в обоих режимах одинаковой формы; режим различает
+    /// поле <see cref="WriteResult.Applied"/>.
+    /// </summary>
+    public WriteResult Apply(IReadOnlyList<WriteOp> ops, bool dryRun = false)
     {
         ArgumentNullException.ThrowIfNull(ops);
         if (ops.Count == 0)
@@ -177,17 +199,34 @@ public sealed class WriteApi
                 "empty_transaction",
                 "Список операций пуст — пачка должна содержать хотя бы одну операцию.");
 
-        // Один in-process lock на всё время операции — sequence-файл и YAML-файлы пишутся
-        // непротиворечиво. Cross-process safety — отдельный шаг (см. step-cross-process-lock).
+        // Двухуровневая сериализация:
+        //   1) in-process lock — упорядочивает write-вызовы внутри одного процесса
+        //      (общий sequence-счётчик, общий граф);
+        //   2) cross-process lock на docs/.docswalker/.lock — упорядочивает между
+        //      разными процессами DocsWalker над одним docs/. Lock берётся и при
+        //      dry-run: read-снимок графа должен быть консистентным относительно
+        //      чужих параллельных транзакций.
         lock (_processLock)
         {
-            return ApplyLocked(ops);
+            var lockPath = Path.Combine(_ctx.DocsRoot, ".docswalker", ".lock");
+            try
+            {
+                using var fileLock = CrossProcessLock.Acquire(lockPath, CrossProcessLockTimeout);
+                return ApplyLocked(ops, dryRun);
+            }
+            catch (CrossProcessLockTimeoutException ex)
+            {
+                throw new WriteApiException(
+                    "lock_timeout",
+                    $"Не удалось взять межпроцессный lock '{ex.LockPath}' за {ex.Timeout.TotalSeconds:0.#} секунд.",
+                    "Другой процесс DocsWalker сейчас пишет в этот docs/. Подожди завершения параллельного процесса или прерви его.");
+            }
         }
     }
 
-    public WriteResult ApplyOne(WriteOp op) => Apply(new[] { op });
+    public WriteResult ApplyOne(WriteOp op, bool dryRun = false) => Apply(new[] { op }, dryRun);
 
-    private WriteResult ApplyLocked(IReadOnlyList<WriteOp> ops)
+    private WriteResult ApplyLocked(IReadOnlyList<WriteOp> ops, bool dryRun)
     {
         var schema = SchemaLoader.LoadSchema(_ctx.SchemaPath);
         var loaded = DocumentLoader.Load(_ctx.DocsRoot, schema);
@@ -255,9 +294,12 @@ public sealed class WriteApi
                 "no_effect",
                 "Пачка операций не приводит ни к каким изменениям в файлах.");
 
-        AtomicWriter.WriteAndApply(targets, state.FsOperations);
+        // Dry-run останавливается ровно перед FS-фазой: валидатор уже подтвердил
+        // целостность нового снимка, поэтому можно честно сказать «сработало бы».
+        if (!dryRun)
+            AtomicWriter.WriteAndApply(targets, state.FsOperations);
 
-        return new WriteResult(opResults);
+        return new WriteResult(opResults, Applied: !dryRun);
     }
 
     private static WriteOpResult ApplyOp(WriteState s, WriteOp op) => op switch

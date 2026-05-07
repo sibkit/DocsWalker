@@ -8,6 +8,13 @@ namespace DocsWalker.Cli.Cli;
 internal sealed class SuccessEnvelope
 {
     public bool Ok { get; init; } = true;
+    /// <summary>
+    /// Только для write-команд: <c>true</c> — изменения записаны на FS;
+    /// <c>false</c> — это был dry-run (валидация прошла, файлы не изменены).
+    /// У read-команд поле остаётся <c>null</c> и не сериализуется (см.
+    /// <see cref="JsonIgnoreCondition.WhenWritingNull"/> в контексте сериализации).
+    /// </summary>
+    public bool? Applied { get; init; }
     public JsonNode? Result { get; init; }
 }
 
@@ -53,6 +60,17 @@ internal static class Output
     public static void WriteSuccess(JsonNode? result)
     {
         var envelope = new SuccessEnvelope { Result = result };
+        var json = JsonSerializer.Serialize(envelope, Ctx.SuccessEnvelope);
+        Console.Out.WriteLine(json);
+    }
+
+    /// <summary>
+    /// Перегрузка для write-команд: добавляет поле <c>applied</c> в success-конверт
+    /// (true — реально записано, false — dry-run).
+    /// </summary>
+    public static void WriteSuccess(JsonNode? result, bool applied)
+    {
+        var envelope = new SuccessEnvelope { Applied = applied, Result = result };
         var json = JsonSerializer.Serialize(envelope, Ctx.SuccessEnvelope);
         Console.Out.WriteLine(json);
     }

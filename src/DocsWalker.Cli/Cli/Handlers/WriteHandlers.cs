@@ -21,13 +21,13 @@ internal static class WriteHandlers
 {
     /// <summary>
     /// Фиксированные параметры <c>create-node</c>, известные на уровне CLI
-    /// независимо от Схемы. Всё остальное в args (кроме общего <c>root</c>)
-    /// трактуется как имя out_ref-связи и парсится как ID-список.
+    /// независимо от Схемы. Всё остальное в args (кроме общих <c>root</c> и
+    /// <c>dry-run</c>) трактуется как имя out_ref-связи и парсится как ID-список.
     /// </summary>
     private static readonly HashSet<string> CreateNodeFixedKeys =
-        new(StringComparer.Ordinal) { "type", "title", "text", "root" };
+        new(StringComparer.Ordinal) { "type", "title", "text", "root", "dry-run" };
 
-    public static int CreateNode(string root, IReadOnlyDictionary<string, string> args)
+    public static int CreateNode(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var typeName = args["type"];
         var title = args["title"];
@@ -56,10 +56,10 @@ internal static class WriteHandlers
             Title: title,
             Text: text,
             Refs: refs);
-        return Run(root, op);
+        return Run(root, op, dryRun);
     }
 
-    public static int UpdateNode(string root, IReadOnlyDictionary<string, string> args)
+    public static int UpdateNode(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var newTitle = args.TryGetValue("title", out var t) ? t : null;
         var newText  = args.TryGetValue("text",  out var x) ? x : null;
@@ -76,10 +76,10 @@ internal static class WriteHandlers
             Id: int.Parse(args["id"], CultureInfo.InvariantCulture),
             NewTitle: newTitle,
             NewText: newText);
-        return Run(root, op);
+        return Run(root, op, dryRun);
     }
 
-    public static int DeleteNodes(string root, IReadOnlyDictionary<string, string> args)
+    public static int DeleteNodes(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         if (!TryParseIdList(args["ids"], out var ids, out var parseError))
         {
@@ -91,10 +91,10 @@ internal static class WriteHandlers
             return 1;
         }
         var op = new DeleteNodesOp(ids);
-        return Run(root, op);
+        return Run(root, op, dryRun);
     }
 
-    public static int RedirectRefs(string root, IReadOnlyDictionary<string, string> args)
+    public static int RedirectRefs(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var hasFrom = args.TryGetValue("from", out var fromRaw);
         var hasFromSubtree = args.TryGetValue("from-subtree", out var fromSubtreeRaw);
@@ -181,7 +181,7 @@ internal static class WriteHandlers
             : null;
 
         var op = new RedirectRefsOp(fromIds, toId, name, unlink);
-        return Run(root, op);
+        return Run(root, op, dryRun);
     }
 
     /// <summary>
@@ -214,7 +214,7 @@ internal static class WriteHandlers
         return result;
     }
 
-    public static int MoveNode(string root, IReadOnlyDictionary<string, string> args)
+    public static int MoveNode(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var tree = args.TryGetValue("tree", out var tr) && !string.IsNullOrEmpty(tr)
             ? tr
@@ -223,28 +223,28 @@ internal static class WriteHandlers
             Id: int.Parse(args["id"], CultureInfo.InvariantCulture),
             NewParentId: int.Parse(args["to"], CultureInfo.InvariantCulture),
             Tree: tree);
-        return Run(root, op);
+        return Run(root, op, dryRun);
     }
 
-    public static int CreateRef(string root, IReadOnlyDictionary<string, string> args)
+    public static int CreateRef(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var op = new CreateRefOp(
             FromId: int.Parse(args["from-id"], CultureInfo.InvariantCulture),
             Name: args["name"],
             ToId: int.Parse(args["to-id"], CultureInfo.InvariantCulture));
-        return Run(root, op);
+        return Run(root, op, dryRun);
     }
 
-    public static int DeleteRef(string root, IReadOnlyDictionary<string, string> args)
+    public static int DeleteRef(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var op = new DeleteRefOp(
             FromId: int.Parse(args["from-id"], CultureInfo.InvariantCulture),
             Name: args["name"],
             ToId: int.Parse(args["to-id"], CultureInfo.InvariantCulture));
-        return Run(root, op);
+        return Run(root, op, dryRun);
     }
 
-    public static int Transaction(string root, IReadOnlyDictionary<string, string> args)
+    public static int Transaction(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         IReadOnlyList<WriteOp> ops;
         try
@@ -263,24 +263,25 @@ internal static class WriteHandlers
             return 1;
         }
 
-        return RunMany(root, ops);
+        return RunMany(root, ops, dryRun);
     }
 
-    private static int Run(string root, WriteOp op) => RunCore(root, new[] { op }, transaction: false);
+    private static int Run(string root, WriteOp op, bool dryRun) =>
+        RunCore(root, new[] { op }, transaction: false, dryRun);
 
-    private static int RunMany(string root, IReadOnlyList<WriteOp> ops) =>
-        RunCore(root, ops, transaction: true);
+    private static int RunMany(string root, IReadOnlyList<WriteOp> ops, bool dryRun) =>
+        RunCore(root, ops, transaction: true, dryRun);
 
-    private static int RunCore(string root, IReadOnlyList<WriteOp> ops, bool transaction)
+    private static int RunCore(string root, IReadOnlyList<WriteOp> ops, bool transaction, bool dryRun)
     {
         try
         {
             var ctx = WriteContext.FromRoot(root);
             var api = new WriteApi(ctx);
-            var result = api.Apply(ops);
-            Output.WriteSuccess(transaction
-                ? TransactionResultToJson(result)
-                : SingleResultToJson(result));
+            var result = api.Apply(ops, dryRun);
+            Output.WriteSuccess(
+                transaction ? TransactionResultToJson(result) : SingleResultToJson(result),
+                applied: result.Applied);
             return 0;
         }
         catch (WriteValidationException ex)

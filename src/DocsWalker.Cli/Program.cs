@@ -12,6 +12,17 @@ return Dispatcher.Run(args);
 
 internal static class Dispatcher
 {
+    /// <summary>
+    /// Имена write-команд: для них валиден общий флаг <c>--dry-run</c>. Read-команды
+    /// получают <c>unknown_parameter</c>, если этот флаг им передан, — это явный сигнал
+    /// LLM, что dry-run применим только к командам с побочным эффектом.
+    /// </summary>
+    private static readonly HashSet<string> WriteCommands = new(StringComparer.Ordinal)
+    {
+        "create_node", "update_node", "delete_nodes", "move_node",
+        "create_ref", "delete_ref", "redirect_refs", "transaction",
+    };
+
     public static int Run(string[] argv)
     {
         var (parsed, parseError) = ArgParser.Parse(argv);
@@ -42,6 +53,12 @@ internal static class Dispatcher
             return 1;
         }
 
+        if (!TryResolveDryRun(spec, parsed.Params, out var dryRun, out var dryRunError))
+        {
+            Output.WriteError(dryRunError!.Code, path: null, dryRunError.Message, dryRunError.Hint);
+            return 1;
+        }
+
         return spec.SnakeName switch
         {
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
@@ -67,14 +84,14 @@ internal static class Dispatcher
                                     parsed.Params.TryGetValue("name", out var n2) ? n2 : null),
             "search"          => ReadHandlers.Search(rootPath, parsed.Params["query"]),
             "check_integrity" => ReadHandlers.CheckIntegrity(rootPath),
-            "create_node"     => WriteHandlers.CreateNode(rootPath, parsed.Params),
-            "update_node"     => WriteHandlers.UpdateNode(rootPath, parsed.Params),
-            "delete_nodes"    => WriteHandlers.DeleteNodes(rootPath, parsed.Params),
-            "move_node"       => WriteHandlers.MoveNode(rootPath, parsed.Params),
-            "create_ref"      => WriteHandlers.CreateRef(rootPath, parsed.Params),
-            "delete_ref"      => WriteHandlers.DeleteRef(rootPath, parsed.Params),
-            "redirect_refs"   => WriteHandlers.RedirectRefs(rootPath, parsed.Params),
-            "transaction"     => WriteHandlers.Transaction(rootPath, parsed.Params),
+            "create_node"     => WriteHandlers.CreateNode(rootPath, parsed.Params, dryRun),
+            "update_node"     => WriteHandlers.UpdateNode(rootPath, parsed.Params, dryRun),
+            "delete_nodes"    => WriteHandlers.DeleteNodes(rootPath, parsed.Params, dryRun),
+            "move_node"       => WriteHandlers.MoveNode(rootPath, parsed.Params, dryRun),
+            "create_ref"      => WriteHandlers.CreateRef(rootPath, parsed.Params, dryRun),
+            "delete_ref"      => WriteHandlers.DeleteRef(rootPath, parsed.Params, dryRun),
+            "redirect_refs"   => WriteHandlers.RedirectRefs(rootPath, parsed.Params, dryRun),
+            "transaction"     => WriteHandlers.Transaction(rootPath, parsed.Params, dryRun),
             _                 => NotImplemented(spec),
         };
     }
@@ -92,7 +109,9 @@ internal static class Dispatcher
         CommandSpec spec,
         IReadOnlyDictionary<string, string> provided)
     {
-        // Неизвестные параметры (общий --root исключаем).
+        // Неизвестные параметры (общие --root и --dry-run исключаем).
+        // --dry-run проверяется отдельно (TryResolveDryRun) — там же он отвергается,
+        // если передан read-команде.
         // Для динамических команд (например, create-node, у которой имена
         // out_refs-параметров берутся из контракта типа в Схеме) проверка
         // unknown-параметра пропускается — handler сам разбирается, что
@@ -101,7 +120,7 @@ internal static class Dispatcher
         {
             foreach (var key in provided.Keys)
             {
-                if (key == "root")
+                if (key == "root" || key == "dry-run")
                     continue;
                 if (!HasParam(spec, key))
                 {
@@ -240,7 +259,58 @@ internal static class Dispatcher
         return false;
     }
 
+    /// <summary>
+    /// Разбирает общий флаг <c>--dry-run=true|false</c>. Допустимые значения:
+    /// <c>true</c>/<c>1</c> и <c>false</c>/<c>0</c> (регистр не важен). Любое другое
+    /// значение → <c>invalid_parameter</c>. Если флаг передан read-команде —
+    /// <c>unknown_parameter</c> (dry-run применим только к командам с побочным
+    /// эффектом). Для write-команд по умолчанию false.
+    /// </summary>
+    private static bool TryResolveDryRun(
+        CommandSpec spec,
+        IReadOnlyDictionary<string, string> args,
+        out bool dryRun,
+        out DryRunError? error)
+    {
+        dryRun = false;
+        if (!args.TryGetValue("dry-run", out var raw))
+        {
+            error = null;
+            return true;
+        }
+
+        if (!WriteCommands.Contains(spec.SnakeName))
+        {
+            error = new DryRunError(
+                "unknown_parameter",
+                $"Параметр '--dry-run' не применим к команде '{spec.KebabName}' (только для write-команд).",
+                "Read-команды не имеют побочного эффекта; dry-run для них не определён.");
+            return false;
+        }
+
+        if (string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || raw == "1")
+        {
+            dryRun = true;
+            error = null;
+            return true;
+        }
+        if (string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || raw == "0")
+        {
+            dryRun = false;
+            error = null;
+            return true;
+        }
+
+        error = new DryRunError(
+            "invalid_parameter",
+            $"Параметр '--dry-run': ожидается 'true' или 'false', получено '{raw}'.",
+            null);
+        return false;
+    }
+
     private sealed record ParamValidationError(string Code, string Message);
 
     private sealed record RootError(string Code, string Path, string Message);
+
+    private sealed record DryRunError(string Code, string Message, string? Hint);
 }

@@ -208,6 +208,9 @@ sections:
       - "(#165) Коды CLI-ошибок":
         - text: На вход неизвестной команды CLI возвращает ошибку с кодом unknown_command, на отсутствующий обязательный параметр — missing_parameter, на лишний параметр — unknown_parameter, на нарушение формата значения — invalid_parameter.
         - examples: [223]
+      - "(#269) dry-run":
+        - text: Общий флаг --dry-run=true прогоняет write-команду до валидации включительно, но не пишет файлы и не обновляет sequence.txt. Возвращает обычный success-ответ с дополнительным полем applied=false; на ошибку валидации — обычная ошибка validation_failed. Read-команды флаг не принимают (отвергают как unknown_parameter).
+        - examples: [268]
     - examples:
       - "(#36) Чтение нескольких узлов сразу": docswalker get-nodes --ids=1,8,42
       - "(#37) Карта документации": docswalker get-map
@@ -226,6 +229,7 @@ sections:
       - "(#221) Кириллица в JSON": '{"title":"Назначение"}, не {"title":"\\u041d\\u0430\\u0437..."}.'
       - "(#222) Формат ошибки err": '{"ok": false, "error": {"code": "node_not_found", "message": "..."}} в stderr, exit ≠ 0.'
       - "(#223) Коды CLI": docswalker bogus-cmd → unknown_command; docswalker get-nodes без --ids → missing_parameter.
+      - "(#268) dry-run флаг": docswalker create-node --type=example --path=35 --title=foo --text=bar --dry-run=true → ok=true, applied=false; файлы docs/ не изменяются.
   - "(#44) MCP-интерфейс":
     - statements:
       - "(#166) MCP поверх ядра": MCP-сервер реализуется поверх того же ядра, что и CLI. Каждая операция API становится MCP-tool с типизированными параметрами.
@@ -272,11 +276,13 @@ sections:
       - "(#177) Cross-process lock":
         - text: Между процессами операции записи sequence.txt и YAML-файлов сериализуются через единый lock-файл docs/.docswalker/.lock — второй процесс блокируется до завершения операции первого.
         - examples: [232]
-    - notes:
-      - "(#178) Cross-process lock в MVP": Cross-process lock не реализован в первом MVP. До его реализации параллельный запуск DocsWalker над одним docs/ может привести к коллизии id (два процесса резервируют одно значение sequence.txt), затиранию правок одного процесса другим и полу-применённым атомарным записям между процессами. Минимально безопасный паттерн на сейчас — последовательный вызов DocsWalker.
+      - "(#271) Таймаут lock-а":
+        - text: При невозможности взять docs/.docswalker/.lock в течение 30 секунд write-команда отвергается с кодом lock_timeout и hint, что другой процесс DocsWalker сейчас пишет в этот docs/. До таймаута попытки повторяются циклом с экспоненциальной задержкой.
+        - examples: [270]
     - examples:
       - "(#231) lock-объект": В коде WriteApi.Apply берётся lock(_processLock) на всё время операции.
       - "(#232) .lock-файл": Если CLI и MCP пишут одновременно — второй блокируется на docs/.docswalker/.lock до завершения первого.
+      - "(#270) lock_timeout": 'Параллельный transaction под одним docs/: первый завершается за 5 сек, второй ждёт ~5 сек и проходит. Если первый зависает свыше 30 сек — второй получает lock_timeout.'
   - "(#78) Атомизация и формат YAML смысловых узлов":
     - statements:
       - "(#179) Bullet → узел": Каждый бывший bullet-блок (statements, rules, may_rules, notes, llm) в section разворачивается в отдельный смысловой узел со своим id, type и title. text узла — формулировка, бывшая bare-string элементом списка. Это позволяет LLM фильтровать docs/ по одному правилу, одному определению или одному примеру, не подтягивая всю section.
