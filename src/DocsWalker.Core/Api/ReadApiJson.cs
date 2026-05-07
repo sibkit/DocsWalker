@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
+using DocsWalker.Core.Tokens;
 using DocsWalker.Core.Validation;
 using GraphModel = DocsWalker.Core.Graph.Graph;
 
@@ -9,10 +10,18 @@ namespace DocsWalker.Core.Api;
 /// <summary>
 /// Сериализация результатов <see cref="ReadApi"/> в JSON для CLI / MCP.
 /// Узел отдаётся в форме 5 концептуальных полей refs-модели:
-/// <c>id, type, title, text, out_refs</c>.
+/// <c>id, type, title, text, out_refs</c>; плюс метрики <c>tokens</c> /
+/// <c>subtree_tokens</c> в map- и subtree-ответах.
 /// </summary>
 public static class ReadApiJson
 {
+    /// <summary>
+    /// Имена полей, признаваемых параметром <c>--fields</c>. Поле <c>id</c> присутствует
+    /// в ответе всегда — без него ответ бесполезен и не сопоставим с запросом.
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> AllNodeFields =
+        new[] { "id", "type", "title", "text", "out_refs", "tokens", "subtree_tokens" };
+
     public static JsonArray MapToJson(IReadOnlyList<MapNode> nodes)
     {
         var arr = new JsonArray();
@@ -27,6 +36,8 @@ public static class ReadApiJson
             ["id"] = n.Id,
             ["type"] = n.TypeName,
             ["title"] = n.Title,
+            ["tokens"] = n.Tokens,
+            ["subtree_tokens"] = n.SubtreeTokens,
         };
         var children = new JsonArray();
         foreach (var c in n.Children) children.Add((JsonNode?)MapNodeToJson(c));
@@ -42,22 +53,31 @@ public static class ReadApiJson
     }
 
     /// <summary>
-    /// Узел в форме refs-модели: ровно <c>id, type, title, text, out_refs</c>.
-    /// <c>out_refs</c> — объект <c>{name: [ids]}</c>, зеркало in-memory словаря;
-    /// связь <c>path</c> присутствует у всех узлов кроме root наравне с прочими.
+    /// Узел в форме refs-модели: <c>id, type, title, text, out_refs</c> плюс метрика
+    /// <c>tokens</c> (BPE-счёт самого узла). <c>out_refs</c> — объект <c>{name: [ids]}</c>,
+    /// зеркало in-memory словаря; связь <c>path</c> присутствует у всех узлов кроме root
+    /// наравне с прочими.
     /// </summary>
-    public static JsonObject NodeToJson(Node node)
+    public static JsonObject NodeToJson(Node node) => NodeToJson(node, fields: null);
+
+    /// <summary>
+    /// Узел с whitelist'ом полей. <paramref name="fields"/>=null → все поля. Поле <c>id</c>
+    /// в ответе присутствует всегда — без него потребитель не сможет сопоставить узел
+    /// с запросом; явно опустить нельзя.
+    /// </summary>
+    public static JsonObject NodeToJson(Node node, IReadOnlyCollection<string>? fields)
     {
-        var obj = new JsonObject
-        {
-            ["id"] = node.Id,
-            ["type"] = node.TypeName,
-            ["title"] = node.Title,
-            ["text"] = node.Text,
-            ["out_refs"] = OutRefsToJson(node.OutRefs),
-        };
+        var obj = new JsonObject { ["id"] = node.Id };
+        if (Include(fields, "type"))      obj["type"] = node.TypeName;
+        if (Include(fields, "title"))     obj["title"] = node.Title;
+        if (Include(fields, "text"))      obj["text"] = node.Text;
+        if (Include(fields, "out_refs"))  obj["out_refs"] = OutRefsToJson(node.OutRefs);
+        if (Include(fields, "tokens"))    obj["tokens"] = TokenCounter.CountNode(node);
         return obj;
     }
+
+    private static bool Include(IReadOnlyCollection<string>? fields, string name) =>
+        fields is null || fields.Contains(name);
 
     private static JsonObject OutRefsToJson(IReadOnlyDictionary<string, IReadOnlyList<int>> outRefs)
     {
@@ -71,11 +91,30 @@ public static class ReadApiJson
         return obj;
     }
 
-    public static JsonObject SubtreeToJson(NodeSubtree subtree)
+    public static JsonObject SubtreeToJson(NodeSubtree subtree) =>
+        SubtreeToJson(subtree, fields: null);
+
+    /// <summary>
+    /// Сериализация get-by-path и аналогов с whitelist'ом полей. <paramref name="fields"/>=null
+    /// → все поля включая <c>tokens</c>/<c>subtree_tokens</c>; иначе — только перечисленные
+    /// (<c>id</c> всегда). <c>subtree_tokens</c> учитывает ровно те узлы, что фактически
+    /// попали в результат (с учётом <c>depth</c> на стороне Core).
+    /// Не делегирует <see cref="NodeToJson(Node,IReadOnlyCollection{string}?)"/>, чтобы
+    /// переиспользовать уже посчитанный <see cref="NodeSubtree.Tokens"/> и не считать
+    /// токены второй раз для каждого узла.
+    /// </summary>
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields)
     {
-        var obj = NodeToJson(subtree.Node);
+        var n = subtree.Node;
+        var obj = new JsonObject { ["id"] = n.Id };
+        if (Include(fields, "type"))           obj["type"] = n.TypeName;
+        if (Include(fields, "title"))          obj["title"] = n.Title;
+        if (Include(fields, "text"))           obj["text"] = n.Text;
+        if (Include(fields, "out_refs"))       obj["out_refs"] = OutRefsToJson(n.OutRefs);
+        if (Include(fields, "tokens"))         obj["tokens"] = subtree.Tokens;
+        if (Include(fields, "subtree_tokens")) obj["subtree_tokens"] = subtree.SubtreeTokens;
         var children = new JsonArray();
-        foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeToJson(c));
+        foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeToJson(c, fields));
         obj["children"] = children;
         return obj;
     }
@@ -85,10 +124,13 @@ public static class ReadApiJson
     /// <c>{tree: <name>, root: {...subtree...}}</c>, чтобы LLM подтверждала, по какому
     /// дереву прошёл обход.
     /// </summary>
-    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree) => new()
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree) =>
+        SubtreeToJson(subtree, tree, fields: null);
+
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields) => new()
     {
         ["tree"] = tree,
-        ["root"] = SubtreeToJson(subtree),
+        ["root"] = SubtreeToJson(subtree, fields),
     };
 
     /// <summary>

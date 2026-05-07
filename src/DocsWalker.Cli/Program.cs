@@ -30,15 +30,22 @@ internal static class Dispatcher
             return 1;
         }
 
-        if (TryValidateParams(spec, parsed.Params) is { } validationError)
-        {
-            Output.WriteError(validationError.Code, path: null, validationError.Message);
-            return 1;
-        }
-
+        // root резолвим ДО валидации параметров — чтобы при missing/invalid_parameter
+        // write-команды можно было embed'ить describe-type из Схемы, обогащая ошибку
+        // контрактом типа. На read-командах резолв тоже всё равно нужен; стоимость —
+        // одна проверка наличия каталога, незаметная.
         if (!TryResolveRoot(parsed.Params, out var rootPath, out var rootError))
         {
             Output.WriteError(rootError!.Code, rootError.Path, rootError.Message);
+            return 1;
+        }
+
+        if (TryValidateParams(spec, parsed.Params) is { } validationError)
+        {
+            var enrichment = spec.Kind == CommandKind.Write
+                ? ErrorEnrichment.TryDescribeType(rootPath, parsed.Params.GetValueOrDefault("type"))
+                : null;
+            Output.WriteError(validationError.Code, path: null, validationError.Message, describeType: enrichment);
             return 1;
         }
 
@@ -60,7 +67,11 @@ internal static class Dispatcher
             "get_subtree"     => ReadHandlers.GetSubtree(
                                     rootPath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
-                                    parsed.Params.TryGetValue("tree", out var ts) ? ts : null),
+                                    parsed.Params.TryGetValue("tree", out var ts) ? ts : null,
+                                    parsed.Params.TryGetValue("depth", out var ds)
+                                        ? int.Parse(ds, System.Globalization.CultureInfo.InvariantCulture)
+                                        : (int?)null,
+                                    ParseFields(parsed.Params)),
             "get_ancestors"   => ReadHandlers.GetAncestors(
                                     rootPath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
@@ -142,6 +153,26 @@ internal static class Dispatcher
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Разбирает <c>--fields=<csv></c> в whitelist для сериализации узлов. Имя <c>id</c>
+    /// добавляем тихо: оно обязательно даже когда не указано — иначе ответ
+    /// невозможно сопоставить с запросом. Невалидные имена (не из <see cref="ReadApiJson.AllNodeFields"/>)
+    /// игнорируем; валидация формата возложена на ParamType.String на уровне CommandSpec —
+    /// здесь работаем после неё.
+    /// </summary>
+    private static IReadOnlyCollection<string>? ParseFields(IReadOnlyDictionary<string, string> args)
+    {
+        if (!args.TryGetValue("fields", out var raw) || string.IsNullOrEmpty(raw)) return null;
+        var set = new HashSet<string>(StringComparer.Ordinal) { "id" };
+        foreach (var part in raw.Split(','))
+        {
+            var name = part.Trim();
+            if (name.Length == 0) continue;
+            set.Add(name);
+        }
+        return set;
     }
 
     private static bool HasParam(CommandSpec spec, string kebabName)

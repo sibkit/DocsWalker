@@ -24,12 +24,21 @@ internal sealed class ErrorEnvelope
     public required ErrorBody Error { get; init; }
 }
 
+/// <summary>
+/// Тело ошибки CLI. <see cref="Path"/> — title документа без расширения и FS-префикса
+/// (или null, если ошибка не связана с конкретным документом или файл — служебный из
+/// <c>.docswalker/</c>); сырые FS-пути LLM не выдаём (см. docs/«LLM не видит файлы»).
+/// <see cref="DescribeType"/> — встроенный ответ <c>describe-type</c> для типа,
+/// выводимого из аргументов write-команды; присутствует только при missing/invalid
+/// параметрах, когда тип удалось определить.
+/// </summary>
 internal sealed class ErrorBody
 {
     public required string Code { get; init; }
     public string? Path { get; init; }
     public required string Message { get; init; }
     public string? Hint { get; init; }
+    public JsonNode? DescribeType { get; init; }
 }
 
 [JsonSourceGenerationOptions(
@@ -75,16 +84,25 @@ internal static class Output
         Console.Out.WriteLine(json);
     }
 
-    public static void WriteError(string code, string? path, string message, string? hint = null)
+    /// <summary>
+    /// Печатает ошибку в stderr. <paramref name="path"/> — сырой путь к YAML-файлу
+    /// (или null, если ошибка не связана с конкретным документом); метод сам обрезает
+    /// расширение и FS-префикс через <see cref="DocumentPath.NormalizeForLlm"/>, чтобы
+    /// LLM не видела имена файлов (правило #277).
+    /// <paramref name="describeType"/> — опциональный встроенный ответ describe-type
+    /// для типа из контекста (см. <see cref="ErrorEnrichment"/>).
+    /// </summary>
+    public static void WriteError(string code, string? path, string message, string? hint = null, JsonNode? describeType = null)
     {
         var envelope = new ErrorEnvelope
         {
             Error = new ErrorBody
             {
                 Code = code,
-                Path = path,
+                Path = DocumentPath.NormalizeForLlm(path),
                 Message = message,
                 Hint = hint,
+                DescribeType = describeType,
             },
         };
         var json = JsonSerializer.Serialize(envelope, Ctx.ErrorEnvelope);

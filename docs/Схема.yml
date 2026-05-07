@@ -19,7 +19,7 @@ types:
           - folder
         description: Размещение каталога в дереве хранилища.
   - name: document
-    description: YAML-файл в docs/. Один файл — один документ. Title — имя файла без расширения. text — однострочное описание-summary документа.
+    description: YAML-файл в docs/. Один файл — один документ. Title — имя файла без расширения. text — описание-summary документа (≤1000 символов; \n допустим).
     title_source: filename
     text_required: true
     out_refs:

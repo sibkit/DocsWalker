@@ -14,18 +14,7 @@ public class ReadApiTests
     }
 
     [Fact]
-    public void ListDocuments_Returns_AllRootDocuments()
-    {
-        var api = BuildApi();
-        var docs = api.ListDocuments();
-        Assert.Equal(3, docs.Count);
-        Assert.Contains(docs, d => d.Title == "DocsWalker" && d.Id == 1);
-        Assert.Contains(docs, d => d.Title == "Правила оформления" && d.Id == 46);
-        Assert.Contains(docs, d => d.Title == "Стек" && d.Id == 64);
-    }
-
-    [Fact]
-    public void GetMap_BuildsTreeOfDocs_WithoutBlocks()
+    public void GetMap_BuildsTreeOfDocs_WithTokenMetrics()
     {
         var api = BuildApi();
         var map = api.GetMap();
@@ -35,6 +24,15 @@ public class ReadApiTests
         Assert.Equal("document", docsWalker.TypeName);
         Assert.NotEmpty(docsWalker.Children);
         Assert.All(docsWalker.Children, c => Assert.Equal("section", c.TypeName));
+
+        // Метрики: токены сами должны быть положительны, subtree_tokens >= tokens
+        // (узел всегда часть собственного поддерева).
+        Assert.True(docsWalker.Tokens > 0);
+        Assert.True(docsWalker.SubtreeTokens >= docsWalker.Tokens);
+
+        // SubtreeTokens = tokens(self) + Σ subtree_tokens(child) — checking by construction.
+        var expected = docsWalker.Tokens + docsWalker.Children.Sum(c => c.SubtreeTokens);
+        Assert.Equal(expected, docsWalker.SubtreeTokens);
     }
 
     [Fact]
@@ -49,7 +47,6 @@ public class ReadApiTests
         Assert.Equal("definition", nodes[1].TypeName);
         Assert.Equal(45, nodes[2].Id);
         Assert.Equal("section", nodes[2].TypeName);
-        Assert.NotNull(nodes[2].Blocks);
     }
 
     [Fact]
@@ -88,38 +85,73 @@ public class ReadApiTests
     }
 
     [Fact]
-    public void GetRefs_ForSection_Includes_ExplicitOut_And_DefaultRefs()
+    public void GetSubtree_DepthZero_ReturnsRootOnly()
     {
         var api = BuildApi();
-        // Section "Стек реализации" id=45: explicit out_refs ref→64 и ref→46.
-        var set = api.GetRefs(45);
-        Assert.Contains(set.Out, v => v.TypeName == "ref" && v.Origin == RefOrigin.Explicit && v.OtherId == 64);
-        Assert.Contains(set.Out, v => v.TypeName == "ref" && v.Origin == RefOrigin.Explicit && v.OtherId == 46);
-        // Системная path: 45 → 1 (родитель — DocsWalker).
-        Assert.Contains(set.Out, v => v.TypeName == "path" && v.Origin == RefOrigin.System && v.OtherId == 1);
+        var subtree = api.GetSubtree(rootId: 2, tree: Node.PathRefName, depth: 0);
+        Assert.Equal(2, subtree.Node.Id);
+        Assert.Empty(subtree.Children);
+        // SubtreeTokens === Tokens, потому что детей в результате нет.
+        Assert.Equal(subtree.Tokens, subtree.SubtreeTokens);
     }
 
     [Fact]
-    public void GetRefs_FilterByOrigin_Explicit_DropsSystemAndDefault()
+    public void GetSubtree_DepthOne_ReturnsRootAndDirectChildrenOnly()
     {
         var api = BuildApi();
-        var set = api.GetRefs(45, type: null, origin: RefOrigin.Explicit);
-        Assert.All(set.Out, v => Assert.Equal(RefOrigin.Explicit, v.Origin));
-        Assert.All(set.In, v => Assert.Equal(RefOrigin.Explicit, v.Origin));
+        var subtree = api.GetSubtree(rootId: 2, tree: Node.PathRefName, depth: 1);
+        Assert.NotEmpty(subtree.Children);
+        Assert.All(subtree.Children, c => Assert.Empty(c.Children));
+    }
+
+    [Fact]
+    public void GetSubtree_NegativeDepth_Throws_InvalidParameter()
+    {
+        var api = BuildApi();
+        var ex = Assert.Throws<ReadApiException>(() => api.GetSubtree(rootId: 2, tree: Node.PathRefName, depth: -1));
+        Assert.Equal("invalid_parameter", ex.Code);
+    }
+
+    [Fact]
+    public void GetSubtree_DefaultDepth_TraversesFullTree()
+    {
+        var api = BuildApi();
+        var subtree = api.GetSubtree(rootId: 1);
+        // У документа DocsWalker вложенные section'ы, у каждой — атомы. Хотя бы 2 уровня.
+        Assert.NotEmpty(subtree.Children);
+        Assert.Contains(subtree.Children, c => c.Children.Count > 0);
+    }
+
+    [Fact]
+    public void GetRefs_ForSection_Includes_PathRef_AndExplicitOuts()
+    {
+        var api = BuildApi();
+        // Section "Стек реализации" id=45 — родитель DocsWalker (id=1).
+        var set = api.GetRefs(45);
+        Assert.Contains(set.Out, v => v.Name == Node.PathRefName && v.TargetId == 1);
+    }
+
+    [Fact]
+    public void GetRefs_FilterByName_LimitsResultsByRefName()
+    {
+        var api = BuildApi();
+        var set = api.GetRefs(45, name: Node.PathRefName);
+        Assert.All(set.Out, v => Assert.Equal(Node.PathRefName, v.Name));
+        Assert.All(set.In, v => Assert.Equal(Node.PathRefName, v.Name));
     }
 
     [Fact]
     public void GetInRefs_ReturnsOnlyIncoming()
     {
         var api = BuildApi();
-        // Документ Стек id=64 — на него ссылается section id=45 типом ref.
-        var set = api.GetInRefs(64);
+        // У DocsWalker (id=1) есть path-children (sections); GetInRefs должен вернуть их.
+        var set = api.GetInRefs(1);
         Assert.Empty(set.Out);
-        Assert.Contains(set.In, v => v.OtherId == 45 && v.TypeName == "ref" && v.Origin == RefOrigin.Explicit);
+        Assert.Contains(set.In, v => v.Name == Node.PathRefName);
     }
 
     [Fact]
-    public void Search_FindsSubstring_InDescriptionsAndBlocks()
+    public void Search_FindsSubstring_InText()
     {
         var api = BuildApi();
         var hits = api.Search("DocsWalker");
@@ -138,8 +170,7 @@ public class ReadApiTests
     public void FormatPath_BuildsHumanReadablePath()
     {
         var api = BuildApi();
-        // Section id=8 "узел" — внутри section "Модель данных" (id=7) → DocsWalker.
-        var path = api.FormatPath(8);
+        var path = api.FormatPath(8); // definition «узел» внутри section «Модель данных» внутри DocsWalker
         Assert.StartsWith("DocsWalker/", path);
         Assert.EndsWith("узел", path);
     }

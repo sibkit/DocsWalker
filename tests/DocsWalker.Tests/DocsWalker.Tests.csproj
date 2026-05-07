@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DocsWalker.Core\DocsWalker.Core.csproj" />
+    <ProjectReference Include="..\..\src\DocsWalker.Cli\DocsWalker.Cli.csproj" />
   </ItemGroup>
 
 </Project>

@@ -12,4 +12,8 @@
     <ProjectReference Include="..\DocsWalker.Core\DocsWalker.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="DocsWalker.Tests" />
+  </ItemGroup>
+
 </Project>

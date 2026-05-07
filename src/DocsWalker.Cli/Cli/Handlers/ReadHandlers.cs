@@ -61,15 +61,15 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetSubtree(string root, int id, string? tree)
+    public static int GetSubtree(string root, int id, string? tree, int? depth, IReadOnlyCollection<string>? fields)
     {
         var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
         return WithApi(root, api =>
         {
             try
             {
-                var subtree = api.ReadApi.GetSubtree(id, scope);
-                Output.WriteSuccess(ReadApiJson.SubtreeToJson(subtree, scope));
+                var subtree = api.ReadApi.GetSubtree(id, scope, depth);
+                Output.WriteSuccess(ReadApiJson.SubtreeToJson(subtree, scope, fields));
                 return 0;
             }
             catch (ReadApiException ex)

@@ -1,5 +1,6 @@
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
+using DocsWalker.Core.Tokens;
 using DocsWalker.Core.Validation;
 using GraphModel = DocsWalker.Core.Graph.Graph;
 
@@ -25,11 +26,16 @@ public sealed class ReadApiException : Exception
 /// <summary>
 /// Элемент карты документации: узел и его дети по path-связям.
 /// Дети упорядочены так же, как в <see cref="Graph.GetChildren"/>.
+/// <see cref="Tokens"/> — BPE-счёт самого узла (id+type+title+text+out_refs);
+/// <see cref="SubtreeTokens"/> — агрегат по этому узлу плюс всем path-потомкам;
+/// LLM использует обе метрики для оценки бюджета перед загрузкой содержимого.
 /// </summary>
 public sealed record MapNode(
     int Id,
     string Title,
     string TypeName,
+    int Tokens,
+    int SubtreeTokens,
     IReadOnlyList<MapNode> Children);
 
 /// <summary>
@@ -45,9 +51,16 @@ public sealed record RefSet(
     IReadOnlyList<RefView> Out);
 
 /// <summary>
-/// Полное поддерево узла: сам узел плюс дочерние поддеревья (path-связи).
+/// Полное поддерево узла: сам узел плюс дочерние поддеревья (по выбранному tree-scope).
+/// <see cref="Tokens"/> — BPE-счёт самого узла (с учётом whitelist <see cref="ReadApi.GetSubtree(int, string, int?, IReadOnlyList{string}?)"/>:
+/// если <c>fields</c> отрезает text/out_refs, эти куски не попадают и в подсчёт);
+/// <see cref="SubtreeTokens"/> — агрегат по поддереву с учётом ограничения <c>depth</c>.
 /// </summary>
-public sealed record NodeSubtree(Node Node, IReadOnlyList<NodeSubtree> Children);
+public sealed record NodeSubtree(
+    Node Node,
+    int Tokens,
+    int SubtreeTokens,
+    IReadOnlyList<NodeSubtree> Children);
 
 public sealed record SearchHit(
     int Id,
@@ -112,7 +125,11 @@ public sealed class ReadApi
         var children = _graph.GetChildren(node.Id);
         var mapped = new List<MapNode>(children.Count);
         foreach (var c in children) mapped.Add(BuildMapNode(c));
-        return new MapNode(node.Id, node.Title, node.TypeName, mapped);
+
+        var tokens = TokenCounter.CountNode(node);
+        var subtreeTokens = tokens;
+        foreach (var m in mapped) subtreeTokens += m.SubtreeTokens;
+        return new MapNode(node.Id, node.Title, node.TypeName, tokens, subtreeTokens, mapped);
     }
 
     /// <summary>
@@ -136,7 +153,8 @@ public sealed class ReadApi
     /// Поддерево по человекочитаемому пути вида "Документ/Раздел/Подраздел".
     /// Разделитель — '/'. Имя документа может содержать '/' (если файл лежит в
     /// подкаталоге docs/) — берётся самый длинный префикс пути, совпадающий
-    /// с title какого-либо документа.
+    /// с title какого-либо документа. Возвращает полное path-поддерево (без
+    /// ограничения depth — для глубокого анализа всего документа).
     /// </summary>
     public NodeSubtree GetByPath(string path)
     {
@@ -190,7 +208,7 @@ public sealed class ReadApi
         var children = _graph.GetChildren(node.Id);
         var sub = new List<NodeSubtree>(children.Count);
         foreach (var c in children) sub.Add(BuildSubtree(c));
-        return new NodeSubtree(node, sub);
+        return WithTokens(node, sub);
     }
 
     /// <summary>
@@ -198,35 +216,57 @@ public sealed class ReadApi
     /// эквивалент <see cref="GetByPath"/> по id, но без разрешения текстового пути.
     /// Для <c>tree="path"</c> используется обратный проход path-родителей (<see cref="Graph.GetChildren(int)"/>);
     /// для прочих scope'ов — обход через scope-индекс <see cref="Graph.GetScopeChildren"/>.
+    /// <paramref name="depth"/> ограничивает глубину обхода: 0 — только корень без детей;
+    /// 1 — корень + один уровень; null — без ограничения. <see cref="NodeSubtree.SubtreeTokens"/>
+    /// учитывает только включённые узлы, поэтому при урезании depth эта метрика —
+    /// «сколько ты получишь сейчас», а не «сколько стоит весь оригинальный subtree».
     /// </summary>
-    public NodeSubtree GetSubtree(int rootId, string tree = Node.PathRefName)
+    public NodeSubtree GetSubtree(int rootId, string tree = Node.PathRefName, int? depth = null)
     {
         ValidateTree(tree);
+        if (depth is < 0)
+            throw new ReadApiException(
+                "invalid_parameter",
+                "Параметр 'depth' не может быть отрицательным.",
+                "0 — только корень без детей; 1 — корень + один уровень; опусти параметр для неограниченного обхода.");
+
         var node = _graph.GetById(rootId)
             ?? throw new ReadApiException("node_not_found", $"Узел с id={rootId} не найден.");
-        return BuildSubtreeByScope(node, tree);
+        return BuildSubtreeByScope(node, tree, depth);
     }
 
-    private NodeSubtree BuildSubtreeByScope(Node node, string tree)
+    private NodeSubtree BuildSubtreeByScope(Node node, string tree, int? remainingDepth)
     {
-        IReadOnlyList<Node> children;
-        if (string.Equals(tree, Node.PathRefName, StringComparison.Ordinal))
+        var sub = new List<NodeSubtree>();
+        if (remainingDepth is null || remainingDepth.Value > 0)
         {
-            children = _graph.GetChildren(node.Id);
-        }
-        else
-        {
-            var ids = _graph.GetScopeChildren(node.Id, tree);
-            var list = new List<Node>(ids.Count);
-            foreach (var id in ids)
+            IReadOnlyList<Node> children;
+            if (string.Equals(tree, Node.PathRefName, StringComparison.Ordinal))
             {
-                if (_graph.GetById(id) is { } ch) list.Add(ch);
+                children = _graph.GetChildren(node.Id);
             }
-            children = list;
+            else
+            {
+                var ids = _graph.GetScopeChildren(node.Id, tree);
+                var list = new List<Node>(ids.Count);
+                foreach (var id in ids)
+                {
+                    if (_graph.GetById(id) is { } ch) list.Add(ch);
+                }
+                children = list;
+            }
+            int? nextDepth = remainingDepth is int d ? d - 1 : null;
+            foreach (var c in children) sub.Add(BuildSubtreeByScope(c, tree, nextDepth));
         }
-        var sub = new List<NodeSubtree>(children.Count);
-        foreach (var c in children) sub.Add(BuildSubtreeByScope(c, tree));
-        return new NodeSubtree(node, sub);
+        return WithTokens(node, sub);
+    }
+
+    private static NodeSubtree WithTokens(Node node, List<NodeSubtree> children)
+    {
+        var tokens = TokenCounter.CountNode(node);
+        var subtreeTokens = tokens;
+        foreach (var c in children) subtreeTokens += c.SubtreeTokens;
+        return new NodeSubtree(node, tokens, subtreeTokens, children);
     }
 
     /// <summary>

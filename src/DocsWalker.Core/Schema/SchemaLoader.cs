@@ -396,6 +396,12 @@ public static class SchemaJson
         return obj;
     }
 
+    /// <summary>
+    /// Сериализация type_definition без <c>title_source</c>: это контракт «движок ↔ docs/»,
+    /// LLM его не знает (см. docs/DocsWalker.yml/«LLM не видит файлы»). Поле существует в
+    /// исходнике <c>Схема.yml</c> и валидируется мета-схемой, но в публичный JSON
+    /// <c>get-schema</c> не выводится — выровнено с <see cref="ReadApi.DescribeType"/>.
+    /// </summary>
     private static JsonObject TypeDefinitionToJson(TypeDefinition t)
     {
         var obj = new JsonObject
@@ -403,7 +409,6 @@ public static class SchemaJson
             ["name"] = t.Name,
         };
         if (t.Description is not null) obj["description"] = t.Description;
-        obj["title_source"] = TitleSourceToString(t.TitleSource);
         obj["text_required"] = t.TextRequired;
         if (t.OutRefs.Count > 0)
         {
@@ -440,14 +445,6 @@ public static class SchemaJson
         foreach (var s in strings) arr.Add((JsonNode?)s);
         return arr;
     }
-
-    private static string TitleSourceToString(TitleSource t) => t switch
-    {
-        TitleSource.Filename => "filename",
-        TitleSource.Dirname => "dirname",
-        TitleSource.InlineKey => "inline_key",
-        _ => t.ToString(),
-    };
 
     private static string CardinalityToString(Cardinality c) => c switch
     {

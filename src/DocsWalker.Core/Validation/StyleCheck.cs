@@ -5,15 +5,26 @@ using GraphModel = DocsWalker.Core.Graph.Graph;
 namespace DocsWalker.Core.Validation;
 
 /// <summary>
-/// Style-проверки под refs-модель: ни одна строка-значение узла (title, text)
-/// не содержит управляющих символов \n, \r, \t — все значения помещаются на
-/// одну YAML-строку (см. docs/Правила оформления.yml/«Одна строка»).
-/// title-format-roundtrip отдельной проверкой не нужен — формат универсален
-/// `"(#id) title"`, и парсер DocumentLoader валидирует его при чтении.
+/// Style-проверки под refs-модель (см. docs/DocsWalker.yml/«Style-проверка»):
+///
+/// title узла — всегда одна строка, ни \n, ни \r, ни \t. Это путь-сегмент,
+/// многострочный title не имеет смысла.
+///
+/// text узла — длиной не более <see cref="MaxTextLength"/> символов; \n и пустые
+/// строки внутри text допустимы (LLM может писать многоабзацные формулировки),
+/// но \r и \t запрещены — это управляющие символы, которые ломают сериализацию
+/// и чтение и почти всегда — артефакт скопированного из IDE текста.
+///
+/// Соответствие правилу title_format ("(#id) title") универсально и проверяется
+/// парсером <see cref="Graph.DocumentLoader"/> при чтении документа; здесь не дублируется.
 /// </summary>
 internal static class StyleCheck
 {
-    private static readonly char[] ForbiddenChars = ['\n', '\r', '\t'];
+    /// <summary>Максимальная длина text в символах (см. правило #139).</summary>
+    public const int MaxTextLength = 1000;
+
+    private static readonly char[] ForbiddenInTitle = ['\n', '\r', '\t'];
+    private static readonly char[] ForbiddenInText = ['\r', '\t'];
 
     public static void Run(SchemaDocument schema, GraphModel graph, List<ValidationError> errors)
     {
@@ -22,28 +33,52 @@ internal static class StyleCheck
         {
             if (node.Id == Node.RootId) continue;
 
-            CheckSingleLine(node, "title", node.Title, errors);
-            CheckSingleLine(node, "text", node.Text, errors);
+            CheckTitle(node, errors);
+            CheckText(node, errors);
         }
     }
 
-    private static void CheckSingleLine(
-        Node node, string what, string value, List<ValidationError> errors)
+    private static void CheckTitle(Node node, List<ValidationError> errors)
     {
-        if (string.IsNullOrEmpty(value)) return;
-        var idx = value.IndexOfAny(ForbiddenChars);
+        if (string.IsNullOrEmpty(node.Title)) return;
+        var idx = node.Title.IndexOfAny(ForbiddenInTitle);
         if (idx < 0) return;
-        var marker = value[idx] switch
-        {
-            '\n' => "\\n",
-            '\r' => "\\r",
-            '\t' => "\\t",
-            _ => "?",
-        };
         errors.Add(new ValidationError(
-            "multiline_value",
-            $"Узел id={node.Id}: значение {what} содержит '{marker}' (запрещены переводы строки и табуляции).",
+            "invalid_text",
+            $"Узел id={node.Id}: title содержит '{Marker(node.Title[idx])}' (в title запрещены \\n, \\r, \\t — это всегда одна строка).",
             node.SourceFile, node.Id,
-            Hint: "Значения помещаются на одну YAML-строку; разбей длинный текст на несколько атомов вместо одного многострочного значения."));
+            Hint: "Title — это 1–2-словный path-сегмент; многострочные title не используются."));
     }
+
+    private static void CheckText(Node node, List<ValidationError> errors)
+    {
+        if (string.IsNullOrEmpty(node.Text)) return;
+
+        if (node.Text.Length > MaxTextLength)
+        {
+            errors.Add(new ValidationError(
+                "text_too_long",
+                $"Узел id={node.Id}: длина text — {node.Text.Length} символов, лимит — {MaxTextLength}.",
+                node.SourceFile, node.Id,
+                Hint: $"Сократи формулировку или разбей атом на несколько (statement/rule/example) — лимит {MaxTextLength} символов."));
+        }
+
+        var idx = node.Text.IndexOfAny(ForbiddenInText);
+        if (idx >= 0)
+        {
+            errors.Add(new ValidationError(
+                "invalid_text",
+                $"Узел id={node.Id}: text содержит '{Marker(node.Text[idx])}' (в text запрещены \\r и \\t; \\n допустим).",
+                node.SourceFile, node.Id,
+                Hint: "Замени табуляцию на пробелы; \\r — побочный артефакт CRLF, удали."));
+        }
+    }
+
+    private static string Marker(char c) => c switch
+    {
+        '\n' => "\\n",
+        '\r' => "\\r",
+        '\t' => "\\t",
+        _ => "?",
+    };
 }

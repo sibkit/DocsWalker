@@ -286,12 +286,22 @@ internal static class WriteHandlers
         }
         catch (WriteValidationException ex)
         {
-            Output.WriteError("validation_failed", path: null, FormatValidationMessage(ex.Errors), FormatValidationHint(ex.Errors));
+            Output.WriteError(
+                "validation_failed",
+                path: null,
+                FormatValidationMessage(ex.Errors),
+                FormatValidationHint(ex.Errors),
+                describeType: ErrorEnrichment.TryDescribeType(root, FirstCreateNodeType(ops)));
             return 1;
         }
         catch (WriteApiException ex)
         {
-            Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
+            Output.WriteError(
+                ex.Code,
+                path: null,
+                ex.Message,
+                ex.Hint,
+                describeType: ErrorEnrichment.TryDescribeType(root, FirstCreateNodeType(ops)));
             return 1;
         }
         catch (GraphLoadException ex)
@@ -314,6 +324,24 @@ internal static class WriteHandlers
             Output.WriteError(ex.Code, ex.FilePath, ex.Message);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Возвращает имя типа из первой <see cref="CreateNodeOp"/> в наборе операций, или null.
+    /// Используется для embed'а <c>describe-type</c> в ошибки <see cref="WriteApiException"/> /
+    /// <see cref="WriteValidationException"/>: контракт типа подсказывает LLM, какие
+    /// именно out_refs она забыла или указала неверно. Для прочих write-операций
+    /// (update/move/delete/redirect) тип целевого узла из op'а явно не выводится — там
+    /// LLM получит ошибку без describe_type, что приемлемо: эти операции не требуют
+    /// заполнения out_refs контракта.
+    /// </summary>
+    private static string? FirstCreateNodeType(IReadOnlyList<WriteOp> ops)
+    {
+        foreach (var op in ops)
+        {
+            if (op is CreateNodeOp create) return create.TypeName;
+        }
+        return null;
     }
 
     private static bool TryParseIdList(string raw, out IReadOnlyList<int> ids, out string? error)
