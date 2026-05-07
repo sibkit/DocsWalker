@@ -57,6 +57,7 @@ internal static class Dispatcher
 
         return spec.SnakeName switch
         {
+            "run"             => RunHandler.Run(rootPath, parsed.Params),
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
             "get_schema"      => SchemaHandlers.GetSchema(rootPath),
             "describe_type"   => SchemaHandlers.DescribeType(rootPath, parsed.Params["name"]),

@@ -122,6 +122,19 @@ internal static class Commands
                 desc: "Manifest всех команд + ментальная модель + перечень tree-scope'ов + слепок графа. Зови в начале сессии.",
                 examples: new[] { "docswalker get-usage-guide" }),
 
+            // Серверный режим (особая команда — единственная исполняется не через клиент-режим)
+            Read("run",
+                desc: "Запустить long-lived сервер DocsWalker для одного docs/-root: захватить lock, открыть IPC-канал, открыть REPL в TTY либо ждать сигнал в headless. Все остальные команды после старта сервера идут к нему через клиент-режим.",
+                examples: new[]
+                {
+                    "docswalker run --root=.",
+                    "docswalker run --root=. --quiet=true",
+                    "docswalker run --root=. --mode=headless",
+                },
+                Req("root",  ParamType.String, "Корневой каталог проекта (содержит подкаталог docs/). Auto-detect от cwd для `run` отключён — требуется явный путь."),
+                Opt("quiet", ParamType.String, "Глушит баннер старта в stderr (true/false). По умолчанию false."),
+                Opt("mode",  ParamType.String, "Явный override режима: 'tty' — REPL, 'headless' — блокирующее ожидание сигнала. Без параметра — автодетект Console.IsInputRedirected.")),
+
             // Запись
             DynamicWrite("create_node",
                 desc: "Создать узел: type+title+text плюс значения всех required-связей контракта типа (--<имя_связи>=<id|csv>). Имя обязательного path-параметра — --path.",

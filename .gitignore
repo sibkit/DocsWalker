@@ -29,5 +29,7 @@ desktop.ini
 # Локальные настройки Claude Code
 .claude/
 
-# DocsWalker межпроцессный lock-файл (создаётся write-операциями, локальный)
+# DocsWalker — runtime-артефакты сервера (локальные, никогда не коммитятся)
 docs/.docswalker/.lock
+docs/.docswalker/run.lock
+docs/.docswalker/run.pid

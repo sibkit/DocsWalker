@@ -33,6 +33,35 @@ public sealed class IpcServer
         }
     }
 
+    /// <summary>
+    /// Выполняет команду через тот же глобальный семафор, что и IPC-запросы,
+    /// но БЕЗ перехвата stdout/stderr — вывод идёт в текущий
+    /// <see cref="Console.Out"/>/<see cref="Console.Error"/>. Используется
+    /// REPL-локалью: REPL и удалённые IPC-клиенты сериализуются через единую
+    /// очередь, обеспечивая правило (#313) — обработка запросов строго по одному.
+    /// </summary>
+    public async Task<int> ExecuteLocalAsync(string[] args, CancellationToken ct)
+    {
+        await _semaphore.WaitAsync(ct);
+        try
+        {
+            try
+            {
+                return _dispatcher(args);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"{{\"code\":\"internal_error\",\"message\":\"{ex.Message.Replace("\"", "\\\"")}\"}}");
+                return 1;
+            }
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
     private async Task HandleConnectionAsync(Stream stream, CancellationToken serverCt)
     {
         using (stream)

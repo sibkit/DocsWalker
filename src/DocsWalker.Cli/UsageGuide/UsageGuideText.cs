@@ -36,5 +36,7 @@ internal static class UsageGuideText
         - Прямая правка YAML / sequence.txt / folders.yml в обход API — теряются sequence-инвариант, целостность графа, атомарность.
         - Изменение Схемы — задача человека, не LLM (нет API-команды).
         - move-node без --tree, если намерение — переподшить в доменном дереве: запустится реструктуризация хранилища.
+
+        Серверный режим (особая команда `run`): docswalker run --root=<path> запускает long-lived сервер для одного docs/-root — захватывает file-lock на docs/.docswalker/run.lock, открывает локальный IPC-канал, держит граф в RAM до выхода. В TTY открывает REPL-prompt, при редиректе stdin — блокируется на сигнал. Опции: --quiet=true глушит баннер старта в stderr; --mode=tty|headless даёт явный override автодетекта. Корректное завершение — :quit / Ctrl+D в REPL либо SIGINT/SIGTERM/Ctrl+C в headless. `run` сама не вызывается LLM; её запускает оператор/CI.
         """;
 }
