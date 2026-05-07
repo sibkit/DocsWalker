@@ -153,6 +153,8 @@ sections:
       - "(#25) get_in_refs": Только входящие связи на узел. Параметры — id, name (опц.). Эквивалент get_refs с direction=in.
       - "(#26) search": Полнотекстовый поиск по title и text узлов. Параметр — query. Возвращает список id найденных узлов с фрагментами совпадений.
       - "(#70) check_integrity": 'Полный прогон валидатора на текущем состоянии docs/ без записи. Без параметров. Возвращает структуру {ok: bool, errors: [{code, message, path?, node_id?, hint?}]}. Сама команда не падает на ошибках графа — exit code 0; нарушения целостности — данные ответа, не CLI-ошибка. Используется LLM-агентом как sanity check перед цепочкой правок и для аудита после ручной правки YAML или миграции.'
+      - "(#272) describe_type": 'Описание одного типа из Схемы в FS-агностичной форме. Параметр — name (имя типа). Возвращает {name, description?, text_required, out_refs:[{name, tree?, cardinality?, required?, target_types, description?}]}. Поля tree / cardinality / required в каждом ref выводятся условно: tree-refs получают только tree, остальные — cardinality+required. Поле title_source наружу не торчит — это контракт «движок ↔ docs/», LLM его не знает. Если тип не найден — type_not_found с hint списком доступных имён.'
+      - "(#298) get_usage_guide": 'Manifest для LLM в начале сессии: ментальная модель + перечень tree-scope''ов (из Схемы) + manifest всех команд (имя, kind=read|write, описание, параметры с типами и описаниями, примеры) + слепок графа (total_nodes, root_children — id/type/title детей root, schema_types_count). Без параметров. Зови один раз перед цепочкой задач.'
   - "(#27) Операции записи":
     - rules:
       - "(#154) path как параметр create":
@@ -230,6 +232,8 @@ sections:
       - "(#222) Формат ошибки err": '{"ok": false, "error": {"code": "node_not_found", "message": "..."}} в stderr, exit ≠ 0.'
       - "(#223) Коды CLI": docswalker bogus-cmd → unknown_command; docswalker get-nodes без --ids → missing_parameter.
       - "(#268) dry-run флаг": docswalker create-node --type=example --path=35 --title=foo --text=bar --dry-run=true → ok=true, applied=false; файлы docs/ не изменяются.
+      - "(#273) describe-type для одного типа": docswalker describe-type --name=section возвращает только этот тип в FS-агностичном виде; токенов меньше, чем у get-schema.
+      - "(#299) get-usage-guide на старте сессии": 'docswalker get-usage-guide → один JSON со всем нужным: mental_model, trees[], commands[] (с примерами), graph_snapshot. После него LLM не нужны list-документов, get-schema или ручной разбор Commands.cs.'
   - "(#44) MCP-интерфейс":
     - statements:
       - "(#166) MCP поверх ядра": MCP-сервер реализуется поверх того же ядра, что и CLI. Каждая операция API становится MCP-tool с типизированными параметрами.
@@ -306,3 +310,50 @@ sections:
       - "(#233) Было/стало": 'Было: statements: ["Структура изоморфна графу"]; стало: statements: ["(#100) Изоморфизм": "Структура изоморфна графу"].'
       - "(#234) title_source": 'В Схеме type_definition для rule: title_source=inline_key; для document: title_source=filename.'
       - "(#235) Создание атома": create-node --type=statement --title=Изоморфизм --text=... — id берётся из sequence.txt+1.
+  - "(#274) Как LLM работает с DocsWalker":
+    - statements:
+      - "(#275) Граф = узлы + связи": Программа DocsWalker представляет docs/ как граф. Узлы — единицы смысла; связи — направленные именованные out_refs с известными именами и target_types. Никаких других сущностей у LLM нет.
+      - "(#276) Только path в ФС": Дерево path — единственное физически материализованное (каталоги + файлы). Все остальные tree-scope'ы (например, strategic) — навигационные view'ы поверх графа, без отражения в ФС.
+      - "(#277) LLM не видит файлы": LLM-агент работает только с узлами и связями через API. Имена файлов и каталогов наружу не торчат и для написания запросов не нужны — LLM не должна их знать и не должна на них опираться.
+    - rules:
+      - "(#280) Read → describe → write":
+        - text: Перед любой write-операцией прочитай актуальное состояние интересующего поддерева (get-subtree) и контракт типа (describe-type), и только затем вызывай write-команду. Стейл-данные → invalid_parent / unknown_ref-имя в ответ.
+        - examples: [279]
+      - "(#282) Незнакомая задача — dry-run":
+        - text: При первом подходе к незнакомому write-сценарию передай --dry-run=true в команду. Ответ покажет applied=false и набор валидаций; убедись, что результат ожидаемый, и только тогда повтори без флага.
+        - examples: [281]
+      - "(#284) Старт сессии — check-integrity":
+        - text: В начале сессии (или после ручной правки YAML, миграции, восстановления из бэкапа) вызови check-integrity и убедись, что ok=true. Без этого write-операция может удариться в накопленные нарушения целостности и упасть с непрозрачной ошибкой.
+        - examples: [283]
+      - "(#286) delete-nodes без авто-каскада":
+        - text: 'Удаление — только delete-nodes с явным набором --ids. Авто-каскада нет: LLM сама собирает набор через get-subtree (по любому tree-scope) и добавляет path-children каждого узла набора. Ошибки path_orphans_left и dangling_refs — обучающий сигнал, перечисляют недостающее.'
+        - examples: [285]
+      - "(#288) dangling_refs — redirect-refs или delete-ref":
+        - text: Ошибка dangling_refs от delete-nodes означает, что на узлы из набора есть входящие cross-refs от узлов снаружи. Реши через redirect-refs (массово переподшить на другой узел) или серию delete-ref в transaction'е. Только после этого ретрай delete-nodes.
+        - examples: [287]
+      - "(#290) Tree-refs — только через move-node":
+        - text: Tree-refs (path, strategic, любой объявленный scope) не редактируются через redirect-refs / create-ref / delete-ref. Для переподшивки в дереве используй move-node с явным --tree=<scope>; команда атомарно правит ровно один scope-ref у узла.
+        - examples: [289]
+      - "(#292) move-node default — path":
+        - text: По умолчанию move-node работает в дереве path; без явного --tree=<scope> намерение переподшить узел в доменном дереве запустит реструктуризацию хранилища с каскадным переписыванием SourceFile. Указывай tree=<scope> явно, если двигаешь не в path.
+        - examples: [291]
+      - "(#294) Запрет ручной правки YAML и служебных файлов":
+        - text: Правка любых файлов в docs/ (включая sequence.txt и folders.yml) в обход CLI запрещена — теряются sequence-инвариант, целостность графа, атомарность записи и path-child симметрия. Все правки — через DocsWalker.
+        - examples: [293]
+      - "(#296) Расширение Схемы — не задача LLM":
+        - text: Объявить новый тип узла или новое имя связи в Схема.yml — структурная эволюция языка проекта, не runtime-операция. У LLM нет API-команды для этого; такую правку делает человек, и Схема перепроверяется валидатором как обычный YAML.
+        - examples: [295]
+    - definitions:
+      - "(#278) root": 'Корень всего графа — синглтон с id=0, type=root. Любой обход начинается отсюда: get-subtree --id=0 даёт всё дерево path, get-refs --id=0 — все исходящие связи root. У root нет path-родителя.'
+    - examples:
+      - "(#279) Цепочка перед записью": get-subtree --id=42 → describe-type --name=section → create-node --type=section --path=42 ...
+      - "(#281) dry-run перед боевой записью": docswalker create-node --type=rule --title=foo --text=... --path=42 --examples=99 --dry-run=true → applied=false; ответ покажет, что вернётся при реальном вызове.
+      - "(#283) check-integrity на старте": docswalker check-integrity → ok=true и пустой errors[] перед цепочкой правок; ok=false → разбираться с errors до начала записи.
+      - "(#285) Удаление поддерева вручную": 'Удалить project и все его tasks по дереву strategic: get-subtree --id=PROJECT --tree=strategic → собрать все id''ы поддерева → добавить path-children каждого через get-subtree --tree=path → передать всё списком в delete-nodes --ids=.'
+      - "(#287) redirect-refs перед удалением": 'Перед delete-nodes на узел id=42, на который смотрят сторонние cross-refs: docswalker redirect-refs --from=42 --to=8 переподшивает все входящие cross-refs на узел id=8 одной командой; tree-refs (path и др.) этой командой не трогаются.'
+      - "(#289) move-node в tree-scope": 'Переподшить subtask под другой parent_task в дереве strategic: docswalker move-node --id=SUBTASK --to=NEW_TASK --tree=strategic; без --tree команда работает в дереве path и запустит реструктуризацию хранилища.'
+      - "(#291) move-node без --tree": docswalker move-node --id=42 --to=8 без --tree → tree=path по умолчанию → каскадное переписывание SourceFile у всех потомков и физический перенос между документами/папками. Нужен tree-scope, отличный от path? — указать явно.
+      - "(#293) Без правки sequence.txt руками": 'Прямая правка sequence.txt → следующий create-node выдаст уже занятый id → duplicate_id. Восстановление: пересчитать sequence как max(id)+1 по графу — но проще не трогать вообще.'
+      - "(#295) Новый out_ref в Схема.yml": Добавление новой связи (например, out_refs.related в типе section) — ручная правка docs/Схема.yml человеком; LLM этого не делает. После правки — check-integrity для верификации.
+    - llm:
+      - "(#297) describe-type экономит токены": Если для задачи нужен один тип — вызывай describe-type --name=<type>, не get-schema. Get-schema выдаёт всю Схему целиком; describe-type — только запрошенный тип в FS-агностичной форме (без title_source).

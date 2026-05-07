@@ -12,17 +12,6 @@ return Dispatcher.Run(args);
 
 internal static class Dispatcher
 {
-    /// <summary>
-    /// Имена write-команд: для них валиден общий флаг <c>--dry-run</c>. Read-команды
-    /// получают <c>unknown_parameter</c>, если этот флаг им передан, — это явный сигнал
-    /// LLM, что dry-run применим только к командам с побочным эффектом.
-    /// </summary>
-    private static readonly HashSet<string> WriteCommands = new(StringComparer.Ordinal)
-    {
-        "create_node", "update_node", "delete_nodes", "move_node",
-        "create_ref", "delete_ref", "redirect_refs", "transaction",
-    };
-
     public static int Run(string[] argv)
     {
         var (parsed, parseError) = ArgParser.Parse(argv);
@@ -63,6 +52,8 @@ internal static class Dispatcher
         {
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
             "get_schema"      => SchemaHandlers.GetSchema(rootPath),
+            "describe_type"   => SchemaHandlers.DescribeType(rootPath, parsed.Params["name"]),
+            "get_usage_guide" => SchemaHandlers.GetUsageGuide(rootPath),
             "get_map"         => ReadHandlers.GetMap(rootPath),
             "get_nodes"       => ReadHandlers.GetNodes(rootPath, parsed.Params["ids"]),
             "get_by_path"     => ReadHandlers.GetByPath(rootPath, parsed.Params["path"]),
@@ -279,7 +270,7 @@ internal static class Dispatcher
             return true;
         }
 
-        if (!WriteCommands.Contains(spec.SnakeName))
+        if (spec.Kind != CommandKind.Write)
         {
             error = new DryRunError(
                 "unknown_parameter",

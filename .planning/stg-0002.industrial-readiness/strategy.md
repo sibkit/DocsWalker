@@ -181,9 +181,9 @@ Generic-тип связи `ref` (текущий `kind: ref_type, direction: from
 - [+] move-node — выполнено (пересмотрено в R7, расширяется в R16).
 - [+] dry-run
 - [+] cross-process-lock
-- [*] describe-type — спецификация переписывается под refs-model + tree-scopes.
-- [*] docs-llm-guide — спецификация переписывается под модель «граф + tree-scopes».
-- [*] usage-guide — спецификация переписывается под актуальный manifest команд.
+- [+] describe-type
+- [+] docs-llm-guide
+- [+] usage-guide
 
 ### Итоговый порядок выполнения
 

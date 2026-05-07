@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using DocsWalker.Core.Graph;
+using DocsWalker.Core.Schema;
 using DocsWalker.Core.Validation;
 using GraphModel = DocsWalker.Core.Graph.Graph;
 
@@ -150,6 +151,116 @@ public static class ReadApiJson
             ["errors"] = arr,
         };
     }
+
+    /// <summary>
+    /// Сериализация <see cref="UsageGuideResponse"/> для get-usage-guide.
+    /// Порядок ключей: mental_model → trees → commands → graph_snapshot, чтобы
+    /// LLM сначала прочитала «как думать», потом «по каким полям ходить»,
+    /// потом «что вызывать», потом «что в графе сейчас есть».
+    /// </summary>
+    public static JsonObject UsageGuideToJson(UsageGuideResponse u)
+    {
+        var trees = new JsonArray();
+        foreach (var t in u.Trees)
+        {
+            var tobj = new JsonObject { ["name"] = t.Name };
+            if (t.Description is not null) tobj["description"] = t.Description;
+            trees.Add((JsonNode?)tobj);
+        }
+
+        var commands = new JsonArray();
+        foreach (var c in u.Commands) commands.Add((JsonNode?)CommandToJson(c));
+
+        var rootChildren = new JsonArray();
+        foreach (var rc in u.Snapshot.RootChildren)
+        {
+            rootChildren.Add((JsonNode?)new JsonObject
+            {
+                ["id"] = rc.Id,
+                ["type"] = rc.Type,
+                ["title"] = rc.Title,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["mental_model"] = u.MentalModel,
+            ["trees"] = trees,
+            ["commands"] = commands,
+            ["graph_snapshot"] = new JsonObject
+            {
+                ["total_nodes"] = u.Snapshot.TotalNodes,
+                ["root_children"] = rootChildren,
+                ["schema_types_count"] = u.Snapshot.SchemaTypesCount,
+            },
+        };
+    }
+
+    private static JsonObject CommandToJson(UsageGuideCommand c)
+    {
+        var parameters = new JsonArray();
+        foreach (var p in c.Parameters)
+        {
+            var pobj = new JsonObject
+            {
+                ["name"] = p.Name,
+                ["type"] = p.Type,
+                ["required"] = p.Required,
+            };
+            if (p.Description is not null) pobj["description"] = p.Description;
+            parameters.Add((JsonNode?)pobj);
+        }
+
+        var examples = new JsonArray();
+        foreach (var ex in c.Examples) examples.Add((JsonNode?)ex);
+
+        var obj = new JsonObject
+        {
+            ["name"] = c.Name,
+            ["kind"] = c.Kind,
+        };
+        if (c.Description is not null) obj["description"] = c.Description;
+        obj["parameters"] = parameters;
+        obj["examples"] = examples;
+        return obj;
+    }
+
+    /// <summary>
+    /// Сериализация <see cref="TypeDescription"/> для describe-type. Поля <c>tree</c> /
+    /// <c>cardinality</c> / <c>required</c> в каждом ref выводятся условно: tree-refs
+    /// получают только <c>tree</c> (cardinality/required подразумеваются), остальные —
+    /// только <c>cardinality</c>+<c>required</c> (без tree).
+    /// </summary>
+    public static JsonObject TypeDescriptionToJson(TypeDescription d)
+    {
+        var obj = new JsonObject { ["name"] = d.Name };
+        if (d.Description is not null) obj["description"] = d.Description;
+        obj["text_required"] = d.TextRequired;
+        var arr = new JsonArray();
+        foreach (var rd in d.OutRefs) arr.Add((JsonNode?)RefDescriptionToJson(rd));
+        obj["out_refs"] = arr;
+        return obj;
+    }
+
+    private static JsonObject RefDescriptionToJson(TypeRefDescription r)
+    {
+        var obj = new JsonObject { ["name"] = r.Name };
+        if (r.Tree is not null) obj["tree"] = r.Tree;
+        if (r.Cardinality is { } c) obj["cardinality"] = CardinalityToString(c);
+        if (r.Required is { } req) obj["required"] = req;
+        var targets = new JsonArray();
+        foreach (var t in r.TargetTypes) targets.Add((JsonNode?)t);
+        obj["target_types"] = targets;
+        if (r.Description is not null) obj["description"] = r.Description;
+        return obj;
+    }
+
+    private static string CardinalityToString(Cardinality c) => c switch
+    {
+        Cardinality.One => "one",
+        Cardinality.Many => "many",
+        _ => c.ToString(),
+    };
 
     public static JsonArray SearchToJson(IReadOnlyList<SearchHit> hits)
     {

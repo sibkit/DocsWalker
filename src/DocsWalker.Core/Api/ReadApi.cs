@@ -56,6 +56,32 @@ public sealed record SearchHit(
     IReadOnlyList<string> Fragments);
 
 /// <summary>
+/// FS-агностичное описание одного типа узла из Схемы. В отличие от <see cref="TypeDefinition"/>,
+/// не выдаёт <c>title_source</c> наружу: это контракт «движок ↔ docs/», LLM его не должна знать.
+/// Возвращается операцией <c>describe-type</c>; экономит токены LLM по сравнению с
+/// полным <c>get-schema</c>.
+/// </summary>
+public sealed record TypeDescription(
+    string Name,
+    string? Description,
+    bool TextRequired,
+    IReadOnlyList<TypeRefDescription> OutRefs);
+
+/// <summary>
+/// Описание одной исходящей связи в DTO <see cref="TypeDescription"/>.
+/// Для tree-refs <see cref="Cardinality"/> и <see cref="Required"/> равны <c>null</c>
+/// (подразумеваются <c>one</c>+<c>true</c> по контракту мета-схемы), для остальных —
+/// заполнены реальными значениями.
+/// </summary>
+public sealed record TypeRefDescription(
+    string Name,
+    string? Tree,
+    Cardinality? Cardinality,
+    bool? Required,
+    IReadOnlyList<string> TargetTypes,
+    string? Description);
+
+/// <summary>
 /// Read-API DocsWalker (см. docs/DocsWalker.yml/«Операции чтения»).
 /// Все операции read-only, без побочных эффектов; работают по уже загруженному
 /// <see cref="Graph"/>. Состояние не кэшируется внутри — каждый вызов идёт по графу
@@ -357,5 +383,69 @@ public sealed class ReadApi
     {
         var validator = new Validator(meta, schema);
         return validator.Validate(_graph, sequence);
+    }
+
+    /// <summary>
+    /// Manifest для LLM-агента: ментальная модель + декларация деревьев + список команд +
+    /// слепок графа. Источник команд и текста ментальной модели — внешний (CLI или MCP),
+    /// внедряется через <see cref="IUsageGuideSource"/>; сам Core их не знает.
+    /// Метод статический — оперирует переданными аргументами, состояния не имеет.
+    /// </summary>
+    public static UsageGuideResponse GetUsageGuide(
+        IUsageGuideSource source,
+        SchemaDocument schema,
+        GraphModel graph)
+    {
+        var rootChildrenNodes = graph.GetChildren(Node.RootId);
+        var rootChildren = new List<RootChild>(rootChildrenNodes.Count);
+        foreach (var n in rootChildrenNodes)
+            rootChildren.Add(new RootChild(n.Id, n.TypeName, n.Title));
+
+        var snapshot = new GraphSnapshot(
+            TotalNodes: graph.NodeCount,
+            RootChildren: rootChildren,
+            SchemaTypesCount: schema.Types.Count);
+
+        return new UsageGuideResponse(
+            MentalModel: source.GetMentalModel(),
+            Trees: schema.Trees,
+            Commands: source.GetCommands(),
+            Snapshot: snapshot);
+    }
+
+    /// <summary>
+    /// Узкая операция: описание одного типа из Схемы в FS-агностичной форме.
+    /// Используется LLM для уточнения контракта типа (например, перед <c>create-node</c>),
+    /// чтобы не качать всю Схему. Если тип не найден — <see cref="ReadApiException"/>
+    /// с кодом <c>type_not_found</c> и hint со списком доступных имён.
+    /// Метод статический: оперирует только переданной Схемой, к графу не обращается.
+    /// </summary>
+    public static TypeDescription DescribeType(SchemaDocument schema, string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            throw new ReadApiException("invalid_parameter", "Параметр 'name' не должен быть пустым.");
+
+        foreach (var t in schema.Types)
+        {
+            if (!string.Equals(t.Name, name, StringComparison.Ordinal)) continue;
+            var refs = new List<TypeRefDescription>(t.OutRefs.Count);
+            foreach (var rd in t.OutRefs)
+            {
+                refs.Add(new TypeRefDescription(
+                    rd.Name,
+                    rd.Tree,
+                    rd.Tree is null ? rd.Cardinality : null,
+                    rd.Tree is null ? rd.Required : null,
+                    rd.TargetTypes,
+                    rd.Description));
+            }
+            return new TypeDescription(t.Name, t.Description, t.TextRequired, refs);
+        }
+
+        var available = string.Join(", ", schema.Types.Select(x => x.Name));
+        throw new ReadApiException(
+            "type_not_found",
+            $"Тип '{name}' не найден в Схеме.",
+            $"Доступные типы: {available}.");
     }
 }
