@@ -195,7 +195,7 @@ sections:
         - text: Аргументы — в форме --key=value; имена ключей — kebab-case (например, --from-id, --to-id). Для create-node имена параметров required-связей берутся из контракта типа в Схеме (--path для встроенной связи path; --<имя_связи> для каждой required out_ref). Списочные параметры принимаются через запятую.
         - examples: [217]
       - "(#160) --root общий":
-        - text: Общий параметр --root=<path> задаёт корень проекта (каталог, где лежит docs/). По умолчанию DocsWalker ищет ближайший docs/ вверх по дереву от текущей директории. Если каталог docs/ не найден — возвращается структурированная ошибка с кодом docs_not_found.
+        - text: Общий параметр --root=<path> задаёт корень проекта (каталог, где лежит docs/). Для команды `run` параметр обязателен — отсутствие → missing_parameter (явный workspace для долгоживущего сервера). Для прочих (клиент-режим) команд по умолчанию DocsWalker ищет ближайший docs/ вверх по дереву от текущей директории. Если каталог docs/ не найден — возвращается структурированная ошибка с кодом docs_not_found.
         - examples: [218]
       - "(#161) Успех в stdout":
         - text: 'Возврат успеха — exit code 0; в stdout — JSON-результат команды непосредственно (без обёртки {ok,result}). Шейп — специфика команды: read-команда возвращает объект или массив с данными ответа; одиночная write-команда — объект с полями результата операции и обязательным top-level-полем applied (true — изменения записаны на FS, false — это был dry-run). stderr при успехе пустой.'
@@ -218,6 +218,8 @@ sections:
       - "(#301) Опускаемые дефолты":
         - text: 'В JSON-выводе опускаются дефолты и пустоты, чтобы не тратить токены LLM на тривиальные значения. В RefDef (describe-type, get-schema): cardinality=many и required=false не сериализуются (отсутствие поля при чтении трактуется как дефолт). В get-map / get-subtree: children=[] не сериализуется (отсутствие поля children ⇒ узел-лист в текущем поддереве); subtree_tokens, равный tokens, не сериализуется (отсутствие поля ⇒ subtree_tokens = tokens). В get-usage-guide: parameters=[] и examples=[] не сериализуются (отсутствие поля ⇒ команда без параметров либо без примеров).'
         - examples: [300]
+    - definitions:
+      - "(#334) run": 'Команда запуска сервера для одного docs/-root. Особая команда — единственная, которая исполняется не через клиент-режим: она сама захватывает lock и стартует IPC-сервер по правилам из раздела «Модель процесса». Параметры: --root=<path> (обязательный — целевой workspace; отсутствие → missing_parameter), --quiet=true|false (опц., по умолчанию false; true глушит баннер старта в stdout — для headless в скриптах). Поведение: захват file-lock на docs/.docswalker/run.lock; запись pid и абсолютного пути exe в docs/.docswalker/run.pid; парсинг всего YAML docs/ и построение графа в RAM; старт IPC-сервера на канале docswalker-{root-hash}; ветвление по Console.IsInputRedirected — TTY → REPL-prompt, редирект → блокирующее ожидание SIGINT/SIGTERM/Ctrl+C. Graceful-shutdown освобождает lock и удаляет run.pid. Ошибки старта: server_already_running, lock_failed (см. (#316)).'
     - examples:
       - "(#36) Чтение нескольких узлов сразу": docswalker get-nodes --ids=1,8,42
       - "(#37) Карта документации": docswalker get-map
@@ -240,6 +242,7 @@ sections:
       - "(#273) describe-type для одного типа": docswalker describe-type --name=section возвращает только этот тип в FS-агностичном виде; токенов меньше, чем у get-schema.
       - "(#299) get-usage-guide на старте сессии": 'docswalker get-usage-guide → один JSON со всем нужным: mental_model, trees[], commands[] (с примерами), graph_snapshot. После него LLM не нужны list-документов, get-schema или ручной разбор Commands.cs.'
       - "(#300) Дефолты в JSON": 'Узел-лист в get-map: {"id":42,"type":"rule","title":"foo","tokens":48} — без поля children (узел-лист), без subtree_tokens (subtree_tokens=tokens=48). RefDef в describe-type с дефолтами: {"name":"examples","target_types":["example"]} — без cardinality (=many), без required (=false).'
+      - "(#335) Запуск сервера": 'docswalker run --root=. → захват lock на docs/.docswalker/run.lock, запись pid и пути exe в docs/.docswalker/run.pid, баннер о готовности; в TTY открывается REPL-prompt, в headless — блокирующее ожидание сигнала. После старта остальные команды (get-map, get-nodes, …) идут через клиент-режим к этому серверу.'
   - "(#44) MCP-интерфейс":
     - statements:
       - "(#166) MCP поверх ядра": MCP-сервер реализуется поверх того же ядра, что и CLI. Каждая операция API становится MCP-tool с типизированными параметрами.
@@ -276,23 +279,61 @@ sections:
       - "(#228) Один путь": И meta-schema.yml, и Схема.yml, и DocsWalker.yml идут через тот же SharpYaml.Parser.
       - "(#229) JSON только в CLI": Команды CLI отдают JSON в stdout; данные docs/ хранятся в YAML.
       - "(#230) Текущие зависимости": На сейчас — SharpYaml и xUnit (для тестов); добавление новой требует обоснования.
-  - "(#69) Многопроцессная запись":
+  - "(#304) Модель процесса":
     - statements:
-      - "(#175) Параллельные процессы": Несколько процессов DocsWalker могут одновременно открыть один docs/ — например, CLI из IDE и MCP-сервер, или несколько LLM-агентов параллельно.
+      - "(#305) Один long-lived процесс на root": DocsWalker — long-lived процесс, который при старте захватывает эксклюзивный lock на docs/, парсит весь YAML, строит граф в RAM и держит его до выхода. Один процесс обслуживает один root; cold-start per-call устранён.
+      - "(#306) Dual-mode TTY/headless": Один и тот же процесс при запуске в TTY открывает REPL-prompt с теми же argv-командами, что у one-shot CLI; при редиректе stdin или запуске без TTY — блокирующее ожидание сигнала на завершение. Внешний IPC-канал работает в обоих режимах одинаково.
+      - "(#307) Все CLI-команды через клиент-режим": Все команды кроме `run` исполняются короткоживущим клиентом — бинарь стартует, читает docs/.docswalker/run.pid, коннектится в локальный IPC, шлёт один запрос, проксирует ответ в stdout/stderr, выходит. Своего парсинга docs/ или валидации клиент не делает. In-process fallback не существует.
     - rules:
-      - "(#176) In-process lock":
-        - text: В пределах одного процесса операции сериализуются in-process lock-объектом.
-        - examples: [231]
-      - "(#177) Cross-process lock":
-        - text: Между процессами операции записи sequence.txt и YAML-файлов сериализуются через единый lock-файл docs/.docswalker/.lock — второй процесс блокируется до завершения операции первого.
-        - examples: [232]
-      - "(#271) Таймаут lock-а":
-        - text: При невозможности взять docs/.docswalker/.lock в течение 30 секунд write-команда отвергается с кодом lock_timeout и hint, что другой процесс DocsWalker сейчас пишет в этот docs/. До таймаута попытки повторяются циклом с экспоненциальной задержкой.
-        - examples: [270]
+      - "(#308) Эксклюзивный lock на жизнь сервера":
+        - text: 'Сервер захватывает file-lock на docs/.docswalker/run.lock при старте и держит до выхода. Внешние правки YAML руками или сторонним процессом DocsWalker на работающем сервере не разрешены контрактом — пользователь сам гасит сервер, правит, поднимает обратно. Это упраздняет FS-watcher и race-условия между правкой через CLI и правкой в IDE; даёт серверу единоличное владение хранилищем.'
+        - examples: [329]
+      - "(#309) Single-root-per-process":
+        - text: 'Один сервер обслуживает один root. Несколько workspace''ов на хосте = несколько серверов; у каждого свой run.pid, свой IPC-канал, свой namespace в имени канала. Multi-root внутри одного процесса запрещён — это упростило бы число процессов, но удвоило бы стоимость диспетчеризации в каждом запросе.'
+        - examples: [332]
+      - "(#310) IPC только локальный":
+        - text: 'Транспорт IPC — Windows named pipe \\.\pipe\docswalker-{root-hash} или POSIX Unix-domain socket в ${XDG_RUNTIME_DIR}/docswalker-{root-hash}.sock (fallback /tmp/docswalker-{root-hash}.sock). ACL — только владелец процесса. TCP не открывается ни в каком режиме — снимает целый класс сетевых угроз (auth, encryption, экспозиция в LAN). Hash root-а в имени канала — namespacing нескольких workspace''ов на одном хосте.'
+        - examples: [332]
+      - "(#311) Клиент не делает auto-spawn":
+        - text: 'Клиент не запускает сервер сам. Auto-spawn создаёт фоновые процессы откуда-то — непрозрачно, не понятно кто их убирает за собой, непредсказуемо в CI. Если сервер не запущен — клиент возвращает плоскую ошибку server_not_running с hint «запусти docswalker run --root=<path>» и exit ≠ 0.'
+        - examples: [327]
+      - "(#312) Жёсткий version handshake":
+        - text: 'Первое сообщение клиента после коннекта — JSON {client_version, protocol_version}. Сервер сверяет; mismatch → ответ {accepted: false, reason} и закрытие канала; клиент печатает version_mismatch и выходит ненулевым кодом. Compat-shim''ов и миграций нет — бинарь клиента и сервера деплоятся вместе одним артефактом, рассинхрон возможен только если кто-то держит старого клиента, явно ошибка пользователя.'
+        - examples: [327]
+      - "(#313) Сериализация запросов на сервере":
+        - text: 'Сервер обрабатывает запросы строго по одному — per-channel и глобально. Граф read-mostly; параллельные read-ы потребовали бы RW-lock и аккуратной синхронизации mutable-state при write-командах, что без явной потребности в производительности — преждевременная сложность. Read-параллелизм при необходимости вводится без смены wire-протокола (деталь реализации сервера, не контракта).'
+        - examples: [336]
+      - "(#314) Stale run.pid":
+        - text: 'Файл run.pid считается устаревшим, если pid из файла не указывает на живой процесс или абсолютный путь exe этого процесса не совпадает с записанным в файле. При старте `run` устаревший файл перезаписывается без ошибки; в клиент-режиме устаревший файл трактуется как server_not_running. Сравнение exe-пути нужно, чтобы случайное переиспользование pid-а другим приложением не было ошибочно опознано как живой сервер.'
+        - examples: [331]
+      - "(#315) REPL без persistent history":
+        - text: 'В TTY-режиме доступен нативный line-edit платформы .NET 10 в пределах одной сессии. История между сессиями не сохраняется — для MVP не нужно, добавляется отдельной задачей при потребности.'
+        - examples: [337]
+      - "(#316) Коды ошибок lifecycle":
+        - text: 'Коды ошибок старта `run`: server_already_running (lock уже взят другим процессом этого root — pid читается из run.pid и сообщается в message), lock_failed (системная ошибка взятия lock — нет прав, FS read-only и т.п., OS-описание в message). Коды ошибок клиент-режима: server_not_running (run.pid отсутствует, или процесс не наш по правилам (#314), или коннект не удался, или коннект отвалился до handshake), version_mismatch (handshake-ответ accepted=false). Все четыре — exit ≠ 0; форма stderr — стандартная плоская из (#164).'
+        - examples: [327, 328]
+    - definitions:
+      - "(#317) сервер": 'Long-lived процесс DocsWalker, владеющий ровно одним docs/-root: держит file-lock на run.lock, регистрирует pid и путь exe в run.pid, слушает IPC-канал на имени docswalker-{root-hash}, держит in-memory граф до выхода. Запускается командой `docswalker run --root=<path>`. Завершается по SIGINT/SIGTERM/Ctrl+C (headless) или по `exit` / EOF в REPL (TTY); graceful-shutdown освобождает lock и удаляет run.pid.'
+      - "(#318) клиент": 'Короткоживущий запуск того же бинаря для не-`run` команды: ищет docs/.docswalker/run.pid (с учётом stale-detection (#314)), коннектится в IPC, проходит handshake (#324), шлёт один request-frame (#322), читает один response-frame (#323), проксирует payload в stdout/stderr и устанавливает exit code, выходит. Никакого собственного парсинга docs/ или валидации не делает — вся семантика на стороне сервера.'
+      - "(#319) run.lock": 'Файл docs/.docswalker/run.lock. Используется только для эксклюзивного file-lock-а на всё время жизни сервера. Содержимое не значимо (lock держится OS-механизмом). Удаление файла без снятия lock-а — undefined behavior; штатный путь — graceful-shutdown сервера.'
+      - "(#320) run.pid": 'Файл docs/.docswalker/run.pid. Содержит две строки, разделённые переводом строки: десятичный pid живого сервера и абсолютный путь его исполняемого файла. Записывается сервером после успешного захвата lock-а; удаляется при graceful-shutdown. Stale-обнаружение и поведение — см. (#314).'
+      - "(#321) IPC-канал": 'Локальный двунаправленный stream-канал между сервером и одним клиентом. Платформо-зависимый transport: Windows named pipe (\\.\pipe\docswalker-{root-hash}), POSIX Unix-domain socket в ${XDG_RUNTIME_DIR}/. ACL — только владелец процесса. Имя канала — docswalker-{root-hash}, где root-hash — стабильный hash абсолютного нормализованного пути docs/. Несколько клиентов одного сервера обслуживаются последовательно — сериализация запросов по правилу (#313).'
+      - "(#322) request-frame": 'Один запрос — одна строка JSON, завершённая символом перевода строки (newline-delimited JSON). Поля: cmd (kebab-case имя команды, та же что у CLI), args (object с именованными аргументами в kebab-case ключах). После handshake-кадра до закрытия канала клиент шлёт ровно один request-frame.'
+      - "(#323) response-frame": 'Один ответ — одна строка JSON, завершённая символом перевода строки. Поля: kind (дискриминатор: "ok" | "error"), payload (для kind=ok — тот же JSON-объект, что текущий stdout успешного ответа CLI из (#161); для kind=error — тот же flat-объект ошибки, что текущий stderr CLI из (#164)). Клиент проксирует payload в свой stdout (kind=ok) или stderr (kind=error) и устанавливает exit code соответственно (0 / ≠0).'
+      - "(#324) handshake": 'Первый обмен после коннекта. Клиент шлёт {client_version, protocol_version} одной newline-delimited JSON-строкой; сервер отвечает {server_version, accepted, reason?}. Если accepted=false — клиент закрывает канал и печатает version_mismatch локально, не отправляя request-frame. Только после accepted=true канал готов к запросам.'
     - examples:
-      - "(#231) lock-объект": В коде WriteApi.Apply берётся lock(_processLock) на всё время операции.
-      - "(#232) .lock-файл": Если CLI и MCP пишут одновременно — второй блокируется на docs/.docswalker/.lock до завершения первого.
-      - "(#270) lock_timeout": 'Параллельный transaction под одним docs/: первый завершается за 5 сек, второй ждёт ~5 сек и проходит. Если первый зависает свыше 30 сек — второй получает lock_timeout.'
+      - "(#325) Запуск сервера в TTY": 'docswalker run --root=. → сервер захватывает lock, печатает баннер о готовности, открывает prompt `docswalker> `; ввод argv-команды парсится → выполняется через тот же Dispatcher → ответ печатается; ввод `exit` или EOF (Ctrl+D / Ctrl+Z) — graceful-shutdown с release lock-а.'
+      - "(#326) Запуск сервера headless": 'docswalker run --root=. при редиректе stdin (например, в CI: `docswalker run --root=. < /dev/null &`) → процесс блокируется на сигнал; SIGINT / SIGTERM / Ctrl+C → graceful-shutdown с release lock-а и удалением run.pid.'
+      - "(#327) Клиент без сервера": 'docswalker get-map (без запущенного `run`) → exit 1; stderr {"code":"server_not_running","message":"...","hint":"запусти docswalker run --root=<path>"}; stdout пуст.'
+      - "(#328) Параллельный второй сервер": 'docswalker run --root=. при уже запущенном сервере на этом же root → exit 1; stderr {"code":"server_already_running","message":"already running, pid=12345"}; lock второго запуска не берётся.'
+      - "(#329) Внешняя правка YAML": 'Сервер запущен → правка docs/foo.yml в IDE не подхватывается (FS-watcher не используется по контракту). Чтобы применить правку — пользователь гасит сервер (Ctrl+C / kill), правит файл, поднимает `run` обратно.'
+      - "(#330) Кадры запроса/ответа": 'Запрос: {"cmd":"get-nodes","args":{"ids":[1,8,42]}} — одна строка JSON, завершённая переводом строки. Ответ-успех: {"kind":"ok","payload":{"nodes":[...]}}. Ответ-ошибка: {"kind":"error","payload":{"code":"node_not_found","message":"..."}}.'
+      - "(#331) Stale run.pid": 'docs/.docswalker/run.pid от убитого процесса → docswalker get-map → exit 1; stderr server_not_running. Параллельно `docswalker run --root=.` поверх — старт успешен, файл перезаписывается без ошибки.'
+      - "(#332) Несколько workspace''ов на хосте": 'docswalker run --root=/path/A → канал docswalker-{hashA}, run.pid в /path/A/docs/.docswalker/. docswalker run --root=/path/B → канал docswalker-{hashB}, run.pid в /path/B/docs/.docswalker/. Серверы живут параллельно, не конфликтуют, имена каналов и lock-файлов не пересекаются.'
+      - "(#336) Сериализация запросов": 'Два клиентских процесса одновременно шлют write-команды в один сервер: первый коннект принимается и обрабатывается; второй коннект ждёт в очереди accept''а до завершения первого запроса. Никаких partial-write или гонок mutable-state не наблюдается.'
+      - "(#337) REPL без истории сессий": 'Закрыли REPL (`exit`), запустили `docswalker run --root=.` снова → стрелка вверх возвращает только команды текущей сессии; история предыдущей сессии недоступна.'
+    - llm:
+      - "(#333) Старт работы": 'Перед любой командой кроме `run` убедись, что сервер на нужном root уже поднят. Не пытайся запускать сервер сам — это задача пользователя/CI. Если первая команда вернула server_not_running — попроси пользователя поднять сервер; не повторяй и не спавни процессы фоном.'
   - "(#78) Атомизация и формат YAML смысловых узлов":
     - statements:
       - "(#179) Bullet → узел": Каждый бывший bullet-блок (statements, rules, may_rules, notes, llm) в section разворачивается в отдельный смысловой узел со своим id, type и title. text узла — формулировка, бывшая bare-string элементом списка. Это позволяет LLM фильтровать docs/ по одному правилу, одному определению или одному примеру, не подтягивая всю section.
