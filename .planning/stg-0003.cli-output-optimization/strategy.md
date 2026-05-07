@@ -46,8 +46,8 @@
 - [+] (01) cli-output-spec
 - [+] (02) drop-cli-envelope
 - [+] (03) get-refs-map-form
-- [*] omit-defaults-empties
-- [*] trim-error-describe-type
+- [+] (04) omit-defaults-empties
+- [+] (05) trim-error-describe-type
 - [ ] update-stale-cli-examples — пример #73 использует устаревший `--new-path`; ревизовать bare-command examples в секции CLI-интерфейс под актуальный API.
 - [ ] define-get-subtree — добавить узел-определение get_subtree в секции «Операции чтения» (id=17); CLI-команда реализована, но определения в docs нет.
 

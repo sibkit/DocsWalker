@@ -296,12 +296,16 @@ internal static class WriteHandlers
         }
         catch (WriteValidationException ex)
         {
+            // focusRefName: первый ref-локализованный код в списке валидационных ошибок —
+            // multi-ref-trim в один объект ошибки не вписывается, потому берём первый
+            // (комментарий step-trim-error-describe-type, раздел «Риски»).
+            var focusRef = ex.Errors.FirstOrDefault(e => e.RefName is not null)?.RefName;
             Output.WriteError(
                 "validation_failed",
                 path: null,
                 FormatValidationMessage(ex.Errors),
                 FormatValidationHint(ex.Errors),
-                describeType: ErrorEnrichment.TryDescribeType(root, FirstCreateNodeType(ops)));
+                describeType: ErrorEnrichment.TryDescribeType(root, FirstCreateNodeType(ops), focusRef));
             return 1;
         }
         catch (WriteApiException ex)
@@ -311,7 +315,7 @@ internal static class WriteHandlers
                 path: null,
                 ex.Message,
                 ex.Hint,
-                describeType: ErrorEnrichment.TryDescribeType(root, FirstCreateNodeType(ops)));
+                describeType: ErrorEnrichment.TryDescribeType(root, FirstCreateNodeType(ops), ex.RefName));
             return 1;
         }
         catch (GraphLoadException ex)

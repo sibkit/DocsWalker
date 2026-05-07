@@ -22,12 +22,19 @@ internal static class ErrorEnrichment
 {
     /// <summary>
     /// Пытается вернуть JSON-описание типа из Схемы проекта <paramref name="root"/>.
+    /// При заданном <paramref name="focusRefName"/> массив <c>out_refs</c> отфильтрован
+    /// до записей с этим именем (одна, если связь объявлена в типе; пустой массив, если
+    /// LLM передала несуществующее имя — это и сигнал «такой связи у типа нет»). Шапка
+    /// типа (<c>name</c>, <c>description</c>, <c>text_required</c>) сохраняется. Trim
+    /// нужен ref-локализованным ошибкам (<c>missing_required_ref</c>, <c>invalid_ref_value</c>
+    /// и аналоги): LLM получает контракт ровно проблемной связи без шума остальных.
     /// </summary>
     /// <param name="root">Каталог проекта (то, что после <see cref="Dispatcher"/>'а
     /// разрешилось через <c>--root</c>).</param>
     /// <param name="typeName">Имя типа (как передал пользователь в <c>--type=</c>).
     /// Может быть null/пустым — тогда возвращаем null.</param>
-    public static JsonNode? TryDescribeType(string root, string? typeName)
+    /// <param name="focusRefName">Имя проблемной связи; null — полный describe_type.</param>
+    public static JsonNode? TryDescribeType(string root, string? typeName, string? focusRefName = null)
     {
         if (string.IsNullOrEmpty(typeName)) return null;
         try
@@ -35,7 +42,10 @@ internal static class ErrorEnrichment
             var schemaPath = System.IO.Path.Combine(root, "docs", "Схема.yml");
             var schema = SchemaLoader.LoadSchema(schemaPath);
             var dto = ReadApi.DescribeType(schema, typeName);
-            return ReadApiJson.TypeDescriptionToJson(dto);
+            var json = ReadApiJson.TypeDescriptionToJson(dto);
+            if (focusRefName is not null)
+                TrimOutRefsToFocus(json, focusRefName);
+            return json;
         }
         catch
         {
@@ -43,5 +53,24 @@ internal static class ErrorEnrichment
             // Это enrichment, он не должен подавлять основную ошибку, к которой прицеплен.
             return null;
         }
+    }
+
+    /// <summary>
+    /// Оставляет в <c>out_refs</c> результата describe-type только записи с именем
+    /// <paramref name="focusRefName"/>. Если такой записи нет — массив становится пустым
+    /// (это и есть сигнал «такой связи у типа нет», достаточный по контракту LLM-guide).
+    /// </summary>
+    private static void TrimOutRefsToFocus(JsonNode describeType, string focusRefName)
+    {
+        if (describeType is not JsonObject obj) return;
+        if (obj["out_refs"] is not JsonArray refs) return;
+
+        var kept = new JsonArray();
+        foreach (var item in refs)
+        {
+            if (item is JsonObject r && (string?)r["name"] == focusRefName)
+                kept.Add(r.DeepClone());
+        }
+        obj["out_refs"] = kept;
     }
 }

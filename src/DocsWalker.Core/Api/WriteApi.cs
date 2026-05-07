@@ -20,10 +20,20 @@ public sealed class WriteApiException : Exception
     public string Code { get; }
     public string? Hint { get; }
 
-    public WriteApiException(string code, string message, string? hint = null) : base(message)
+    /// <summary>
+    /// Имя проблемной связи для ref-локализованных ошибок (`missing_required_ref`,
+    /// `invalid_cardinality`, `ref_target_not_found`, `unknown_ref`,
+    /// `invalid_path_target` и аналогичных). Используется CLI-слоем для trim'а
+    /// embedded <c>describe_type</c> до одной записи в <c>out_refs</c>: LLM получает
+    /// контракт только нужной связи без шума остальных. Для не-ref ошибок — null.
+    /// </summary>
+    public string? RefName { get; }
+
+    public WriteApiException(string code, string message, string? hint = null, string? refName = null) : base(message)
     {
         Code = code;
         Hint = hint;
+        RefName = refName;
     }
 }
 
@@ -244,7 +254,7 @@ public sealed class WriteApi
             }
             catch (WriteApiException ex)
             {
-                throw new WriteApiException(ex.Code, $"Операция #{i} ({ops[i].Type}): {ex.Message}", ex.Hint);
+                throw new WriteApiException(ex.Code, $"Операция #{i} ({ops[i].Type}): {ex.Message}", ex.Hint, ex.RefName);
             }
         }
 
@@ -335,11 +345,13 @@ public sealed class WriteApi
                 throw new WriteApiException(
                     "missing_required_ref",
                     $"Для типа '{op.TypeName}' требуется значение связи 'path' (id родителя).",
-                    "Передай --path=<parent_id> или укажи refs.path в JSON.");
+                    "Передай --path=<parent_id> или укажи refs.path в JSON.",
+                    refName: Node.PathRefName);
             if (pathTargets.Count > 1)
                 throw new WriteApiException(
                     "invalid_cardinality",
-                    $"Связь 'path' должна иметь ровно одну цель, передано {pathTargets.Count}.");
+                    $"Связь 'path' должна иметь ровно одну цель, передано {pathTargets.Count}.",
+                    refName: Node.PathRefName);
             int parentId = pathTargets[0];
             if (parentId != Node.RootId && s.GetNode(parentId) is null)
                 throw new WriteApiException(
@@ -354,7 +366,8 @@ public sealed class WriteApi
                 throw new WriteApiException(
                     "invalid_path_target",
                     $"Тип '{type.Name}' не допускает родителя типа '{parentTypeName}'.",
-                    $"Допустимые типы родителя: {string.Join(", ", type.PathTargets)}.");
+                    $"Допустимые типы родителя: {string.Join(", ", type.PathTargets)}.",
+                    refName: Node.PathRefName);
             outRefs[Node.PathRefName] = new[] { parentId };
         }
 
@@ -367,13 +380,15 @@ public sealed class WriteApi
                 if (rd.Cardinality == Cardinality.One && targets.Count > 1)
                     throw new WriteApiException(
                         "invalid_cardinality",
-                        $"Связь '{rd.Name}' имеет cardinality=one; передано {targets.Count} целей.");
+                        $"Связь '{rd.Name}' имеет cardinality=one; передано {targets.Count} целей.",
+                        refName: rd.Name);
                 foreach (var tid in targets)
                 {
                     if (tid != Node.RootId && s.GetNode(tid) is null)
                         throw new WriteApiException(
                             "ref_target_not_found",
-                            $"Связь '{rd.Name}': цель id={tid} не найдена.");
+                            $"Связь '{rd.Name}': цель id={tid} не найдена.",
+                            refName: rd.Name);
                 }
                 outRefs[rd.Name] = targets.ToArray();
             }
@@ -382,7 +397,8 @@ public sealed class WriteApi
                 throw new WriteApiException(
                     "missing_required_ref",
                     $"Для типа '{op.TypeName}' требуется значение связи '{rd.Name}'.",
-                    $"Передай --{rd.Name}=<id[,id,...]>; допустимые типы цели: {string.Join(", ", rd.TargetTypes)}.");
+                    $"Передай --{rd.Name}=<id[,id,...]>; допустимые типы цели: {string.Join(", ", rd.TargetTypes)}.",
+                    refName: rd.Name);
             }
         }
 
@@ -395,7 +411,8 @@ public sealed class WriteApi
                 throw new WriteApiException(
                     "unknown_ref",
                     $"Тип '{op.TypeName}' не объявляет связь '{name}'.",
-                    "Допустимые имена связей смотри в get-schema или describe-type.");
+                    "Допустимые имена связей смотри в get-schema или describe-type.",
+                    refName: name);
         }
 
         // R10: создание folder идёт по отдельной ветке — у folder нет
@@ -1215,7 +1232,8 @@ public sealed class WriteApi
             throw new WriteApiException(
                 "system_ref_name",
                 "Связь 'path' управляется только структурными операциями create-node / move-node / delete-node.",
-                "Для смены родителя используй move-node.");
+                "Для смены родителя используй move-node.",
+                refName: op.Name);
 
         var src = s.GetNode(op.FromId)
             ?? throw new WriteApiException(
@@ -1234,7 +1252,8 @@ public sealed class WriteApi
             throw new WriteApiException(
                 "unknown_ref",
                 $"Тип '{src.TypeName}' не объявляет связь '{op.Name}'.",
-                "Допустимые имена связей смотри в get-schema или describe-type. Новые имена объявляются ручной правкой Схемы.");
+                "Допустимые имена связей смотри в get-schema или describe-type. Новые имена объявляются ручной правкой Схемы.",
+                refName: op.Name);
 
         var existing = src.OutRefs.TryGetValue(op.Name, out var current)
             ? current.ToList()
@@ -1242,7 +1261,8 @@ public sealed class WriteApi
         if (existing.Contains(op.ToId))
             throw new WriteApiException(
                 "duplicate_ref",
-                $"Узел id={op.FromId} уже имеет связь '{op.Name}' → id={op.ToId}.");
+                $"Узел id={op.FromId} уже имеет связь '{op.Name}' → id={op.ToId}.",
+                refName: op.Name);
         existing.Add(op.ToId);
 
         var newOutRefs = CloneRefs(src.OutRefs);
@@ -1274,7 +1294,8 @@ public sealed class WriteApi
             throw new WriteApiException(
                 "system_ref_name",
                 "Связь 'path' управляется только структурными операциями.",
-                "Для смены родителя используй move-node.");
+                "Для смены родителя используй move-node.",
+                refName: op.Name);
 
         var src = s.GetNode(op.FromId)
             ?? throw new WriteApiException(
@@ -1286,7 +1307,8 @@ public sealed class WriteApi
             throw new WriteApiException(
                 "ref_not_found",
                 $"У узла id={op.FromId} нет связи '{op.Name}' → id={op.ToId}.",
-                "Сверь набор связей через get-refs --id=<from-id>.");
+                "Сверь набор связей через get-refs --id=<from-id>.",
+                refName: op.Name);
 
         var filtered = existing.Where(t => t != op.ToId).ToList();
         var newOutRefs = CloneRefs(src.OutRefs);

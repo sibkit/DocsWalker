@@ -116,7 +116,8 @@ internal static class SchemaCheck
                     "unknown_ref",
                     $"Узел id={node.Id} типа '{type.Name}': связь '{refName}' не объявлена в типе.",
                     node.SourceFile, node.Id,
-                    Hint: $"Допустимые связи типа '{type.Name}' смотри в get-schema. Для добавления нового имени связи отредактируй docs/Схема.yml."));
+                    Hint: $"Допустимые связи типа '{type.Name}' смотри в get-schema. Для добавления нового имени связи отредактируй docs/Схема.yml.",
+                    RefName: refName));
                 continue;
             }
 
@@ -124,7 +125,8 @@ internal static class SchemaCheck
                 errors.Add(new ValidationError(
                     "invalid_cardinality",
                     $"Узел id={node.Id} типа '{type.Name}', связь '{refName}': cardinality=one, но целей {targets.Count}.",
-                    node.SourceFile, node.Id));
+                    node.SourceFile, node.Id,
+                    RefName: refName));
 
             foreach (var targetId in targets)
             {
@@ -134,7 +136,8 @@ internal static class SchemaCheck
                     errors.Add(new ValidationError(
                         "invalid_target_type",
                         $"Узел id={node.Id} типа '{type.Name}', связь '{refName}': цель id={targetId} имеет тип '{targetNode.TypeName}', не входящий в target_types ({string.Join(", ", refDef.TargetTypes)}).",
-                        node.SourceFile, node.Id));
+                        node.SourceFile, node.Id,
+                        RefName: refName));
             }
         }
 
@@ -149,7 +152,8 @@ internal static class SchemaCheck
                     "missing_required_ref",
                     $"Узел id={node.Id} типа '{type.Name}': обязательная связь '{rd.Name}' не заполнена.",
                     node.SourceFile, node.Id,
-                    Hint: $"Передай значение связи '{rd.Name}' при create-node либо добавь через create-ref."));
+                    Hint: $"Передай значение связи '{rd.Name}' при create-node либо добавь через create-ref.",
+                    RefName: rd.Name));
             }
         }
     }

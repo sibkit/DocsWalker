@@ -14,7 +14,8 @@ public sealed record ValidationError(
     string? FilePath = null,
     int? NodeId = null,
     string? Path = null,
-    string? Hint = null);
+    string? Hint = null,
+    string? RefName = null);
 
 /// <summary>
 /// Результат прогона валидатора. <see cref="IsValid"/> — короткий ответ, нужен ли

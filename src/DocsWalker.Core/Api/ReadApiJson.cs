@@ -37,11 +37,18 @@ public static class ReadApiJson
             ["type"] = n.TypeName,
             ["title"] = n.Title,
             ["tokens"] = n.Tokens,
-            ["subtree_tokens"] = n.SubtreeTokens,
         };
-        var children = new JsonArray();
-        foreach (var c in n.Children) children.Add((JsonNode?)MapNodeToJson(c));
-        obj["children"] = children;
+        // subtree_tokens опускается при равенстве tokens — у листа в текущем поддереве
+        // эти числа всегда совпадают. По контракту LLM-guide отсутствие поля ⇒ узел
+        // листовой и subtree_tokens = tokens.
+        if (n.SubtreeTokens != n.Tokens) obj["subtree_tokens"] = n.SubtreeTokens;
+        // children опускается у листового узла: отсутствие массива ⇒ нет path-детей.
+        if (n.Children.Count > 0)
+        {
+            var children = new JsonArray();
+            foreach (var c in n.Children) children.Add((JsonNode?)MapNodeToJson(c));
+            obj["children"] = children;
+        }
         return obj;
     }
 
@@ -112,10 +119,18 @@ public static class ReadApiJson
         if (Include(fields, "text"))           obj["text"] = n.Text;
         if (Include(fields, "out_refs"))       obj["out_refs"] = OutRefsToJson(n.OutRefs);
         if (Include(fields, "tokens"))         obj["tokens"] = subtree.Tokens;
-        if (Include(fields, "subtree_tokens")) obj["subtree_tokens"] = subtree.SubtreeTokens;
-        var children = new JsonArray();
-        foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeToJson(c, fields));
-        obj["children"] = children;
+        // subtree_tokens опускается при равенстве tokens — листовой случай в текущем
+        // поддереве (нет children либо все обрезаны depth/whitelist'ом). LLM
+        // подставляет subtree_tokens = tokens по отсутствию поля.
+        if (Include(fields, "subtree_tokens") && subtree.SubtreeTokens != subtree.Tokens)
+            obj["subtree_tokens"] = subtree.SubtreeTokens;
+        // children опускается у листа.
+        if (subtree.Children.Count > 0)
+        {
+            var children = new JsonArray();
+            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeToJson(c, fields));
+            obj["children"] = children;
+        }
         return obj;
     }
 
@@ -240,30 +255,37 @@ public static class ReadApiJson
 
     private static JsonObject CommandToJson(UsageGuideCommand c)
     {
-        var parameters = new JsonArray();
-        foreach (var p in c.Parameters)
-        {
-            var pobj = new JsonObject
-            {
-                ["name"] = p.Name,
-                ["type"] = p.Type,
-                ["required"] = p.Required,
-            };
-            if (p.Description is not null) pobj["description"] = p.Description;
-            parameters.Add((JsonNode?)pobj);
-        }
-
-        var examples = new JsonArray();
-        foreach (var ex in c.Examples) examples.Add((JsonNode?)ex);
-
         var obj = new JsonObject
         {
             ["name"] = c.Name,
             ["kind"] = c.Kind,
         };
         if (c.Description is not null) obj["description"] = c.Description;
-        obj["parameters"] = parameters;
-        obj["examples"] = examples;
+        // parameters/examples опускаются, если коллекция пуста: у команд без параметров
+        // (get-meta-schema, get-schema, get-map, check-integrity, get-usage-guide) поле
+        // не выводится; то же для команд без примеров.
+        if (c.Parameters.Count > 0)
+        {
+            var parameters = new JsonArray();
+            foreach (var p in c.Parameters)
+            {
+                var pobj = new JsonObject
+                {
+                    ["name"] = p.Name,
+                    ["type"] = p.Type,
+                    ["required"] = p.Required,
+                };
+                if (p.Description is not null) pobj["description"] = p.Description;
+                parameters.Add((JsonNode?)pobj);
+            }
+            obj["parameters"] = parameters;
+        }
+        if (c.Examples.Count > 0)
+        {
+            var examples = new JsonArray();
+            foreach (var ex in c.Examples) examples.Add((JsonNode?)ex);
+            obj["examples"] = examples;
+        }
         return obj;
     }
 
@@ -288,8 +310,11 @@ public static class ReadApiJson
     {
         var obj = new JsonObject { ["name"] = r.Name };
         if (r.Tree is not null) obj["tree"] = r.Tree;
-        if (r.Cardinality is { } c) obj["cardinality"] = CardinalityToString(c);
-        if (r.Required is { } req) obj["required"] = req;
+        // Опускаем дефолты non-tree refs (cardinality=many, required=false): отсутствие
+        // поля = дефолт. tree-refs приходят с Cardinality/Required=null (по контракту
+        // TypeRefDescription) и сюда не попадают.
+        if (r.Cardinality is { } c && c != Cardinality.Many) obj["cardinality"] = CardinalityToString(c);
+        if (r.Required is true) obj["required"] = true;
         var targets = new JsonArray();
         foreach (var t in r.TargetTypes) targets.Add((JsonNode?)t);
         obj["target_types"] = targets;

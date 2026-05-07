@@ -293,12 +293,11 @@ public static class SchemaLoader
             return new RefDef(name, targetTypes, tree, Cardinality.One, true, description);
         }
 
-        if (cardinality is null)
-            throw NewError("invalid_schema", $"ref_def '{name}' без поля 'cardinality' (обязательно при отсутствии tree).");
-        if (required is null)
-            throw NewError("invalid_schema", $"ref_def '{name}' без поля 'required' (обязательно при отсутствии tree).");
-
-        return new RefDef(name, targetTypes, null, cardinality.Value, required.Value, description);
+        // Дефолты non-tree refs: cardinality=many, required=false (см. docs/DocsWalker.yml,
+        // секция «omit defaults»). Отсутствие поля в YAML = дефолт; повторное чтение
+        // describe-type/get-schema, где эти значения опущены сериализатором, остаётся
+        // round-trip-совместимым.
+        return new RefDef(name, targetTypes, null, cardinality ?? Cardinality.Many, required ?? false, description);
     }
 
     private static IReadOnlyList<string> ReadStringList(YamlReader r)
@@ -432,8 +431,11 @@ public static class SchemaJson
         }
         else
         {
-            obj["cardinality"] = CardinalityToString(rd.Cardinality);
-            obj["required"] = rd.Required;
+            // Опускаем дефолты non-tree refs (cardinality=many, required=false):
+            // отсутствие поля = дефолт, парсер расшифровывает обратно.
+            if (rd.Cardinality != Cardinality.Many)
+                obj["cardinality"] = CardinalityToString(rd.Cardinality);
+            if (rd.Required) obj["required"] = true;
         }
         if (rd.Description is not null) obj["description"] = rd.Description;
         return obj;
