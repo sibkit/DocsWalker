@@ -11,11 +11,21 @@ public static class IpcChannelFactory
         if (OperatingSystem.IsWindows())
             return new NamedPipeChannel($"docswalker-{rootHash}");
 
+        return new UnixSocketChannel(GetChannelName(rootHash));
+    }
+
+    /// <summary>
+    /// Возвращает имя канала без создания серверного endpoint.
+    /// Windows — имя pipe, POSIX — путь к .sock-файлу.
+    /// </summary>
+    public static string GetChannelName(string rootHash)
+    {
+        if (OperatingSystem.IsWindows())
+            return $"docswalker-{rootHash}";
+
         var runtimeDir = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
-        var socketPath = !string.IsNullOrEmpty(runtimeDir)
+        return !string.IsNullOrEmpty(runtimeDir)
             ? Path.Combine(runtimeDir, $"docswalker-{rootHash}.sock")
             : Path.Combine("/tmp", $"docswalker-{rootHash}.sock");
-
-        return new UnixSocketChannel(socketPath);
     }
 }
