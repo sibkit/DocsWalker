@@ -1,6 +1,7 @@
 using System.Text.Json;
 using DocsWalker.Core.Server.Ipc;
 using DocsWalker.Core.Server.Protocol;
+using DocsWalker.Core.Sessions;
 
 namespace DocsWalker.Core.Server;
 
@@ -8,17 +9,22 @@ namespace DocsWalker.Core.Server;
 /// Accept-loop поверх IIpcChannel. Обрабатывает входящие подключения,
 /// выполняет handshake, принимает запросы и диспатчит через переданный делегат.
 /// Все запросы сериализуются глобально через SemaphoreSlim(1,1).
+/// Опциональный <see cref="SessionState"/> процесса-сервера прокидывается в
+/// <see cref="RequestContext"/> на время каждого диспатча — read-handlers'ы
+/// читают seen-state по нему.
 /// </summary>
 public sealed class IpcServer
 {
     private readonly IIpcChannel _channel;
     private readonly Func<string[], int> _dispatcher;
+    private readonly SessionState? _sessions;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
-    public IpcServer(IIpcChannel channel, Func<string[], int> dispatcher)
+    public IpcServer(IIpcChannel channel, Func<string[], int> dispatcher, SessionState? sessions = null)
     {
         _channel = channel;
         _dispatcher = dispatcher;
+        _sessions = sessions;
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -45,7 +51,7 @@ public sealed class IpcServer
         await _semaphore.WaitAsync(ct);
         try
         {
-            using var _ = RequestContext.Push(sessionId);
+            using var _ = RequestContext.Push(sessionId, _sessions);
             try
             {
                 return _dispatcher(args);
@@ -125,7 +131,7 @@ public sealed class IpcServer
             Console.SetOut(stdoutWriter);
             Console.SetError(stderrWriter);
             int exitCode;
-            using var _ = RequestContext.Push(request.SessionId);
+            using var _ = RequestContext.Push(request.SessionId, _sessions);
             try
             {
                 exitCode = _dispatcher(request.Args);

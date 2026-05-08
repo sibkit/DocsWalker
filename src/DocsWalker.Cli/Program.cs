@@ -121,7 +121,7 @@ internal static class Dispatcher
             "describe_type"   => SchemaHandlers.DescribeType(rootPath, parsed.Params["name"]),
             "get_usage_guide" => SchemaHandlers.GetUsageGuide(rootPath),
             "get_map"         => ReadHandlers.GetMap(rootPath),
-            "get_nodes"       => ReadHandlers.GetNodes(rootPath, parsed.Params["ids"]),
+            "get_nodes"       => DispatchGetNodes(rootPath, parsed.Params),
             "get_by_path"     => ReadHandlers.GetByPath(rootPath, parsed.Params["path"]),
             "get_subtree"     => ReadHandlers.GetSubtree(
                                     rootPath,
@@ -164,6 +164,36 @@ internal static class Dispatcher
             path: null,
             $"Команда '{spec.KebabName}' пока не реализована.");
         return 1;
+    }
+
+    /// <summary>
+    /// Разбирает <c>--no-seen=true|false</c> для <c>get-nodes</c> и вызывает
+    /// <see cref="ReadHandlers.GetNodes"/>. Допустимые значения: <c>true/1/false/0</c>
+    /// (регистр не важен), иначе <c>invalid_parameter</c>. Без параметра — false
+    /// (фильтрация включена, как описано в (#350)). Команды get-subtree / get-by-path
+    /// не получают этого флага: для них он отвергается универсальной валидацией
+    /// <see cref="TryValidateParams"/> как unknown_parameter (поведение зафиксировано
+    /// в (#350) docs/DocsWalker.yml).
+    /// </summary>
+    private static int DispatchGetNodes(string root, IReadOnlyDictionary<string, string> args)
+    {
+        bool noSeen = false;
+        if (args.TryGetValue("no-seen", out var raw))
+        {
+            if (string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || raw == "1")
+                noSeen = true;
+            else if (string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || raw == "0")
+                noSeen = false;
+            else
+            {
+                Output.WriteError(
+                    "invalid_parameter",
+                    path: null,
+                    $"Параметр '--no-seen': ожидается 'true' или 'false', получено '{raw}'.");
+                return 1;
+            }
+        }
+        return ReadHandlers.GetNodes(root, args["ids"], noSeen);
     }
 
     private static ParamValidationError? TryValidateParams(

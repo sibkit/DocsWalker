@@ -75,7 +75,7 @@ internal static class RunHandler
         using (var signals = new SignalHandler())
         using (var shutdown = CancellationTokenSource.CreateLinkedTokenSource(signals.Token))
         {
-            var server = new IpcServer(lifecycle.Channel, Dispatcher.Run);
+            var server = new IpcServer(lifecycle.Channel, Dispatcher.Run, lifecycle.Sessions);
 
             if (!quiet)
             {

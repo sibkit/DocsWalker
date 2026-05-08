@@ -9,7 +9,7 @@
 - [+] (01) spec-in-docs
 - [+] (02) session-state-core
 - [+] session-id-handshake
-- [*] read-dedup-placeholder
+- [+] read-dedup-placeholder
 - [*] write-invalidation
 - [*] auto-include
 - [*] mcp-server

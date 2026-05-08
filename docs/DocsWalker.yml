@@ -376,7 +376,7 @@ sections:
         - text: 'Первый вызов get-usage-guide в session_id сбрасывает её seen-set. Это маркер начала логической сессии: после /clear LLM первой командой зовёт guide (#298), сервер чистит учёт и начинает заново.'
         - examples: [349]
       - "(#350) --no-seen только на get-nodes":
-        - text: 'Параметр --no-seen=true принимается только командой get-nodes; отключает фильтрацию для прямых id и их auto-include-целей. На get-subtree и get-by-path отвергается как unknown_parameter.'
+        - text: 'Параметр --no-seen=true принимается только командой get-nodes; отключает фильтрацию для прямых id и их auto-include-целей (payload не фильтруется, но seen-set всё равно обновляется эмитнутыми id). На get-subtree и get-by-path отвергается как unknown_parameter.'
         - examples: [351]
       - "(#352) Persistence сессий":
         - text: 'Seen-state каждой session_id хранится в `docs/.docswalker/sessions/<uuid>.yml` с полями created, last_used, seen (массив id). Запись на disk — лениво, на graceful shutdown сервера или при явной операции flush.'

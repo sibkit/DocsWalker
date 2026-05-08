@@ -1,11 +1,14 @@
+using DocsWalker.Core.Sessions;
+
 namespace DocsWalker.Core.Server;
 
 /// <summary>
 /// Ambient-контекст текущего запроса сервера. Хранится в <see cref="AsyncLocal{T}"/>
 /// и устанавливается <see cref="IpcServer"/> до вызова диспетчера, очищается после.
-/// Сейчас несёт только <see cref="SessionId"/> — UUID LLM-сессии (docs/DocsWalker.yml
-/// #322, #342); следующие шаги стратегии stg-0005 будут читать его из обработчиков
-/// для seen-фильтрации, write-инвалидации, auto-include.
+/// Несёт <see cref="SessionId"/> — UUID LLM-сессии (docs/DocsWalker.yml #322, #342) —
+/// и ссылку на <see cref="SessionState"/> сервера для read-handlers'ов: seen-фильтрация
+/// (#344), reset на guide (#348), write-инвалидация (#358) — все дёргают эту пару из
+/// <see cref="Current"/>.
 /// </summary>
 public sealed class RequestContext
 {
@@ -15,9 +18,17 @@ public sealed class RequestContext
 
     public string? SessionId { get; }
 
-    private RequestContext(string? sessionId)
+    /// <summary>
+    /// Общий <see cref="SessionState"/> процесса-сервера. Null означает, что
+    /// диспетчер вызван вне серверного транспорта (одноразовый CLI без `run`,
+    /// тесты с пустым ctx) — handlers пропускают seen-логику.
+    /// </summary>
+    public SessionState? Sessions { get; }
+
+    private RequestContext(string? sessionId, SessionState? sessions)
     {
         SessionId = sessionId;
+        Sessions = sessions;
     }
 
     /// <summary>
@@ -25,10 +36,10 @@ public sealed class RequestContext
     /// который восстанавливает предыдущее значение при <c>Dispose</c>. Вызывать обёрнутым
     /// в <c>using</c> вокруг каждого вызова диспетчера на сервере.
     /// </summary>
-    public static IDisposable Push(string? sessionId)
+    public static IDisposable Push(string? sessionId, SessionState? sessions = null)
     {
         var prev = _current.Value;
-        _current.Value = new RequestContext(sessionId);
+        _current.Value = new RequestContext(sessionId, sessions);
         return new Scope(prev);
     }
 

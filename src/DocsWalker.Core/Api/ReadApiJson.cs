@@ -52,10 +52,23 @@ public static class ReadApiJson
         return obj;
     }
 
-    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes)
+    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes) =>
+        NodesToJson(nodes, scope: null);
+
+    /// <summary>
+    /// Сериализация get-nodes. Все элементы — прямо запрошенные id (#346),
+    /// никогда не фильтруются по seen между запросами; результирующий payload
+    /// идентичен старому. <paramref name="scope"/> используется только для
+    /// учёта (Mark) — на следующих чтениях эти id попадут в seen.
+    /// </summary>
+    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes, SeenScope? scope)
     {
         var arr = new JsonArray();
-        foreach (var n in nodes) arr.Add((JsonNode?)NodeToJson(n));
+        foreach (var n in nodes)
+        {
+            arr.Add((JsonNode?)NodeToJson(n));
+            scope?.Mark(n.Id);
+        }
         return arr;
     }
 
@@ -99,7 +112,10 @@ public static class ReadApiJson
     }
 
     public static JsonObject SubtreeToJson(NodeSubtree subtree) =>
-        SubtreeToJson(subtree, fields: null);
+        SubtreeToJson(subtree, fields: null, scope: null);
+
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields) =>
+        SubtreeToJson(subtree, fields, scope: null);
 
     /// <summary>
     /// Сериализация get-by-path и аналогов с whitelist'ом полей. <paramref name="fields"/>=null
@@ -109,8 +125,13 @@ public static class ReadApiJson
     /// Не делегирует <see cref="NodeToJson(Node,IReadOnlyCollection{string}?)"/>, чтобы
     /// переиспользовать уже посчитанный <see cref="NodeSubtree.Tokens"/> и не считать
     /// токены второй раз для каждого узла.
+    /// <para>
+    /// Корень subtree трактуется как «прямо запрошенный» (#346) — никогда не фильтруется
+    /// по seen-set; <paramref name="scope"/> применяется только к транзитивно подтянутым
+    /// дочерним узлам через <see cref="SubtreeChildToJson"/>.
+    /// </para>
     /// </summary>
-    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields)
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields, SeenScope? scope)
     {
         var n = subtree.Node;
         var obj = new JsonObject { ["id"] = n.Id };
@@ -124,15 +145,65 @@ public static class ReadApiJson
         // подставляет subtree_tokens = tokens по отсутствию поля.
         if (Include(fields, "subtree_tokens") && subtree.SubtreeTokens != subtree.Tokens)
             obj["subtree_tokens"] = subtree.SubtreeTokens;
+        scope?.Mark(n.Id);
         // children опускается у листа.
         if (subtree.Children.Count > 0)
         {
             var children = new JsonArray();
-            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeToJson(c, fields));
+            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeChildToJson(c, fields, scope));
             obj["children"] = children;
         }
         return obj;
     }
+
+    /// <summary>
+    /// Сериализация одного транзитивно подтянутого узла поддерева. Если
+    /// <paramref name="scope"/> не null и узел уже в seen (предыдущий запрос
+    /// или этот же ответ выше) — узел заменяется на placeholder
+    /// <c>{id, seen:true}</c> без других полей и без рекурсии в его children
+    /// (#344). В placeholder'е возрастает риск, что LLM не дойдёт до глубины,
+    /// но альтернатива — повторная выдача узла — стоит токенов и нарушает
+    /// контракт «новое в этом запросе». Иначе узел эмитится полным, вместе с
+    /// детьми (рекурсивно через эту же функцию).
+    /// </summary>
+    private static JsonObject SubtreeChildToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields, SeenScope? scope)
+    {
+        var n = subtree.Node;
+        if (scope is not null && scope.ShouldHideTransitive(n.Id))
+        {
+            scope.Mark(n.Id);
+            return PlaceholderJson(n.Id);
+        }
+
+        var obj = new JsonObject { ["id"] = n.Id };
+        if (Include(fields, "type"))           obj["type"] = n.TypeName;
+        if (Include(fields, "title"))          obj["title"] = n.Title;
+        if (Include(fields, "text"))           obj["text"] = n.Text;
+        if (Include(fields, "out_refs"))       obj["out_refs"] = OutRefsToJson(n.OutRefs);
+        if (Include(fields, "tokens"))         obj["tokens"] = subtree.Tokens;
+        if (Include(fields, "subtree_tokens") && subtree.SubtreeTokens != subtree.Tokens)
+            obj["subtree_tokens"] = subtree.SubtreeTokens;
+        scope?.Mark(n.Id);
+        if (subtree.Children.Count > 0)
+        {
+            var children = new JsonArray();
+            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeChildToJson(c, fields, scope));
+            obj["children"] = children;
+        }
+        return obj;
+    }
+
+    /// <summary>
+    /// Placeholder-форма уже выданного транзитивного узла (#362). Никаких
+    /// других полей кроме id и флага seen — задача placeholder'а: подсказать
+    /// LLM, что узел уже видела, и при необходимости запросить его явно через
+    /// get-nodes (опционально с --no-seen=true, см. (#350)).
+    /// </summary>
+    private static JsonObject PlaceholderJson(int id) => new()
+    {
+        ["id"] = id,
+        ["seen"] = true,
+    };
 
     /// <summary>
     /// Сериализация get-subtree с указанием scope: оборачивает поддерево в объект
@@ -140,12 +211,15 @@ public static class ReadApiJson
     /// дереву прошёл обход.
     /// </summary>
     public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree) =>
-        SubtreeToJson(subtree, tree, fields: null);
+        SubtreeToJson(subtree, tree, fields: null, scope: null);
 
-    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields) => new()
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields) =>
+        SubtreeToJson(subtree, tree, fields, scope: null);
+
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields, SeenScope? scope) => new()
     {
         ["tree"] = tree,
-        ["root"] = SubtreeToJson(subtree, fields),
+        ["root"] = SubtreeToJson(subtree, fields, scope),
     };
 
     /// <summary>

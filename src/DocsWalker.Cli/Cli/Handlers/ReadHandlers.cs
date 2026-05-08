@@ -24,7 +24,7 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetNodes(string root, string idsParam)
+    public static int GetNodes(string root, string idsParam, bool noSeen)
     {
         var ids = ParseIds(idsParam);
         return WithApi(root, api =>
@@ -32,7 +32,16 @@ internal static class ReadHandlers
             try
             {
                 var nodes = api.ReadApi.GetNodes(ids);
-                Output.WriteSuccess(ReadApiJson.NodesToJson(nodes));
+                // get-nodes текущего шага (read-dedup-placeholder) возвращает только
+                // прямо запрошенные id — все они эмитятся полными в обоих режимах
+                // noSeen. Параметр noSeen важен для auto-include-целей (#350) —
+                // сейчас auto-include выключен, флаг сохраняется в API и попадёт в
+                // фильтр на следующем шаге стратегии. Seen-set пополняется всегда.
+                _ = noSeen;
+                var seen = SeenScope.FromCurrentContext();
+                var json = ReadApiJson.NodesToJson(nodes, seen);
+                seen?.Commit(DateTime.UtcNow);
+                Output.WriteSuccess(json);
                 return 0;
             }
             catch (ReadApiException ex)
@@ -50,7 +59,10 @@ internal static class ReadHandlers
             try
             {
                 var subtree = api.ReadApi.GetByPath(path);
-                Output.WriteSuccess(ReadApiJson.SubtreeToJson(subtree));
+                var seen = SeenScope.FromCurrentContext();
+                var json = ReadApiJson.SubtreeToJson(subtree, fields: null, seen);
+                seen?.Commit(DateTime.UtcNow);
+                Output.WriteSuccess(json);
                 return 0;
             }
             catch (ReadApiException ex)
@@ -69,7 +81,10 @@ internal static class ReadHandlers
             try
             {
                 var subtree = api.ReadApi.GetSubtree(id, scope, depth);
-                Output.WriteSuccess(ReadApiJson.SubtreeToJson(subtree, scope, fields));
+                var seen = SeenScope.FromCurrentContext();
+                var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, seen);
+                seen?.Commit(DateTime.UtcNow);
+                Output.WriteSuccess(json);
                 return 0;
             }
             catch (ReadApiException ex)
