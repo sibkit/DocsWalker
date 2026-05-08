@@ -32,14 +32,15 @@ internal static class ReadHandlers
             try
             {
                 var nodes = api.ReadApi.GetNodes(ids);
-                // get-nodes текущего шага (read-dedup-placeholder) возвращает только
-                // прямо запрошенные id — все они эмитятся полными в обоих режимах
-                // noSeen. Параметр noSeen важен для auto-include-целей (#350) —
-                // сейчас auto-include выключен, флаг сохраняется в API и попадёт в
-                // фильтр на следующем шаге стратегии. Seen-set пополняется всегда.
-                _ = noSeen;
+                // Прямо запрошенные id (#346) всегда полные в любом режиме noSeen.
+                // Auto-include-цели (#340) дописываются после в ту же плоскую
+                // выдачу. Без noSeen они проходят seen-фильтр (#346) и могут стать
+                // placeholder'ом; --no-seen=true (#350) отключает фильтр для
+                // auto-include-целей — выдаются полностью. Seen-set пополняется
+                // в обоих режимах.
+                var autoIncludes = api.ReadApi.CollectAutoIncludes(nodes);
                 var seen = SeenScope.FromCurrentContext();
-                var json = ReadApiJson.NodesToJson(nodes, seen);
+                var json = ReadApiJson.NodesToJson(nodes, seen, autoIncludes, noSeen);
                 seen?.Commit(DateTime.UtcNow);
                 Output.WriteSuccess(json);
                 return 0;
@@ -59,8 +60,10 @@ internal static class ReadHandlers
             try
             {
                 var subtree = api.ReadApi.GetByPath(path);
+                var autoIncludes = api.ReadApi.CollectAutoIncludes(subtree);
                 var seen = SeenScope.FromCurrentContext();
-                var json = ReadApiJson.SubtreeToJson(subtree, fields: null, seen);
+                var json = ReadApiJson.SubtreeToJsonWithAutoIncludes(
+                    subtree, fields: null, seen, autoIncludes);
                 seen?.Commit(DateTime.UtcNow);
                 Output.WriteSuccess(json);
                 return 0;
@@ -81,8 +84,9 @@ internal static class ReadHandlers
             try
             {
                 var subtree = api.ReadApi.GetSubtree(id, scope, depth);
+                var autoIncludes = api.ReadApi.CollectAutoIncludes(subtree);
                 var seen = SeenScope.FromCurrentContext();
-                var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, seen);
+                var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, seen, autoIncludes);
                 seen?.Commit(DateTime.UtcNow);
                 Output.WriteSuccess(json);
                 return 0;
@@ -163,7 +167,7 @@ internal static class ReadHandlers
             var schema = SchemaLoader.LoadSchema(schemaPath);
             var loaded = DocumentLoader.Load(docsRoot, schema);
             int? sequence = File.Exists(sequencePath) ? new SequenceCounter(sequencePath).Read() : null;
-            var api = new ReadApi(loaded.Graph);
+            var api = new ReadApi(loaded.Graph, schema);
             var result = api.CheckIntegrity(meta, schema, sequence);
             Output.WriteSuccess(ReadApiJson.ValidationResultToJson(result));
             return 0;
@@ -236,7 +240,7 @@ internal static class ReadHandlers
             return 1;
         }
 
-        var api = new ReadApi(loaded.Graph);
+        var api = new ReadApi(loaded.Graph, schema);
         return action(new LoadedApi(loaded.Graph, api));
     }
 

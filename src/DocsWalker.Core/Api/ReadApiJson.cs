@@ -61,7 +61,23 @@ public static class ReadApiJson
     /// идентичен старому. <paramref name="scope"/> используется только для
     /// учёта (Mark) — на следующих чтениях эти id попадут в seen.
     /// </summary>
-    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes, SeenScope? scope)
+    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes, SeenScope? scope) =>
+        NodesToJson(nodes, scope, autoIncludes: null, noSeen: false);
+
+    /// <summary>
+    /// Сериализация get-nodes с auto-include-целями (#340). Прямо запрошенные id
+    /// идут первыми и всегда полные; auto-include-узлы дописываются после них в
+    /// порядке BFS-открытия. К auto-include-узлам применяется seen-фильтр (#346):
+    /// если узел уже в seen-set этой сессии или эмитнут выше в этом ответе —
+    /// он становится placeholder <c>{id, seen:true}</c>. <paramref name="noSeen"/>=true
+    /// (только get-nodes, #350) отключает этот фильтр для auto-include-целей —
+    /// они всегда полные; seen-set всё равно пополняется через Mark.
+    /// </summary>
+    public static JsonArray NodesToJson(
+        IReadOnlyList<Node> nodes,
+        SeenScope? scope,
+        IReadOnlyList<Node>? autoIncludes,
+        bool noSeen)
     {
         var arr = new JsonArray();
         foreach (var n in nodes)
@@ -69,7 +85,55 @@ public static class ReadApiJson
             arr.Add((JsonNode?)NodeToJson(n));
             scope?.Mark(n.Id);
         }
+        if (autoIncludes is null) return arr;
+        foreach (var n in autoIncludes)
+        {
+            arr.Add((JsonNode?)AutoIncludeNodeToJson(n, fields: null, scope, noSeen));
+        }
         return arr;
+    }
+
+    /// <summary>
+    /// Сериализация одной auto-include-цели. Цель относится к транзитивно подтянутым
+    /// узлам (#346): без <paramref name="noSeen"/> применяется seen-фильтр — узел в seen
+    /// заменяется placeholder'ом. С <paramref name="noSeen"/>=true (#350) узел всегда
+    /// полный. Mark вызывается всегда — auto-include-цель попадает в seen-set этой сессии.
+    /// </summary>
+    private static JsonObject AutoIncludeNodeToJson(
+        Node node,
+        IReadOnlyCollection<string>? fields,
+        SeenScope? scope,
+        bool noSeen)
+    {
+        if (!noSeen && scope is not null && scope.ShouldHideTransitive(node.Id))
+        {
+            scope.Mark(node.Id);
+            return PlaceholderJson(node.Id);
+        }
+        var obj = NodeToJson(node, fields);
+        scope?.Mark(node.Id);
+        return obj;
+    }
+
+    /// <summary>
+    /// Добавляет в <paramref name="obj"/> поле <c>auto_includes</c> со списком
+    /// auto-include-целей, если он не пуст. Применяется в get-subtree / get-by-path
+    /// как top-level sibling к <c>root</c>/полям subtree. Каждая цель проходит через
+    /// <see cref="AutoIncludeNodeToJson"/>: при попадании в seen становится placeholder.
+    /// noSeen для get-subtree/get-by-path всегда false (#350): флаг принимается
+    /// только командой get-nodes.
+    /// </summary>
+    private static void AddAutoIncludesField(
+        JsonObject obj,
+        IReadOnlyList<Node>? autoIncludes,
+        IReadOnlyCollection<string>? fields,
+        SeenScope? scope)
+    {
+        if (autoIncludes is null || autoIncludes.Count == 0) return;
+        var arr = new JsonArray();
+        foreach (var n in autoIncludes)
+            arr.Add((JsonNode?)AutoIncludeNodeToJson(n, fields, scope, noSeen: false));
+        obj["auto_includes"] = arr;
     }
 
     /// <summary>
@@ -216,11 +280,48 @@ public static class ReadApiJson
     public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields) =>
         SubtreeToJson(subtree, tree, fields, scope: null);
 
-    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields, SeenScope? scope) => new()
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields, SeenScope? scope) =>
+        SubtreeToJson(subtree, tree, fields, scope, autoIncludes: null);
+
+    /// <summary>
+    /// Сериализация get-subtree с auto-include-целями (#340). К объекту
+    /// <c>{tree, root}</c> добавляется поле <c>auto_includes: [...]</c>, если
+    /// <paramref name="autoIncludes"/> непуст. Каждая цель проходит через seen-фильтр
+    /// (#346): уже-выданный узел становится placeholder'ом. Поле опускается, когда
+    /// auto-include на текущей Схеме не сработал.
+    /// </summary>
+    public static JsonObject SubtreeToJson(
+        NodeSubtree subtree,
+        string tree,
+        IReadOnlyCollection<string>? fields,
+        SeenScope? scope,
+        IReadOnlyList<Node>? autoIncludes)
     {
-        ["tree"] = tree,
-        ["root"] = SubtreeToJson(subtree, fields, scope),
-    };
+        var obj = new JsonObject
+        {
+            ["tree"] = tree,
+            ["root"] = SubtreeToJson(subtree, fields, scope),
+        };
+        AddAutoIncludesField(obj, autoIncludes, fields, scope);
+        return obj;
+    }
+
+    /// <summary>
+    /// Сериализация get-by-path с auto-include-целями (#340). К плоскому subtree-объекту
+    /// добавляется top-level поле <c>auto_includes: [...]</c>, если оно непусто. Шейп
+    /// без auto-includes идентичен <see cref="SubtreeToJson(NodeSubtree,IReadOnlyCollection{string}?,SeenScope?)"/>
+    /// — поле появляется только при ненулевом auto-include.
+    /// </summary>
+    public static JsonObject SubtreeToJsonWithAutoIncludes(
+        NodeSubtree subtree,
+        IReadOnlyCollection<string>? fields,
+        SeenScope? scope,
+        IReadOnlyList<Node>? autoIncludes)
+    {
+        var obj = SubtreeToJson(subtree, fields, scope);
+        AddAutoIncludesField(obj, autoIncludes, fields, scope);
+        return obj;
+    }
 
     /// <summary>
     /// Сериализация get-ancestors: <c>{tree: <name>, ancestors: [...node...]}</c>,

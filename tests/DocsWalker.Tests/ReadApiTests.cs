@@ -10,7 +10,7 @@ public class ReadApiTests
     {
         var schema = SchemaLoader.LoadSchema(TestPaths.SchemaPath);
         var loaded = DocumentLoader.Load(TestPaths.DocsRoot, schema);
-        return new ReadApi(loaded.Graph);
+        return new ReadApi(loaded.Graph, schema);
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public class ReadApiTests
         var meta = SchemaLoader.LoadMetaSchema(TestPaths.MetaSchemaPath);
         var schema = SchemaLoader.LoadSchema(TestPaths.SchemaPath);
         var loaded = DocumentLoader.Load(TestPaths.DocsRoot, schema);
-        var api = new ReadApi(loaded.Graph);
+        var api = new ReadApi(loaded.Graph, schema);
         var maxId = loaded.Graph.ById.Keys.Max();
         var result = api.CheckIntegrity(meta, schema, sequence: maxId);
         Assert.True(result.IsValid,

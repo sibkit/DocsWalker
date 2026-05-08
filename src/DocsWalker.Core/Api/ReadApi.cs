@@ -101,10 +101,99 @@ public sealed record TypeRefDescription(
 public sealed class ReadApi
 {
     private readonly GraphModel _graph;
+    private readonly SchemaDocument? _schema;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _autoIncludeRefsByType;
 
-    public ReadApi(GraphModel graph)
+    public ReadApi(GraphModel graph) : this(graph, schema: null)
+    {
+    }
+
+    /// <summary>
+    /// <paramref name="schema"/> — опционально. Передана → read-команды могут
+    /// строить транзитивный auto-include (#340) через
+    /// <see cref="CollectAutoIncludes"/>. Не передана → auto-include выключен,
+    /// API не зависит от Схемы (используется в тестах и в местах, где Схема
+    /// ещё не загружена).
+    /// </summary>
+    public ReadApi(GraphModel graph, SchemaDocument? schema)
     {
         _graph = graph;
+        _schema = schema;
+        _autoIncludeRefsByType = BuildAutoIncludeIndex(schema);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildAutoIncludeIndex(SchemaDocument? schema)
+    {
+        if (schema is null) return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        var index = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        foreach (var t in schema.Types)
+        {
+            List<string>? names = null;
+            foreach (var rd in t.OutRefs)
+            {
+                if (!rd.IsAutoInclude) continue;
+                names ??= new List<string>();
+                names.Add(rd.Name);
+            }
+            if (names is not null) index[t.Name] = names;
+        }
+        return index;
+    }
+
+    /// <summary>
+    /// Транзитивный обход auto-include-связей (#340) от <paramref name="seeds"/>.
+    /// Возвращает плоский список целей в порядке BFS-открытия; сами seed-узлы
+    /// в результат не входят. Цикл-защита: каждый id посещается не более одного
+    /// раза в одном вызове. Если Схема не была передана в <see cref="ReadApi(Graph,SchemaDocument?)"/>,
+    /// возвращает пустой список.
+    /// </summary>
+    public IReadOnlyList<Node> CollectAutoIncludes(IReadOnlyList<Node> seeds)
+    {
+        if (_autoIncludeRefsByType.Count == 0 || seeds.Count == 0)
+            return Array.Empty<Node>();
+
+        var visited = new HashSet<int>();
+        foreach (var s in seeds) visited.Add(s.Id);
+
+        var queue = new Queue<Node>(seeds);
+        var collected = new List<Node>();
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            if (!_autoIncludeRefsByType.TryGetValue(node.TypeName, out var refNames)) continue;
+            foreach (var refName in refNames)
+            {
+                if (!node.OutRefs.TryGetValue(refName, out var targetIds)) continue;
+                foreach (var tid in targetIds)
+                {
+                    if (!visited.Add(tid)) continue;
+                    var target = _graph.GetById(tid);
+                    if (target is null) continue;
+                    collected.Add(target);
+                    queue.Enqueue(target);
+                }
+            }
+        }
+        return collected;
+    }
+
+    /// <summary>
+    /// Удобный аналог <see cref="CollectAutoIncludes(IReadOnlyList{Node})"/> для subtree:
+    /// заполняет seed-список всеми узлами поддерева (root + transitive children) и
+    /// делегирует. Полезен для get-subtree / get-by-path.
+    /// </summary>
+    public IReadOnlyList<Node> CollectAutoIncludes(NodeSubtree subtree)
+    {
+        var seeds = new List<Node>();
+        FlattenSubtree(subtree, seeds);
+        return CollectAutoIncludes(seeds);
+    }
+
+    private static void FlattenSubtree(NodeSubtree st, List<Node> sink)
+    {
+        sink.Add(st.Node);
+        foreach (var c in st.Children) FlattenSubtree(c, sink);
     }
 
     public IReadOnlyList<MapNode> GetMap()

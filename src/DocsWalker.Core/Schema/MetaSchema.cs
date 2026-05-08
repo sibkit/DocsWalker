@@ -53,7 +53,15 @@ public sealed record RefDef(
     string? Tree,
     Cardinality Cardinality,
     bool Required,
-    string? Description);
+    string? Description)
+{
+    /// <summary>
+    /// Связь является auto-include: <c>tree == null</c> и <c>required == true</c>.
+    /// Read-команды транзитивно подтягивают цели таких связей в payload
+    /// (см. docs/DocsWalker.yml/«(#340) Auto-include», (#363) auto-include).
+    /// </summary>
+    public bool IsAutoInclude => Tree is null && Required;
+}
 
 /// <summary>
 /// Описание типа узла. Тип задаёт допустимые исходящие связи (<see cref="OutRefs"/>)

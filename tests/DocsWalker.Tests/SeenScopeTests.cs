@@ -17,7 +17,7 @@ public class SeenScopeTests
     {
         var schema = SchemaLoader.LoadSchema(TestPaths.SchemaPath);
         var loaded = DocumentLoader.Load(TestPaths.DocsRoot, schema);
-        return (new ReadApi(loaded.Graph), loaded.Graph);
+        return (new ReadApi(loaded.Graph, schema), loaded.Graph);
     }
 
     [Fact]

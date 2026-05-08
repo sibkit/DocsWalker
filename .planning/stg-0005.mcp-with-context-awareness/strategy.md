@@ -11,5 +11,5 @@
 - [+] session-id-handshake
 - [+] read-dedup-placeholder
 - [+] write-invalidation
-- [*] auto-include
+- [+] auto-include
 - [*] mcp-server
