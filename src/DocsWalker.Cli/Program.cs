@@ -181,7 +181,12 @@ internal static class Dispatcher
         {
             foreach (var key in provided.Keys)
             {
-                if (key == "root" || key == "dry-run")
+                // Универсальные общие параметры — обрабатываются вне CommandSpec:
+                // --root → TryResolveRoot, --dry-run → TryResolveDryRun,
+                // --session-id → IpcClient/REPL читают и кладут в frame; сервер
+                // получает argv as-is и должен игнорировать ключ при валидации
+                // параметров команды (docs/DocsWalker.yml #342).
+                if (key == "root" || key == "dry-run" || key == "session-id")
                     continue;
                 if (!HasParam(spec, key))
                 {

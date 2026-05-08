@@ -9,13 +9,20 @@ namespace DocsWalker.Cli.Cli;
 /// <summary>
 /// Клиентская сторона IPC. Подключается к запущенному серверу,
 /// выполняет handshake, отправляет команду, проксирует stdout/stderr + exit-code.
+/// session_id берётся из <c>--session-id=&lt;uuid&gt;</c> в argv (если задан) либо из
+/// env <c>CLAUDE_CODE_SESSION_ID</c> (docs/DocsWalker.yml #342). Оба пустые →
+/// в frame отправляется null, сервер не ведёт seen-set для этого запроса.
 /// </summary>
 internal static class IpcClient
 {
+    private const string SessionIdEnvVar = "CLAUDE_CODE_SESSION_ID";
+    private const string SessionIdFlagPrefix = "--session-id=";
+
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(10);
 
     public static async Task<int> SendCommandAsync(string rootPath, string[] args)
     {
+        var sessionId = ResolveSessionId(args);
         var rootHash = ServerLifecycle.ComputeRootHash(rootPath);
         var channelName = IpcChannelFactory.GetChannelName(rootHash);
 
@@ -60,7 +67,7 @@ internal static class IpcClient
                 return 1;
             }
 
-            var request = new IpcRequest(args);
+            var request = new IpcRequest(args, sessionId);
             await Frame.WriteAsync(stream,
                 JsonSerializer.Serialize(request, ProtocolJsonContext.Default.IpcRequest), ct);
 
@@ -82,5 +89,24 @@ internal static class IpcClient
             if (response.Stderr is not null) Console.Error.WriteLine(response.Stderr);
             return response.ExitCode;
         }
+    }
+
+    /// <summary>
+    /// Резолвит <c>session_id</c> по правилам docs/DocsWalker.yml #342: явный
+    /// <c>--session-id=&lt;uuid&gt;</c> в argv перебивает env <c>CLAUDE_CODE_SESSION_ID</c>;
+    /// оба пустые — null. Пустое значение трактуется как отсутствие.
+    /// </summary>
+    private static string? ResolveSessionId(string[] argv)
+    {
+        foreach (var token in argv)
+        {
+            if (token.StartsWith(SessionIdFlagPrefix, StringComparison.Ordinal))
+            {
+                var value = token[SessionIdFlagPrefix.Length..];
+                return value.Length == 0 ? null : value;
+            }
+        }
+        var fromEnv = Environment.GetEnvironmentVariable(SessionIdEnvVar);
+        return string.IsNullOrEmpty(fromEnv) ? null : fromEnv;
     }
 }

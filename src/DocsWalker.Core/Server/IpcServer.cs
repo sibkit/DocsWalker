@@ -40,11 +40,12 @@ public sealed class IpcServer
     /// REPL-локалью: REPL и удалённые IPC-клиенты сериализуются через единую
     /// очередь, обеспечивая правило (#313) — обработка запросов строго по одному.
     /// </summary>
-    public async Task<int> ExecuteLocalAsync(string[] args, CancellationToken ct)
+    public async Task<int> ExecuteLocalAsync(string[] args, string? sessionId, CancellationToken ct)
     {
         await _semaphore.WaitAsync(ct);
         try
         {
+            using var _ = RequestContext.Push(sessionId);
             try
             {
                 return _dispatcher(args);
@@ -124,6 +125,7 @@ public sealed class IpcServer
             Console.SetOut(stdoutWriter);
             Console.SetError(stderrWriter);
             int exitCode;
+            using var _ = RequestContext.Push(request.SessionId);
             try
             {
                 exitCode = _dispatcher(request.Args);

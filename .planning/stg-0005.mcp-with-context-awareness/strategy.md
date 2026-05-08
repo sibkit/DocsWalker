@@ -8,7 +8,7 @@
 ## Шаги
 - [+] (01) spec-in-docs
 - [+] (02) session-state-core
-- [*] session-id-handshake
+- [+] session-id-handshake
 - [*] read-dedup-placeholder
 - [*] write-invalidation
 - [*] auto-include

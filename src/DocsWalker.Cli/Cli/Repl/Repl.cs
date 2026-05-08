@@ -7,11 +7,16 @@ namespace DocsWalker.Cli.Cli.Repl;
 /// <see cref="IpcServer.ExecuteLocalAsync"/> (тот же семафор, что у IPC-клиентов).
 /// Команды :quit / :exit и EOF (Ctrl+D / Ctrl+Z) завершают цикл; вызывающий
 /// тригерит graceful-shutdown.
+/// session_id REPL — UUID, генерируемый на старте; живёт до выхода из REPL
+/// (docs/DocsWalker.yml #342). На <c>:exit</c> session-файл остаётся, GC
+/// заберёт по TTL.
 /// </summary>
 internal static class Repl
 {
     public static void Run(IpcServer server, CancellationToken ct)
     {
+        var sessionId = Guid.NewGuid().ToString();
+
         while (!ct.IsCancellationRequested)
         {
             Console.Out.Write("dw> ");
@@ -32,7 +37,7 @@ internal static class Repl
 
             try
             {
-                _ = server.ExecuteLocalAsync(argv, ct).GetAwaiter().GetResult();
+                _ = server.ExecuteLocalAsync(argv, sessionId, ct).GetAwaiter().GetResult();
             }
             catch (OperationCanceledException) { break; }
         }
