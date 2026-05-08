@@ -171,6 +171,9 @@ sections:
       - "(#186) folder write-операции":
         - text: create_node для folder создаёт каталог в docs/ и добавляет запись в folders.yml в одной транзакции; delete_node для folder допустим только для пустого каталога. update_node со сменой title переименовывает каталог в FS, правит запись в folders.yml и каскадно обновляет SourceFile у всех path-потомков; смена text у folder отвергается как invalid_field. move_node для folder перемещает каталог под нового parent (только folder или root), проверяет коллизию имени и цикл, каскадно правит SourceFile потомков.
         - examples: [215]
+      - "(#373) Write-invalidation":
+        - text: 'Каждая успешная write-команда инвалидирует затронутые id в seen-set всех активных sessions сервера — защищает LLM от просмотра устаревшего узла через placeholder. Подробности по списку id для каждой операции — (#358).'
+        - examples: [374]
     - definitions:
       - "(#28) create_node": Создать новый узел. Параметры — type (имя типа из Схемы), title (1–2-словный path-сегмент), text (если у типа text_required=true), плюс значения всех required связей контракта типа (включая path для всех типов с непустым path_targets — кроме root). Возвращает id созданного узла.
       - "(#29) update_node": Обновить title и/или text узла. Параметры — id, новый title (опц.), новый text (опц.). Не меняет ни одну связь — для правки связей нужен create_ref, delete_ref или move_node.
@@ -184,6 +187,7 @@ sections:
       - "(#213) Новый out_ref": Добавление out_refs[name=related, target_types=[section]] в type_definition section в Схема.yml.
       - "(#214) move-node": Перенос узла под нового родителя — через docswalker move-node --id=42 --to=8, не через create-ref.
       - "(#215) Создание папки": docswalker create-node --type=folder --title=lang --path=0 создаёт каталог docs/lang/ и запись в folders.yml.
+      - "(#374) Инвалидация после delete": '`get-nodes --ids=42` → 42 в seen. `delete-nodes --ids=42` → 42 удалён из seen всех sessions. Следующий `get-nodes --ids=42` в любой session получит node_not_found, а не placeholder с устаревшими данными.'
   - "(#35) CLI-интерфейс":
     - statements:
       - "(#157) Команды повторяют API": 'CLI-команды повторяют API один-в-один: имя команды — имя операции, аргументы — именованные ключи.'
@@ -246,8 +250,26 @@ sections:
   - "(#44) MCP-интерфейс":
     - statements:
       - "(#166) MCP поверх ядра": MCP-сервер реализуется поверх того же ядра, что и CLI. Каждая операция API становится MCP-tool с типизированными параметрами.
-    - notes:
-      - "(#167) Вторая очередь": Реализация второй очереди, после стабилизации API через CLI.
+    - rules:
+      - "(#364) JSON-RPC stdio":
+        - text: 'Транспорт MCP — newline-delimited JSON-RPC 2.0 над stdin/stdout. Команды API регистрируются как MCP-tools; имя tool = kebab-case CLI-команды; параметры — JSON-Schema, выводимая из контракта команды.'
+        - examples: [365]
+      - "(#366) Один сервер = один root":
+        - text: 'MCP-сервер запускается командой `docswalker mcp-server --root=<path>`. Single-root-per-process сохраняется (#309). Lock на docs/ общий с `run` — параллельный запуск `run` и `mcp-server` на одном root конкурируют за lock; второй упадёт с server_already_running.'
+        - examples: [367]
+      - "(#368) Multi-root через несколько entries":
+        - text: 'Multi-root в одной Claude Code сессии = несколько mcpServers-записей в `.mcp.json` с разными `--root`. Claude Code запускает их как независимые процессы; tools видны с разными префиксами — LLM явно выбирает DocsWalker.'
+        - examples: [369]
+      - "(#370) session_id из MCP-handshake":
+        - text: 'session_id MCP-сессии берётся из MCP-initialize-handshake; живёт от initialize до закрытия канала. CLAUDE_CODE_SESSION_ID через MCP не приходит — Claude Code инжектирует её только в Bash-tool. /clear в Claude Code MCP-канал не закрывает; маркер-сброса seen-set на уровне транспорта нет — срабатывает первый get-usage-guide в этой session_id (#348).'
+        - examples: [371]
+    - definitions:
+      - "(#372) MCP-сервер": 'Long-lived процесс DocsWalker, запущенный командой `docswalker mcp-server --root=<path>`, обслуживающий один root. Транспорт — JSON-RPC 2.0 над stdio. Lock на docs/, in-memory граф и контракт session_id такие же, как у `run`.'
+    - examples:
+      - "(#365) tools/call": 'MCP-tool `get-nodes` принимает {"ids":[42]} через MCP tools/call → проксируется в Dispatcher как `get-nodes --ids=42` → ответ маршалится в MCP-формат tools/call response (success-объект CLI или MCP-error для ошибки).'
+      - "(#367) lock-конфликт": '`docswalker run --root=.` уже идёт → `docswalker mcp-server --root=.` → exit ≠ 0, stderr {"code":"server_already_running","message":"already running, pid=..."}. Это feature single-root-per-process (#309).'
+      - "(#369) Две базы знаний": '`.mcp.json` с двумя entries: docs-base-a (`--root=/path/A`) и docs-base-b (`--root=/path/B`) — два независимых процесса DocsWalker, два независимых seen-set''а; tools видны как `docs-base-a__get_nodes` и `docs-base-b__get_nodes`.'
+      - "(#371) /clear в Claude Code": 'LLM делает /clear в Claude Code → MCP-канал не закрывается → session_id сохраняется; LLM первой командой зовёт get-usage-guide → сервер сбрасывает seen этой session_id и начинает чистый учёт.'
   - "(#45) Стек реализации":
     - rules:
       - "(#168) C# на LTS .NET":
@@ -318,7 +340,7 @@ sections:
       - "(#319) run.lock": 'Файл docs/.docswalker/run.lock. Используется только для эксклюзивного file-lock-а на всё время жизни сервера. Содержимое не значимо (lock держится OS-механизмом). Удаление файла без снятия lock-а — undefined behavior; штатный путь — graceful-shutdown сервера.'
       - "(#320) run.pid": 'Файл docs/.docswalker/run.pid. Содержит две строки, разделённые переводом строки: десятичный pid живого сервера и абсолютный путь его исполняемого файла. Записывается сервером после успешного захвата lock-а; удаляется при graceful-shutdown. Stale-обнаружение и поведение — см. (#314).'
       - "(#321) IPC-канал": 'Локальный двунаправленный stream-канал между сервером и одним клиентом. Платформо-зависимый transport: Windows named pipe (\\.\pipe\docswalker-{root-hash}), POSIX Unix-domain socket в ${XDG_RUNTIME_DIR}/. ACL — только владелец процесса. Имя канала — docswalker-{root-hash}, где root-hash — стабильный hash абсолютного нормализованного пути docs/. Несколько клиентов одного сервера обслуживаются последовательно — сериализация запросов по правилу (#313).'
-      - "(#322) request-frame": 'Один запрос — одна строка JSON, завершённая символом перевода строки (newline-delimited JSON). Поля: cmd (kebab-case имя команды, та же что у CLI), args (object с именованными аргументами в kebab-case ключах). После handshake-кадра до закрытия канала клиент шлёт ровно один request-frame.'
+      - "(#322) request-frame": 'Один запрос — одна строка JSON, завершённая символом перевода строки (newline-delimited JSON). Поля: cmd (kebab-case имя команды, та же что у CLI), args (object с именованными аргументами в kebab-case ключах), session_id? (опц., строка-UUID; идентификатор LLM-сессии для context-aware-фильтрации (#338); null/отсутствует — сервер не ведёт seen-set для этого запроса). После handshake-кадра до закрытия канала клиент шлёт ровно один request-frame.'
       - "(#323) response-frame": 'Один ответ — одна строка JSON, завершённая символом перевода строки. Поля: kind (дискриминатор: "ok" | "error"), payload (для kind=ok — тот же JSON-объект, что текущий stdout успешного ответа CLI из (#161); для kind=error — тот же flat-объект ошибки, что текущий stderr CLI из (#164)). Клиент проксирует payload в свой stdout (kind=ok) или stderr (kind=error) и устанавливает exit code соответственно (0 / ≠0).'
       - "(#324) handshake": 'Первый обмен после коннекта. Клиент шлёт {client_version, protocol_version} одной newline-delimited JSON-строкой; сервер отвечает {server_version, accepted, reason?}. Если accepted=false — клиент закрывает канал и печатает version_mismatch локально, не отправляя request-frame. Только после accepted=true канал готов к запросам.'
     - examples:
@@ -334,6 +356,56 @@ sections:
       - "(#337) REPL без истории сессий": 'Закрыли REPL (`:quit`), запустили `docswalker run --root=.` снова → стрелка вверх возвращает только команды текущей сессии; история предыдущей сессии недоступна.'
     - llm:
       - "(#333) Старт работы": 'Перед любой командой кроме `run` убедись, что сервер на нужном root уже поднят. Не пытайся запускать сервер сам — это задача пользователя/CI. Если первая команда вернула server_not_running — попроси пользователя поднять сервер; не повторяй и не спавни процессы фоном.'
+  - "(#338) Контекст-aware-выдача":
+    - statements:
+      - "(#339) Цель раздела": DocsWalker минимизирует токены и шум контекста LLM, не повторяя уже-выданные узлы между запросами одной сессии и автоматически подтягивая концептуально-неотъемлемые связи. Поведение transport-агностично — работает на CLI и MCP одинаково, переключатель — наличие session_id в запросе.
+    - rules:
+      - "(#340) Auto-include":
+        - text: 'При любой read-команде сервер транзитивно подтягивает цели всех non-tree required cross-refs узлов-результата (auto-include = `tree == null && required == true`). Подтянутые узлы проходят через тот же seen-фильтр, что и children. Отдельного поля в Схеме нет — семантика выводится из существующих `tree` и `required`. На текущей Схеме auto-include активен только для связи `rule.examples`.'
+        - examples: [341]
+      - "(#342) Источники session_id":
+        - text: 'session_id — UUID, передаваемый в каждый запрос. Источники по транспортам: CLI читает env CLAUDE_CODE_SESSION_ID; MCP — из MCP-initialize-handshake; TTY-REPL генерирует UUID на старте. Общий параметр `--session-id=<uuid>` перебивает env. Если все источники пусты — фильтрация не применяется, payload как до этой фичи.'
+        - examples: [343]
+      - "(#344) Placeholder для seen":
+        - text: 'Узел, уже выданный в этой session_id, при повторном транзитивном попадании в payload заменяется на {"id":N,"seen":true} без других полей. Полный узел появляется только при первом упоминании в pre-order обходе ответа; повторы внутри одного ответа — placeholder.'
+        - examples: [345]
+      - "(#346) Прямые id всегда полные":
+        - text: 'Узлы, прямо запрошенные через --ids (get-nodes) или --id (get-subtree, get-by-path), всегда возвращаются полностью, даже если они в seen. Placeholder применяется только к транзитивно подтянутым узлам — children и auto-include-целям.'
+        - examples: [347]
+      - "(#348) Reset на guide":
+        - text: 'Первый вызов get-usage-guide в session_id сбрасывает её seen-set. Это маркер начала логической сессии: после /clear LLM первой командой зовёт guide (#298), сервер чистит учёт и начинает заново.'
+        - examples: [349]
+      - "(#350) --no-seen только на get-nodes":
+        - text: 'Параметр --no-seen=true принимается только командой get-nodes; отключает фильтрацию для прямых id и их auto-include-целей. На get-subtree и get-by-path отвергается как unknown_parameter.'
+        - examples: [351]
+      - "(#352) Persistence сессий":
+        - text: 'Seen-state каждой session_id хранится в `docs/.docswalker/sessions/<uuid>.yml` с полями created, last_used, seen (массив id). Запись на disk — лениво, на graceful shutdown сервера или при явной операции flush.'
+        - examples: [353]
+      - "(#354) TTL=7d":
+        - text: 'При старте сервера session-файлы с last_used старше 7 дней удаляются. TTL фиксирован, без настройки.'
+        - examples: [355]
+      - "(#356) Hash-detection":
+        - text: 'На graceful shutdown сервер пишет SHA256-чексумму всех файлов docs/ в `docs/.docswalker/sessions/.checksum`; на startup сверяет. Mismatch (внешняя правка YAML между запусками сервера) → все session-файлы удаляются. Это защита от выдачи placeholder''ов для узлов, изменённых вручную.'
+        - examples: [357]
+      - "(#358) Write-invalidation":
+        - text: 'После успешного write-вызова сервер удаляет затронутые id из seen-set всех активных sessions in-memory. Затронутые id зависят от типа операции: новый id (create-node), id обновляемого узла (update-node), все удалённые id (delete-nodes), id переносимого узла (move-node), id источника (create-ref / delete-ref), id всех источников переподшитых cross-refs (redirect-refs). Транзакция накапливает touched-id всех вложенных операций и инвалидирует одним проходом по sessions в конце.'
+        - examples: [359]
+    - definitions:
+      - "(#360) session_id": UUID-идентификатор LLM-сессии. Передаётся в каждый запрос. На сервере связывается с seen-set этой сессии. Источник session_id зависит от транспорта (#342).
+      - "(#361) seen-set": Множество id узлов, уже выданных в этой session_id за всё время её жизни. Хранится in-memory во время работы сервера; персистится в `docs/.docswalker/sessions/<uuid>.yml` лениво.
+      - "(#362) placeholder": 'Сокращённая форма уже-выданного узла: {"id":N,"seen":true}. Применяется к транзитивно подтянутым узлам в read-ответах, не к прямо запрошенным id.'
+      - "(#363) auto-include": Свойство связи `tree == null && required == true`. Read-команды транзитивно подтягивают цели таких связей. Отдельного поля в Схеме нет — семантика выводится из существующих полей.
+    - examples:
+      - "(#341) auto-include для rule.examples": 'На текущей Схеме auto-include активен только для связи rule.examples — единственная non-tree required связь. `get-nodes --ids=125` (rule «Запись через API») вернёт сам узел и узел (#188) — его пример.'
+      - "(#343) CLI-через-env": '`docswalker get-nodes --ids=42` под Claude Code Bash-tool: переменная CLAUDE_CODE_SESSION_ID уже инжектирована в env → CLI читает её, шлёт в request-frame.session_id; сервер ведёт seen-set для этой session_id.'
+      - "(#345) Placeholder в subtree": '`get-nodes --ids=42` уже сделан → 42 в seen. Затем `get-subtree --id=1` возвращает поддерево, в котором узел 42 встречается среди children — на его месте {"id":42,"seen":true} без других полей.'
+      - "(#347) Повтор прямого id": '`get-nodes --ids=42` сделан → 42 в seen. Повторный `get-nodes --ids=42` возвращает узел полностью; placeholder к прямым id не применяется.'
+      - "(#349) /clear-маркер": LLM сделала /clear → потеряла контекст → первый вызов в session_id — get-usage-guide → сервер сбросил seen этой session_id; следующий read получает узлы в полной форме.
+      - "(#351) --no-seen после /compact": 'После /compact LLM потеряла полную копию узла id=42 (только summary остался) → `get-nodes --ids=42 --no-seen=true` вернёт узел полностью, игнорируя seen-set. На `get-subtree --id=1 --no-seen=true` команда отвергается с unknown_parameter.'
+      - "(#353) Формат session-файла": '`docs/.docswalker/sessions/abc-uuid.yml`: created — ISO-8601 timestamp создания, last_used — ISO-8601 последнего обращения, seen — массив id вида [1, 8, 42, 188].'
+      - "(#355) GC старого": session-файл с last_used = 2026-04-25 при старте сервера 2026-05-09 удаляется как expired (>7 дней).
+      - "(#357) Внешняя правка YAML": Сервер остановлен → пользователь правит docs/foo.yml в IDE → запуск сервера → SHA256 не совпадает с .checksum → все session-файлы удаляются. Никакая LLM не получит placeholder для устаревшего узла.
+      - "(#359) update-после-чтения": '`get-nodes --ids=42` → 42 в seen. `update-node --id=42 --text=новое` → 42 удалён из seen всех sessions. Следующий `get-nodes --ids=42` в любой session возвращает полный узел с новым text.'
   - "(#78) Атомизация и формат YAML смысловых узлов":
     - statements:
       - "(#179) Bullet → узел": Каждый бывший bullet-блок (statements, rules, may_rules, notes, llm) в section разворачивается в отдельный смысловой узел со своим id, type и title. text узла — формулировка, бывшая bare-string элементом списка. Это позволяет LLM фильтровать docs/ по одному правилу, одному определению или одному примеру, не подтягивая всю section.
