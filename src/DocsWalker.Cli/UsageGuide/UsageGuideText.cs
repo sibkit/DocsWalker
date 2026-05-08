@@ -11,6 +11,8 @@ internal static class UsageGuideText
         """
         DocsWalker представляет docs/ как граф: узлы (units of meaning) + направленные именованные связи (out_refs). LLM работает только с узлами и связями через CLI/MCP — имена файлов и каталогов наружу не торчат.
 
+        ВАЖНО — серверная модель: все команды (кроме `run`) работают только через локальный IPC к запущенному серверу. Перед любой командой должен быть запущен `docswalker run --root=<path>`. CI-pipeline: `docswalker run --root=. &` → команды → kill. Если сервер не запущен — любая команда вернёт exit 1 и {"code":"server_not_running","hint":"docswalker run --root=<path>"}.
+
         Контракт CLI (envelope-free):
         - Успех — exit 0, stdout — JSON-результат команды напрямую, без обёртки. Шейп — специфика команды (объект или массив).
         - Ошибка — exit ≠ 0, stderr — плоский JSON {code, message, path?, hint?, describe_type?}. stdout при ошибке пустой.

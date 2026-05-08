@@ -8,7 +8,65 @@ using DocsWalker.Cli.Cli.Handlers;
 // прямом перехвате stdout/stderr (LLM, CI, файловый редирект). Устанавливаем явно.
 Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
-return Dispatcher.Run(args);
+// Нет аргументов или первый аргумент — параметр: отдаём Dispatcher'у.
+// Это ошибки argv (no_command), не нужен сервер — выдаём сразу.
+if (args.Length == 0 || args[0].StartsWith("--", StringComparison.Ordinal))
+    return Dispatcher.Run(args);
+
+var cmd = args[0].Replace('_', '-');
+
+// cmd == "run" → серверный путь: захват lifecycle + IPC-сервер в этом процессе.
+if (cmd == "run")
+    return Dispatcher.Run(args);
+
+// Любая другая команда → клиент-режим: проксируем к запущенному серверу через IPC.
+if (!TryResolveClientRoot(args, out var rootPath))
+{
+    Output.WriteError(
+        "docs_not_found",
+        Directory.GetCurrentDirectory(),
+        "Не найден каталог 'docs/' ни в текущей директории, ни выше. " +
+        "Используйте '--root=<path>' для явного указания корня проекта.");
+    return 1;
+}
+
+if (!PidFileReader.TryReadLivePid(rootPath, out _))
+{
+    Output.WriteError(
+        "server_not_running",
+        path: null,
+        $"Сервер DocsWalker не запущен (root={rootPath}).",
+        hint: $"docswalker run --root={rootPath}");
+    return 1;
+}
+
+return await IpcClient.SendCommandAsync(rootPath, args);
+
+// Быстрый резолв root для клиент-режима: --root= из argv или подъём по дереву от CWD.
+// Path.GetFullPath нормализует путь так же, как ServerLifecycle при старте сервера.
+static bool TryResolveClientRoot(string[] argv, out string root)
+{
+    foreach (var arg in argv)
+    {
+        if (arg.StartsWith("--root=", StringComparison.Ordinal))
+        {
+            root = Path.GetFullPath(arg["--root=".Length..]);
+            return true;
+        }
+    }
+    var current = new DirectoryInfo(Directory.GetCurrentDirectory());
+    while (current is not null)
+    {
+        if (Directory.Exists(Path.Combine(current.FullName, "docs")))
+        {
+            root = current.FullName;
+            return true;
+        }
+        current = current.Parent;
+    }
+    root = string.Empty;
+    return false;
+}
 
 internal static class Dispatcher
 {

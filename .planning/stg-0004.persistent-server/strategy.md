@@ -54,7 +54,7 @@ Windows — `\\.\pipe\docswalker-{root-hash}`. POSIX — `${XDG_RUNTIME_DIR}/doc
 - [+] (02) server-lifecycle
 - [+] (03) ipc-protocol
 - [+] (04) run-command-and-tty-repl
-- [*] client-mode-default
+- [+] (05) client-mode-default
 
 ## Итоговый порядок выполнения
 
