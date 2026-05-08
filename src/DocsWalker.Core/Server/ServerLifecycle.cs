@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using DocsWalker.Core.Server.Ipc;
+using DocsWalker.Core.Sessions;
 using DocsWalker.Core.Store;
 
 namespace DocsWalker.Core.Server;
@@ -19,18 +20,40 @@ public sealed class ServerLifecycle : IDisposable
 {
     private FileStream? _lockStream;
     private readonly string _pidPath;
+    private readonly string _docsDir;
+    private readonly string _sessionsDir;
+    private readonly string _checksumPath;
 
     public IIpcChannel Channel { get; }
     public string RootHash { get; }
 
+    /// <summary>
+    /// In-memory seen-set всех LLM-сессий процесса. Загружается на startup
+    /// (если checksum docs/-файлов совпал с сохранённым), сбрасывается на
+    /// диск на graceful-shutdown.
+    /// </summary>
+    public SessionState Sessions { get; }
+
     public bool IsHeld => _lockStream is not null;
 
-    private ServerLifecycle(FileStream lockStream, string pidPath, IIpcChannel channel, string rootHash)
+    private ServerLifecycle(
+        FileStream lockStream,
+        string pidPath,
+        IIpcChannel channel,
+        string rootHash,
+        SessionState sessions,
+        string docsDir,
+        string sessionsDir,
+        string checksumPath)
     {
-        _lockStream = lockStream;
-        _pidPath    = pidPath;
-        Channel     = channel;
-        RootHash    = rootHash;
+        _lockStream   = lockStream;
+        _pidPath      = pidPath;
+        Channel       = channel;
+        RootHash      = rootHash;
+        Sessions      = sessions;
+        _docsDir      = docsDir;
+        _sessionsDir  = sessionsDir;
+        _checksumPath = checksumPath;
     }
 
     /// <summary>
@@ -51,11 +74,14 @@ public sealed class ServerLifecycle : IDisposable
     {
         var absRoot        = Path.GetFullPath(rootPath);
         var rootHash       = ComputeRootHash(absRoot);
-        var docsWalkerDir  = Path.Combine(absRoot, "docs", ".docswalker");
+        var docsDir        = Path.Combine(absRoot, "docs");
+        var docsWalkerDir  = Path.Combine(docsDir, ".docswalker");
         Directory.CreateDirectory(docsWalkerDir);
 
-        var lockPath = Path.Combine(docsWalkerDir, "run.lock");
-        var pidPath  = Path.Combine(docsWalkerDir, "run.pid");
+        var lockPath     = Path.Combine(docsWalkerDir, "run.lock");
+        var pidPath      = Path.Combine(docsWalkerDir, "run.pid");
+        var sessionsDir  = Path.Combine(docsWalkerDir, "sessions");
+        var checksumPath = Path.Combine(sessionsDir, ".checksum");
 
         FileStream? lockStream = null;
         const int maxRetries = 6;
@@ -106,7 +132,44 @@ public sealed class ServerLifecycle : IDisposable
 
         WritePidFile(pidPath);
 
-        return new ServerLifecycle(lockStream, pidPath, channel, rootHash);
+        var sessions = LoadSessions(docsDir, sessionsDir, checksumPath);
+
+        return new ServerLifecycle(
+            lockStream, pidPath, channel, rootHash,
+            sessions, docsDir, sessionsDir, checksumPath);
+    }
+
+    /// <summary>
+    /// Грузит seen-state на startup. Если сохранённый checksum docs/ совпал
+    /// с актуальным — поднимает session-файлы в map и эвиктит просроченные;
+    /// иначе — стирает все session-файлы (внешняя ручная правка YAML
+    /// инвалидирует все seen-set) и стартует с пустым state.
+    /// Ошибки I/O на этой фазе не должны валить запуск сервера: сваливаемся
+    /// в безопасный «пустой state».
+    /// </summary>
+    private static SessionState LoadSessions(string docsDir, string sessionsDir, string checksumPath)
+    {
+        try
+        {
+            var current = DocsChecksum.ComputeForDocs(docsDir, ".docswalker/sessions");
+            var stored  = DocsChecksum.ReadStored(checksumPath);
+
+            if (stored is null || !string.Equals(stored, current, StringComparison.Ordinal))
+            {
+                SessionFile.WipeAll(sessionsDir);
+                return new SessionState();
+            }
+
+            var state   = SessionFile.LoadAll(sessionsDir);
+            var evicted = state.EvictExpired(SessionState.TimeToLive, DateTime.UtcNow);
+            if (evicted.Count > 0)
+                SessionFile.DeleteSessions(sessionsDir, evicted);
+            return state;
+        }
+        catch
+        {
+            return new SessionState();
+        }
     }
 
     /// <summary>
@@ -119,12 +182,37 @@ public sealed class ServerLifecycle : IDisposable
         var stream  = Interlocked.Exchange(ref _lockStream, null);
         if (stream is null) return;
 
+        FlushSessionsBestEffort();
+
         channel.Dispose();
 
         try { File.Delete(_pidPath); }
         catch { /* best-effort */ }
 
         stream.Dispose();
+    }
+
+    /// <summary>
+    /// Сбрасывает dirty-сессии на диск и записывает актуальный checksum docs/.
+    /// На graceful-shutdown сервер не должен падать из-за ошибок persistence:
+    /// при сбое записи мы теряем seen-state одной сессии (на следующем запуске
+    /// он не загрузится — в худшем случае пользователь увидит уже выданные
+    /// узлы повторно), но сам процесс должен корректно завершиться.
+    /// </summary>
+    private void FlushSessionsBestEffort()
+    {
+        try { SessionFile.SaveAll(Sessions, _sessionsDir); }
+        catch { /* best-effort */ }
+
+        try
+        {
+            if (Sessions.Sessions.Count > 0)
+            {
+                var checksum = DocsChecksum.ComputeForDocs(_docsDir, ".docswalker/sessions");
+                DocsChecksum.WriteStored(_checksumPath, checksum);
+            }
+        }
+        catch { /* best-effort */ }
     }
 
     public void Dispose() => Release();

@@ -33,3 +33,4 @@ desktop.ini
 docs/.docswalker/.lock
 docs/.docswalker/run.lock
 docs/.docswalker/run.pid
+docs/.docswalker/sessions/
