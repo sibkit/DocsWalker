@@ -154,7 +154,31 @@ public sealed class Graph
         return idx;
     }
 
-    public Node? GetById(int id) => _byId.TryGetValue(id, out var n) ? n : null;
+    /// <summary>
+    /// Синтезированный корневой узел (id=0). Не персистится в YAML, не хранится в <see cref="_byId"/>;
+    /// возвращается <see cref="GetById(int)"/> при запросе id=0 и <see cref="GetByType(string)"/>
+    /// для типа <c>root</c>. Поля совпадают с контрактом типа <c>root</c> в Схеме (мета-схема v6+):
+    /// title — имя FS-папки docs/, out_refs пуст (top-level узлы достаются обратным проходом).
+    /// </summary>
+    private static readonly Node SyntheticRoot = new()
+    {
+        Id = Node.RootId,
+        TypeName = Node.RootTypeName,
+        Title = "docs",
+        Text = "Корень docs/. Briefing — get-usage-guide.",
+        OutRefs = new Dictionary<string, IReadOnlyList<int>>(),
+        SourceFile = "",
+    };
+
+    /// <summary>
+    /// Возвращает узел по id. id=0 — корневой синглтон (синтезируется на лету, см. <see cref="SyntheticRoot"/>);
+    /// для остальных id — лукап в <see cref="_byId"/>, null если узла нет.
+    /// </summary>
+    public Node? GetById(int id)
+    {
+        if (id == Node.RootId) return SyntheticRoot;
+        return _byId.TryGetValue(id, out var n) ? n : null;
+    }
 
     /// <summary>Возвращает прямых детей узла по обратному проходу out_refs[path] (alias к scope=path).</summary>
     public IReadOnlyList<Node> GetChildren(int parentId) =>
@@ -183,8 +207,12 @@ public sealed class Graph
         return idx.GetParent(nodeId);
     }
 
-    public IReadOnlyList<Node> GetByType(string typeName) =>
-        _byType.TryGetValue(typeName, out var list) ? list : Array.Empty<Node>();
+    public IReadOnlyList<Node> GetByType(string typeName)
+    {
+        if (string.Equals(typeName, Node.RootTypeName, StringComparison.Ordinal))
+            return new[] { SyntheticRoot };
+        return _byType.TryGetValue(typeName, out var list) ? list : Array.Empty<Node>();
+    }
 
     public Node? GetDocumentByTitle(string title) =>
         _documentByTitle.TryGetValue(title, out var doc) ? doc : null;
@@ -212,7 +240,9 @@ public sealed class Graph
     /// </summary>
     public IReadOnlyList<InRef> GetInRefs(int id)
     {
-        if (!_byId.ContainsKey(id)) return Array.Empty<InRef>();
+        // GetById учитывает синтезированный root (id=0): для него входящие связи
+        // берутся честным обратным проходом по out_refs живых узлов.
+        if (GetById(id) is null) return Array.Empty<InRef>();
         var result = new List<InRef>();
         foreach (var src in _byId.Values)
         {

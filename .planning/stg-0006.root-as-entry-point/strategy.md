@@ -46,7 +46,7 @@ Root **не пишется** в YAML, **не хранится** в `_byId`. `Gra
 ## Шаги
 
 - [+] (01) spec-in-docs
-- [*] (02) root-synthesis
+- [+] (02) root-synthesis
 
 ## Итоговый порядок выполнения
 

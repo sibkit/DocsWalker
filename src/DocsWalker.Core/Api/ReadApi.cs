@@ -387,12 +387,6 @@ public sealed class ReadApi
             }
 
             if (parentId is not int pid) break;
-            if (pid == Node.RootId)
-            {
-                // root присутствует в графе только концептуально (id=0); в _byId его нет —
-                // не добавляем фантомный узел в результат, ancestors-цепочка path заканчивается прямо над ним.
-                break;
-            }
             var parent = _graph.GetById(pid);
             if (parent is null) break;
             result.Add(parent);
@@ -482,6 +476,9 @@ public sealed class ReadApi
         var current = node;
         while (current is not null)
         {
+            // root в человекочитаемом пути не участвует — путь начинается с документа,
+            // ходовая форма для get-by-path: 'Документ/Раздел/...'.
+            if (current.Id == Node.RootId) break;
             stack.Add(current.Title);
             current = current.ParentId is int pid ? _graph.GetById(pid) : null;
         }

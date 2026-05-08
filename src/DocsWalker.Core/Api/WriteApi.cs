@@ -704,6 +704,12 @@ public sealed class WriteApi
 
     private static WriteOpResult ApplyUpdateNode(WriteState s, UpdateNodeOp op)
     {
+        if (op.Id == Node.RootId)
+            throw new WriteApiException(
+                "cannot_modify_root",
+                "Корневой синглтон id=0 ('root') не может быть изменён (update-node).",
+                "root — синглтон ядра DocsWalker, синтезируется на лету; запись в него запрещена.");
+
         var node = s.GetNode(op.Id)
             ?? throw new WriteApiException(
                 "node_not_found",
@@ -857,8 +863,9 @@ public sealed class WriteApi
         {
             if (id == Node.RootId)
                 throw new WriteApiException(
-                    "cannot_delete_root",
-                    "Корневой узел id=0 удалить нельзя.");
+                    "cannot_modify_root",
+                    "Корневой синглтон id=0 ('root') не может быть изменён (delete-nodes).",
+                    "root — синглтон ядра DocsWalker, синтезируется на лету; запись в него запрещена.");
             var n = s.GetNode(id)
                 ?? throw new WriteApiException(
                     "node_not_found",
@@ -1147,6 +1154,12 @@ public sealed class WriteApi
 
     private static WriteOpResult ApplyMoveNode(WriteState s, MoveNodeOp op)
     {
+        if (op.Id == Node.RootId)
+            throw new WriteApiException(
+                "cannot_modify_root",
+                "Корневой синглтон id=0 ('root') не может быть изменён (move-node).",
+                "root — синглтон ядра DocsWalker, синтезируется на лету; запись в него запрещена.");
+
         var node = s.GetNode(op.Id)
             ?? throw new WriteApiException(
                 "node_not_found",
@@ -1239,6 +1252,12 @@ public sealed class WriteApi
 
     private static WriteOpResult ApplyCreateRef(WriteState s, CreateRefOp op)
     {
+        if (op.FromId == Node.RootId)
+            throw new WriteApiException(
+                "cannot_modify_root",
+                "Корневой синглтон id=0 ('root') не может быть изменён (create-ref).",
+                "root — синглтон ядра DocsWalker, синтезируется на лету; запись в него запрещена.");
+
         if (string.Equals(op.Name, Node.PathRefName, StringComparison.Ordinal))
             throw new WriteApiException(
                 "system_ref_name",
@@ -1301,6 +1320,12 @@ public sealed class WriteApi
 
     private static WriteOpResult ApplyDeleteRef(WriteState s, DeleteRefOp op)
     {
+        if (op.FromId == Node.RootId)
+            throw new WriteApiException(
+                "cannot_modify_root",
+                "Корневой синглтон id=0 ('root') не может быть изменён (delete-ref).",
+                "root — синглтон ядра DocsWalker, синтезируется на лету; запись в него запрещена.");
+
         if (string.Equals(op.Name, Node.PathRefName, StringComparison.Ordinal))
             throw new WriteApiException(
                 "system_ref_name",
