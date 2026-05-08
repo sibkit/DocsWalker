@@ -19,13 +19,13 @@ public sealed class SchemaLoadException : Exception
 }
 
 /// <summary>
-/// Парсер мета-схемы и Схемы под refs-модель v5 (с tree-scopes). Использует
-/// event-stream API SharpYaml (см. docs/Стек.yml/«YAML-парсер»). Никакой
+/// Парсер мета-схемы и Схемы под refs-модель v6 (tree-scopes + root-as-declared-type).
+/// Использует event-stream API SharpYaml (см. docs/Стек.yml/«YAML-парсер»). Никакой
 /// reflection — AOT-совместимо.
 /// </summary>
 public static class SchemaLoader
 {
-    public const int SupportedMetaSchemaVersion = 5;
+    public const int SupportedMetaSchemaVersion = 6;
 
     public static MetaSchemaDocument LoadMetaSchema(string filePath) =>
         LoadFile(filePath, ParseMetaSchema);

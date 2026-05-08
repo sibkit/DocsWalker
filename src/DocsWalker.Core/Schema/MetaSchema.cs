@@ -78,7 +78,9 @@ public sealed record TypeDefinition(
 {
     /// <summary>
     /// Возвращает встроенную связь <c>name=path</c> (с <c>tree=path</c>), если она объявлена.
-    /// У root тип в Схеме не объявляется, поэтому лукап всегда даёт результат для не-root типов.
+    /// У типа <c>root</c> path-ref отсутствует по контракту мета-схемы v6 (root —
+    /// корневой синглгон без родителя в дереве хранилища); для остальных типов лукап
+    /// всегда даёт результат в валидной Схеме.
     /// </summary>
     public RefDef? FindPathRef()
     {
@@ -100,9 +102,9 @@ public sealed record TypeDefinition(
 
 /// <summary>
 /// Мета-схема — описание формы schema-файла проекта. Загружается из docs/.docswalker/meta-schema.yml.
-/// Текущая версия — 5 (refs-модель + tree-scopes). Структура schema_root / type_definition /
-/// ref_def / tree_definition фиксирована v5 и заложена в код валидатора; здесь хранятся
-/// только верхние поля.
+/// Текущая версия — 6 (refs-модель + tree-scopes + root-as-declared-type). Структура
+/// schema_root / type_definition / ref_def / tree_definition фиксирована v6 и заложена
+/// в код валидатора; здесь хранятся только верхние поля.
 /// </summary>
 public sealed record MetaSchemaDocument(
     int Version,

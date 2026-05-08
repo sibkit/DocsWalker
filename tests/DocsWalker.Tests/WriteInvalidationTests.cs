@@ -9,7 +9,14 @@ namespace DocsWalker.Tests;
 /// Поведение write-invalidation (#358): после успешного <see cref="WriteApi.Apply"/>
 /// touched id должны исчезнуть из seen-set всех активных sessions, чтобы LLM
 /// перестал получать placeholder для изменённого узла.
+/// <para>
+/// Серилизуется с <see cref="McpServerTests"/> и <see cref="IpcSmokeTests"/> через
+/// collection "ConsoleRedirect": все три класса заворачивают <see cref="Console.SetOut"/>
+/// вокруг диспатчера, а настройка глобальная по процессу — параллельный запуск
+/// рассинхронизирует stdout-перехват и валит тесты.
+/// </para>
 /// </summary>
+[Collection("ConsoleRedirect")]
 public class WriteInvalidationTests
 {
     private static readonly DateTime Now = new(2026, 5, 9, 12, 0, 0, DateTimeKind.Utc);

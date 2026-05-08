@@ -7,6 +7,11 @@ trees:
       для физического размещения узлов в файловой системе и для каскадных
       проверок при удалении.
 types:
+  - name: root
+    description: Корневой синглтон графа (узел с id=0). Точка входа для LLM. Не персистится в YAML — синтезируется ядром на лету. title всегда равен имени FS-папки docs/. У типа нет path-ref (root не имеет родителя в дереве хранилища) и нет других out_refs (top-level узлы — folder и document — находятся через get-in-refs --id=0 --name=path).
+    title_source: dirname
+    text_required: false
+    out_refs: []
   - name: folder
     description: Каталог в docs/. Структурный узел, группирует documents и подпапки. Title — имя каталога. Узел не несёт собственного текста.
     title_source: dirname

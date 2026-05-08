@@ -4,12 +4,14 @@ using DocsWalker.Core.Schema;
 namespace DocsWalker.Core.Validation;
 
 /// <summary>
-/// Соответствие <see cref="SchemaDocument"/> мета-схеме v5 и self-consistency Схемы.
-/// Под refs-модель + tree-scopes проверяет: имена типов snake_case, дубли, корректные
-/// ссылки в target_types; зарезервированные имена (root); уникальность имён связей
-/// внутри типа; декларация деревьев (включая обязательное дерево <c>path</c>);
-/// для каждого не-root типа — наличие обязательной связи <c>name=path</c> с
-/// <c>tree=path</c>; согласованность tree/cardinality/required в RefDef.
+/// Соответствие <see cref="SchemaDocument"/> мета-схеме v6 и self-consistency Схемы.
+/// Под refs-модель + tree-scopes + root-as-entry-point проверяет: имена типов snake_case,
+/// дубли, корректные ссылки в target_types; уникальность имён связей внутри типа;
+/// декларация деревьев (включая обязательное дерево <c>path</c>); для каждого не-root
+/// типа — наличие обязательной связи <c>name=path</c> с <c>tree=path</c>; согласованность
+/// tree/cardinality/required в RefDef. Тип <c>root</c> — синглтон ядра DocsWalker (узел
+/// с id=0); в Схеме декларируется как обычный type_definition с особенностью отсутствия
+/// path-ref.
 /// </summary>
 internal static class MetaSchemaCheck
 {
@@ -57,13 +59,6 @@ internal static class MetaSchemaCheck
                     "В Схеме встречен тип с пустым именем."));
                 continue;
             }
-            if (string.Equals(t.Name, Node.RootTypeName, StringComparison.Ordinal))
-            {
-                errors.Add(new ValidationError(
-                    "reserved_type_name",
-                    $"Имя '{Node.RootTypeName}' зарезервировано — нельзя объявлять как тип в Схеме."));
-                continue;
-            }
             if (declared.ContainsKey(t.Name))
             {
                 errors.Add(new ValidationError(
@@ -90,6 +85,17 @@ internal static class MetaSchemaCheck
         TypeDefinition t,
         List<ValidationError> errors)
     {
+        // root — корневой синглтон ядра, по контракту мета-схемы (v6) у него нет path-ref:
+        // у него нет родителя в дереве хранилища.
+        if (string.Equals(t.Name, Node.RootTypeName, StringComparison.Ordinal))
+        {
+            if (t.FindPathRef() is not null)
+                errors.Add(new ValidationError(
+                    "invalid_meta_schema",
+                    $"Тип '{Node.RootTypeName}' не должен объявлять связь 'path' — root не имеет родителя в дереве хранилища."));
+            return;
+        }
+
         var pathRef = t.FindPathRef();
         if (pathRef is null)
         {
