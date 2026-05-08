@@ -127,8 +127,16 @@ public sealed record WriteOpResult(string Type, JsonObject Data);
 /// и обновление sequence.txt пропущены — на FS ничего не изменилось. Поле передаётся
 /// в success-конверт CLI как <c>applied</c> и позволяет LLM явно отличить «успешно
 /// проверено» от «успешно записано».
+///
+/// <see cref="TouchedIds"/> — id всех узлов, которых коснулась транзакция: созданных,
+/// изменённых, удалённых. Заполняется и в dry-run, и в реальном применении. Используется
+/// write-invalidation'ом (#358): после <c>Applied=true</c> сервер чистит эти id из
+/// seen-set всех активных sessions.
 /// </summary>
-public sealed record WriteResult(IReadOnlyList<WriteOpResult> OpResults, bool Applied);
+public sealed record WriteResult(
+    IReadOnlyList<WriteOpResult> OpResults,
+    bool Applied,
+    IReadOnlyCollection<int> TouchedIds);
 
 /// <summary>
 /// Параметры окружения write-операций: пути к docs/, Схема.yml, sequence.txt и
@@ -309,7 +317,10 @@ public sealed class WriteApi
         if (!dryRun)
             AtomicWriter.WriteAndApply(targets, state.FsOperations);
 
-        return new WriteResult(opResults, Applied: !dryRun);
+        var touched = state.TouchedIds.Count == 0
+            ? Array.Empty<int>()
+            : state.TouchedIds.ToArray();
+        return new WriteResult(opResults, Applied: !dryRun, TouchedIds: touched);
     }
 
     private static WriteOpResult ApplyOp(WriteState s, WriteOp op) => op switch

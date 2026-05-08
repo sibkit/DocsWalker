@@ -10,6 +10,6 @@
 - [+] (02) session-state-core
 - [+] session-id-handshake
 - [+] read-dedup-placeholder
-- [*] write-invalidation
+- [+] write-invalidation
 - [*] auto-include
 - [*] mcp-server
