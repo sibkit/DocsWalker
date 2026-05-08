@@ -12,4 +12,4 @@
 - [+] read-dedup-placeholder
 - [+] write-invalidation
 - [+] auto-include
-- [*] mcp-server
+- [+] mcp-server

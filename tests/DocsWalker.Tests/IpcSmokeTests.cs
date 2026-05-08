@@ -6,6 +6,10 @@ using DocsWalker.Core.Server.Protocol;
 
 namespace DocsWalker.Tests;
 
+// Серилизуется с McpServerTests через collection "ConsoleRedirect": оба
+// класса оборачивают Console.SetOut вокруг диспатчера, а настройка глобальная
+// по процессу — параллельный запуск ломает stdout-перехват у обоих.
+[Collection("ConsoleRedirect")]
 public class IpcSmokeTests
 {
     // Создаём уникальный temp-root для каждого теста: IpcClient.SendCommandAsync вычисляет

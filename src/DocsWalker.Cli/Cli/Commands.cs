@@ -136,6 +136,17 @@ internal static class Commands
                 Opt("quiet", ParamType.String, "Глушит баннер старта в stderr (true/false). По умолчанию false."),
                 Opt("mode",  ParamType.String, "Явный override режима: 'tty' — REPL, 'headless' — блокирующее ожидание сигнала. Без параметра — автодетект Console.IsInputRedirected.")),
 
+            // MCP-сервер (#364, #366) — параллельный транспорт поверх ядра, JSON-RPC 2.0 через stdio.
+            Read("mcp_server",
+                desc: "Запустить MCP-сервер DocsWalker для одного docs/-root: захватить тот же lock, что и `run`, и обслуживать JSON-RPC 2.0 поверх stdio. Команды CLI становятся MCP-tools 1:1. Сама команда обычно вызывается MCP-клиентом (Claude Code) через mcpServers-запись в конфиге, не вручную.",
+                examples: new[]
+                {
+                    "docswalker mcp-server --root=.",
+                    "docswalker mcp-server --root=. --quiet=true",
+                },
+                Req("root",  ParamType.String, "Корневой каталог проекта (содержит подкаталог docs/)."),
+                Opt("quiet", ParamType.String, "Глушит баннер старта в stderr (true/false). По умолчанию false.")),
+
             // Запись
             DynamicWrite("create_node",
                 desc: "Создать узел: type+title+text плюс значения всех required-связей контракта типа (--<имя_связи>=<id|csv>). Имя обязательного path-параметра — --path.",

@@ -16,7 +16,9 @@ if (args.Length == 0 || args[0].StartsWith("--", StringComparison.Ordinal))
 var cmd = args[0].Replace('_', '-');
 
 // cmd == "run" → серверный путь: захват lifecycle + IPC-сервер в этом процессе.
-if (cmd == "run")
+// cmd == "mcp-server" → серверный путь поверх stdio (JSON-RPC 2.0).
+// Обе команды не идут через клиент-режим — это сами серверы (#367).
+if (cmd == "run" || cmd == "mcp-server")
     return Dispatcher.Run(args);
 
 // Любая другая команда → клиент-режим: проксируем к запущенному серверу через IPC.
@@ -116,6 +118,7 @@ internal static class Dispatcher
         return spec.SnakeName switch
         {
             "run"             => RunHandler.Run(rootPath, parsed.Params),
+            "mcp_server"      => McpServerHandler.Run(rootPath, parsed.Params),
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
             "get_schema"      => SchemaHandlers.GetSchema(rootPath),
             "describe_type"   => SchemaHandlers.DescribeType(rootPath, parsed.Params["name"]),
