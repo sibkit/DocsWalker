@@ -5,7 +5,19 @@ internal enum ParamType
     String,
     Integer,
     IdList,
+    /// <summary>
+    /// JSON-объект, передаётся CLI как raw JSON-текст (со скобками <c>{...}</c>).
+    /// В MCP-схеме маппится в <c>type=object</c>.
+    /// </summary>
     Json,
+    /// <summary>
+    /// JSON-массив объектов, передаётся CLI как raw JSON-текст (со скобками <c>[{...},...]</c>).
+    /// В MCP-схеме маппится в <c>type=array, items.type=object</c>. Используется для
+    /// transaction.operations: контракт явно требует массив операций (см.
+    /// docs/DocsWalker.yml/«(#34) transaction»), и MCP-клиент должен иметь возможность
+    /// прислать array через arguments напрямую без escape-string-обхода.
+    /// </summary>
+    JsonArray,
 }
 
 internal enum CommandKind
@@ -197,7 +209,7 @@ internal static class Commands
             Write("transaction",
                 desc: "Атомарная пачка write-операций. Применяется целиком; результат — массив элементов {op, ...поля}.",
                 examples: new[] { "docswalker transaction --operations='[{\"op\":\"create-node\",...},{\"op\":\"create-ref\",...}]'" },
-                Req("operations", ParamType.Json, "JSON-массив операций (см. формат в TransactionParser).")),
+                Req("operations", ParamType.JsonArray, "JSON-массив операций (см. формат в TransactionParser). Принимается через MCP arguments напрямую (array of object) — серверный конвертер передаст raw JSON со скобками в CLI.")),
         };
     }
 

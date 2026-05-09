@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+
 namespace DocsWalker.Core.Schema;
 
 /// <summary>
@@ -104,10 +106,17 @@ public sealed record TypeDefinition(
 /// Мета-схема — описание формы schema-файла проекта. Загружается из docs/.docswalker/meta-schema.yml.
 /// Текущая версия — 6 (refs-модель + tree-scopes + root-as-declared-type). Структура
 /// schema_root / type_definition / ref_def / tree_definition фиксирована v6 и заложена
-/// в код валидатора; здесь хранятся только верхние поля.
+/// в код валидатора — типизированные поля (Version/Name/Description/PrimitiveTypes) валидатор
+/// читает напрямую. Остальные верхнеуровневые ключи мета-схемы попадают в <see cref="Sections"/>
+/// в форме generic JsonNode (mapping → JsonObject, sequence → JsonArray, скаляр → JsonValue
+/// с эвристикой по форме: true/false → bool, целое → long, иначе → string). Используется
+/// сериализатором <see cref="SchemaJson.ToJson(MetaSchemaDocument)"/>: контракт tool
+/// <c>get-meta-schema</c> — отдать LLM полный текст meta-schema.yml в JSON-форме (см.
+/// docs/DocsWalker.yml/«(#19) get_meta_schema»).
 /// </summary>
 public sealed record MetaSchemaDocument(
     int Version,
     string Name,
     string Description,
-    IReadOnlyList<string> PrimitiveTypes);
+    IReadOnlyList<string> PrimitiveTypes,
+    IReadOnlyDictionary<string, JsonNode> Sections);

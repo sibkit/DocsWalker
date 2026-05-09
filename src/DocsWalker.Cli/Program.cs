@@ -329,6 +329,24 @@ internal static class Dispatcher
                     return false;
                 }
 
+            case ParamType.JsonArray:
+                try
+                {
+                    using var doc = JsonDocument.Parse(value);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                    {
+                        error = $"ожидается JSON-массив, top-level — {doc.RootElement.ValueKind}.";
+                        return false;
+                    }
+                    error = null;
+                    return true;
+                }
+                catch (JsonException ex)
+                {
+                    error = $"ожидается корректный JSON-массив, ошибка разбора: {ex.Message}";
+                    return false;
+                }
+
             default:
                 error = "неизвестный тип параметра.";
                 return false;

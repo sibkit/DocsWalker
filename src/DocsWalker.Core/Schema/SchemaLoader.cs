@@ -77,6 +77,10 @@ public static class SchemaLoader
         string? name = null;
         string? description = null;
         IReadOnlyList<string>? primitiveTypes = null;
+        // Sections: остальные верхнеуровневые ключи (schema_root / tree_definition /
+        // type_definition / ref_def и любые расширения) — generic YAML→JsonNode для
+        // полной отдачи через get-meta-schema (см. SchemaJson.ToJson(MetaSchemaDocument)).
+        var sections = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
 
         while (r.Peek() is Scalar)
         {
@@ -87,9 +91,7 @@ public static class SchemaLoader
                 case "name": name = r.NextScalarValue(); break;
                 case "description": description = r.NextScalarValue(); break;
                 case "primitive_types": primitiveTypes = ReadStringList(r); break;
-                // Структура schema_root / type_definition / ref_def / tree_definition фиксирована
-                // v5 и заложена в код валидатора; пропускаем — храним только верхние поля.
-                default: r.SkipValue(); break;
+                default: sections[key] = ReadAnyValue(r); break;
             }
         }
 
@@ -112,7 +114,66 @@ public static class SchemaLoader
             version.Value,
             name!,
             description!,
-            primitiveTypes!);
+            primitiveTypes!,
+            sections);
+    }
+
+    /// <summary>
+    /// Generic YAML→JsonNode для произвольных значений: mapping → JsonObject,
+    /// sequence → JsonArray, скаляр → JsonValue с эвристикой типа (true/false → bool,
+    /// целое → long, иначе → string). Используется для секций мета-схемы, форма
+    /// которых не имеет фиксированного DTO в коде, но должна полностью отдаваться
+    /// клиенту через <c>get-meta-schema</c>.
+    /// </summary>
+    private static JsonNode ReadAnyValue(YamlReader r)
+    {
+        var ev = r.Peek();
+        return ev switch
+        {
+            MappingStart  => ReadAnyMapping(r),
+            SequenceStart => ReadAnySequence(r),
+            Scalar        => ReadAnyScalar(r),
+            _ => throw NewError(
+                "yaml_parse_error",
+                $"Неожиданное событие YAML при чтении значения: {ev?.GetType().Name ?? "null"}."),
+        };
+    }
+
+    private static JsonObject ReadAnyMapping(YamlReader r)
+    {
+        r.Expect<MappingStart>();
+        var obj = new JsonObject();
+        while (r.Peek() is Scalar)
+        {
+            var key = r.NextScalarValue();
+            obj[key] = ReadAnyValue(r);
+        }
+        r.Expect<MappingEnd>();
+        return obj;
+    }
+
+    private static JsonArray ReadAnySequence(YamlReader r)
+    {
+        r.Expect<SequenceStart>();
+        var arr = new JsonArray();
+        while (r.Peek() is not SequenceEnd)
+        {
+            arr.Add(ReadAnyValue(r));
+        }
+        r.Expect<SequenceEnd>();
+        return arr;
+    }
+
+    private static JsonNode ReadAnyScalar(YamlReader r)
+    {
+        var raw = r.NextScalarValue();
+        if (string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase))
+            return JsonValue.Create(true);
+        if (string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase))
+            return JsonValue.Create(false);
+        if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i))
+            return JsonValue.Create(i);
+        return JsonValue.Create(raw)!;
     }
 
     private static SchemaDocument ParseSchema(YamlReader r, string filePath)
@@ -362,13 +423,24 @@ public static class SchemaLoader
 /// </summary>
 public static class SchemaJson
 {
-    public static JsonObject ToJson(MetaSchemaDocument doc) => new()
+    public static JsonObject ToJson(MetaSchemaDocument doc)
     {
-        ["meta_schema_version"] = doc.Version,
-        ["name"] = doc.Name,
-        ["description"] = doc.Description,
-        ["primitive_types"] = StringsToJson(doc.PrimitiveTypes),
-    };
+        var obj = new JsonObject
+        {
+            ["meta_schema_version"] = doc.Version,
+            ["name"] = doc.Name,
+            ["description"] = doc.Description,
+            ["primitive_types"] = StringsToJson(doc.PrimitiveTypes),
+        };
+        // Sections узлы хранятся в DTO в общем владении; DeepClone() — чтобы новый
+        // JsonObject не «забрал» parent у исходного дерева. Иначе повторный вызов
+        // ToJson на том же документе упадёт — нода уже принадлежит другому дереву.
+        foreach (var kv in doc.Sections)
+        {
+            obj[kv.Key] = kv.Value.DeepClone();
+        }
+        return obj;
+    }
 
     public static JsonObject ToJson(SchemaDocument doc)
     {

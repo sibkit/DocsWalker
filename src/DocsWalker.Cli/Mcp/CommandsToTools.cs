@@ -65,10 +65,14 @@ internal static class CommandsToTools
 
     private static (string JsonType, string? ItemsType) MapParamType(ParamType type) => type switch
     {
-        ParamType.String  => ("string", null),
-        ParamType.Integer => ("integer", null),
-        ParamType.IdList  => ("array", "integer"),
-        ParamType.Json    => ("object", null),
+        ParamType.String    => ("string", null),
+        ParamType.Integer   => ("integer", null),
+        ParamType.IdList    => ("array", "integer"),
+        ParamType.Json      => ("object", null),
+        // Array of object: MCP-клиент шлёт arguments.<name>=[...]
+        // напрямую (а не через escape-string). Конвертер McpServer.JsonValueToCliString
+        // распознаёт пару (array, object) и передаёт raw JSON со скобками в CLI.
+        ParamType.JsonArray => ("array", "object"),
         _ => ("string", null),
     };
 }
