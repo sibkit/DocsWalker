@@ -1,5 +1,7 @@
+using System.Text.Json.Nodes;
 using DocsWalker.Cli.Cli;
 using DocsWalker.Core.Mcp;
+using DocsWalker.Core.Schema;
 
 namespace DocsWalker.Cli.Mcp;
 
@@ -8,10 +10,18 @@ namespace DocsWalker.Cli.Mcp;
 /// Команда <c>run</c> исключается — это серверная сама-по-себе команда, через
 /// MCP её вызывать не предполагается. Все остальные read+write команды доступны
 /// LLM как MCP-tools 1:1 с CLI ((#364) docs/DocsWalker.yml).
+/// <para>
+/// Для tool'ов с динамическими параметрами (см. <see cref="CommandSpec.DynamicParams"/>) —
+/// сейчас это только <c>create-node</c> — при наличии загруженной проектной Схемы
+/// собирается полная inputSchema с oneOf-дискриминатором по полю <c>type</c>
+/// (см. <see cref="BuildCreateNodeInputSchema"/> и docs/DocsWalker.yml/«(#377)»).
+/// Если Схема не передана (null) — descriptor отдаётся с базовой схемой,
+/// сгенерированной из статических <see cref="CommandSpec.Params"/>.
+/// </para>
 /// </summary>
 internal static class CommandsToTools
 {
-    public static IReadOnlyList<McpToolDescriptor> Build()
+    public static IReadOnlyList<McpToolDescriptor> Build(SchemaDocument? schema = null)
     {
         var list = new List<McpToolDescriptor>();
         foreach (var spec in Commands.All)
@@ -55,10 +65,17 @@ internal static class CommandsToTools
                 description += "\n\nПримеры CLI:\n" + string.Join("\n", spec.Examples);
             }
 
+            JsonObject? rawSchema = null;
+            if (spec.KebabName == "create-node" && schema is not null)
+            {
+                rawSchema = BuildCreateNodeInputSchema(schema);
+            }
+
             list.Add(new McpToolDescriptor(
                 Name: spec.KebabName,
                 Description: description,
-                Params: parameters));
+                Params: parameters,
+                RawInputSchema: rawSchema));
         }
         return list;
     }
@@ -75,4 +92,135 @@ internal static class CommandsToTools
         ParamType.JsonArray => ("array", "object"),
         _ => ("string", null),
     };
+
+    /// <summary>
+    /// Строит inputSchema для <c>create-node</c> по проектной Схеме.
+    /// Контракт — docs/DocsWalker.yml/«(#377) inputSchema динамических tool»:
+    /// единый JSON-Schema object с дискриминатором по полю <c>type</c>; properties
+    /// перечисляет все известные поля (type-enum, title, text, все имена связей
+    /// всех типов как optional с корректным JSON-типом по cardinality), плюс
+    /// универсальные root и dry-run; oneOf-ветка на каждый создаваемый тип
+    /// фиксирует свой required-набор. Тип <c>root</c> в enum не включается —
+    /// он синтезируется ядром, через create-node не создаётся (#376).
+    /// </summary>
+    internal static JsonObject BuildCreateNodeInputSchema(SchemaDocument schema)
+    {
+        // Все типы кроме root (root — синтезируется ядром).
+        var creatableTypes = schema.Types
+            .Where(t => !string.Equals(t.Name, "root", StringComparison.Ordinal))
+            .ToArray();
+
+        // Сбор всех уникальных имён связей по всем типам с их cardinality
+        // (для определения JSON-типа в properties: integer vs array+items=integer).
+        // Источник description — первая встреченная RefDef с этим именем.
+        var refsByName = new SortedDictionary<string, RefDef>(StringComparer.Ordinal);
+        foreach (var t in schema.Types)
+        {
+            foreach (var rd in t.OutRefs)
+            {
+                if (!refsByName.ContainsKey(rd.Name))
+                {
+                    refsByName[rd.Name] = rd;
+                }
+            }
+        }
+
+        // Базовые properties: type-enum, title, text, далее все ref-имена,
+        // плюс универсальные root/dry-run.
+        var typeEnum = new JsonArray();
+        foreach (var t in creatableTypes) typeEnum.Add((JsonNode?)t.Name);
+
+        var properties = new JsonObject
+        {
+            ["type"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["enum"] = typeEnum,
+                ["description"] = "Имя типа узла из проектной Схемы. Определяет ветку oneOf и required-связи.",
+            },
+            ["title"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = "Title узла — для типов с title_source=filename/dirname кладётся в FS-имя файла/каталога; для inline_key — ключ в YAML родителя.",
+            },
+            ["text"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = "Текст узла. Обязателен для типов с text_required=true (см. Схему).",
+            },
+        };
+
+        foreach (var (name, rd) in refsByName)
+        {
+            JsonObject prop;
+            if (rd.Cardinality == Cardinality.Many)
+            {
+                prop = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "integer" },
+                    ["description"] = rd.Description ?? $"id-list для связи '{name}' (cardinality=many).",
+                };
+            }
+            else
+            {
+                prop = new JsonObject
+                {
+                    ["type"] = "integer",
+                    ["description"] = rd.Description ?? $"id для связи '{name}' (cardinality=one).",
+                };
+            }
+            properties[name] = prop;
+        }
+
+        properties["root"] = new JsonObject
+        {
+            ["type"] = "string",
+            ["description"] = "Каталог проекта (содержит docs/). Если не указан — auto-detect от cwd.",
+        };
+        properties["dry-run"] = new JsonObject
+        {
+            ["type"] = "boolean",
+            ["description"] = "true → не записывать на FS, вернуть applied=false. По умолчанию false.",
+        };
+
+        // oneOf — по ветке на каждый создаваемый тип, с фиксацией type=const
+        // и required-набора для этой ветки.
+        var oneOf = new JsonArray();
+        foreach (var t in creatableTypes)
+        {
+            var requiredForType = new List<string> { "type", "title" };
+            if (t.TextRequired) requiredForType.Add("text");
+            foreach (var rd in t.OutRefs)
+            {
+                if (rd.Required && !requiredForType.Contains(rd.Name))
+                {
+                    requiredForType.Add(rd.Name);
+                }
+            }
+
+            var requiredArr = new JsonArray();
+            foreach (var r in requiredForType) requiredArr.Add((JsonNode?)r);
+
+            var branch = new JsonObject
+            {
+                ["title"] = $"create-node:{t.Name}",
+                ["properties"] = new JsonObject
+                {
+                    ["type"] = new JsonObject { ["const"] = t.Name },
+                },
+                ["required"] = requiredArr,
+            };
+            // Cast to JsonNode? — generic Add<T> тянет IL2026/IL3050 при AOT.
+            oneOf.Add((JsonNode?)branch);
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["description"] = "Создать узел: type выбирает ветку oneOf, в которой перечислены required-поля для этого типа (path-ref, text при text_required=true, прочие required out_refs). См. (#377) docs/DocsWalker.yml.",
+            ["properties"] = properties,
+            ["oneOf"] = oneOf,
+        };
+    }
 }

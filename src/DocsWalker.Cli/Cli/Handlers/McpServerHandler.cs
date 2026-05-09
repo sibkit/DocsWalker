@@ -1,5 +1,6 @@
 using DocsWalker.Cli.Mcp;
 using DocsWalker.Core.Mcp;
+using DocsWalker.Core.Schema;
 using DocsWalker.Core.Server;
 
 namespace DocsWalker.Cli.Cli.Handlers;
@@ -64,7 +65,11 @@ internal static class McpServerHandler
         using (var signals = new SignalHandler())
         using (var shutdown = CancellationTokenSource.CreateLinkedTokenSource(signals.Token))
         {
-            var tools = CommandsToTools.Build();
+            // Загружаем проектную Схему для генерации inputSchema динамических tool'ов
+            // (см. (#377) docs/DocsWalker.yml). При ошибке загрузки create-node tool
+            // отдаётся с базовой схемой, mcp-server не падает; warning — в stderr.
+            var schema = TryLoadSchemaForToolManifest(root);
+            var tools = CommandsToTools.Build(schema);
             // stdin/stdout — raw streams; Console.Out не используем для протокола,
             // т.к. handlers редиректятся в StringWriter на каждый вызов.
             using var stdin  = Console.OpenStandardInput();
@@ -93,5 +98,21 @@ internal static class McpServerHandler
     {
         if (!args.TryGetValue(key, out var v)) return false;
         return v.Equals("true", StringComparison.OrdinalIgnoreCase) || v == "1";
+    }
+
+    private static SchemaDocument? TryLoadSchemaForToolManifest(string root)
+    {
+        var schemaPath = Path.Combine(root, "docs", "Схема.yml");
+        try
+        {
+            return SchemaLoader.LoadSchema(schemaPath);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"DocsWalker MCP: ошибка загрузки {schemaPath} для генерации create-node inputSchema: " +
+                $"{ex.Message}. create-node tool отдаётся с базовой схемой.");
+            return null;
+        }
     }
 }

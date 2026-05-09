@@ -1,6 +1,6 @@
 # stg-0007 — MCP Schema Honesty
 
-**Статус:** текущая
+**Статус:** завершена
 
 ## Задача
 
@@ -13,4 +13,4 @@
 
 - [+] (01) meta-schema-full-serialize
 - [+] (02) transaction-array-passthrough
-- [*] create-node-schema-from-types
+- [+] (03) create-node-schema-from-types

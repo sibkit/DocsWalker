@@ -352,6 +352,13 @@ public sealed class McpServer
     /// </summary>
     private static JsonObject BuildInputSchema(McpToolDescriptor tool)
     {
+        // Tool с заранее собранной схемой (динамические параметры из проектной
+        // Схемы — см. docs/DocsWalker.yml/«(#377) inputSchema динамических tool»).
+        // DeepClone — чтобы повторный вызов tools/list не пересекался по parent
+        // ownership JsonNode'а.
+        if (tool.RawInputSchema is { } raw)
+            return (JsonObject)raw.DeepClone();
+
         var properties = new JsonObject();
         var required = new JsonArray();
 

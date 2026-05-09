@@ -267,6 +267,22 @@ sections:
       - "(#370) session_id из MCP-handshake":
         - text: session_id MCP-сессии берётся из MCP-initialize-handshake; живёт от initialize до закрытия канала. CLAUDE_CODE_SESSION_ID через MCP не приходит — Claude Code инжектирует её только в Bash-tool. /clear в Claude Code MCP-канал не закрывает; маркер-сброса seen-set на уровне транспорта нет — срабатывает первый get-usage-guide в этой session_id (#348).
         - examples: [371]
+      - "(#377) inputSchema динамических tool":
+        - text: |
+            Для tool с динамическими параметрами (сейчас только create-node)
+            inputSchema собирается из проектной Схемы (docs/Схема.yml) на старте
+            mcp-server. Форма — JSON-Schema object с дискриминатором по полю
+            type: properties перечисляет все известные поля (type-enum, title,
+            text, все имена связей всех типов как optional — integer для
+            cardinality=one, array+items=integer для cardinality=many), плюс
+            универсальные root и dry-run. oneOf-ветка на каждый создаваемый тип
+            фиксирует свой required: type, title, text при text_required=true,
+            path-ref для типов с непустым path_targets, прочие required out_refs.
+            Тип root в enum не включается — он синтезируется ядром, через
+            create-node не создаётся. Если Схему загрузить не удалось — tool
+            отдаётся с базовой схемой без oneOf, warning в stderr; mcp-server
+            не падает.
+        - examples: [378]
     - definitions:
       - "(#372) MCP-сервер": Long-lived процесс DocsWalker, запущенный командой `docswalker mcp-server --root=<path>`, обслуживающий один root. Транспорт — JSON-RPC 2.0 над stdio. Lock на docs/, in-memory граф и контракт session_id такие же, как у `run`.
     - examples:
@@ -274,6 +290,7 @@ sections:
       - "(#367) lock-конфликт": '`docswalker run --root=.` уже идёт → `docswalker mcp-server --root=.` → exit ≠ 0, stderr {"code":"server_already_running","message":"already running, pid=..."}. Это feature single-root-per-process (#309).'
       - "(#369) Две базы знаний": '`.mcp.json` с двумя entries: docs-base-a (`--root=/path/A`) и docs-base-b (`--root=/path/B`) — два независимых процесса DocsWalker, два независимых seen-set''а; tools видны как `docs-base-a__get_nodes` и `docs-base-b__get_nodes`.'
       - "(#371) /clear в Claude Code": LLM делает /clear в Claude Code → MCP-канал не закрывается → session_id сохраняется; LLM первой командой зовёт get-usage-guide → сервер сбрасывает seen этой session_id и начинает чистый учёт.
+      - "(#378) create-node oneOf для rule": "Ветка oneOf для type=rule имеет required=[type,title,text,path,examples] — text_required=true плюс required out_ref examples (cardinality=many → array+items=integer). Для type=section ветка required=[type,title,path] — text не обязателен; sections/rules/notes/etc. остаются в properties как optional array+items=integer."
   - "(#45) Стек реализации":
     - rules:
       - "(#168) C# на LTS .NET":
