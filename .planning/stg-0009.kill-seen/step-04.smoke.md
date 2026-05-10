@@ -92,9 +92,9 @@ step-04 был задуман как чистый smoke-прогон без code
 `Grep` на `session_id|--no-seen|seen-set|placeholder|\bseen\b` по
 финальному `get-usage-guide` payload: 0 совпадений.
 
-`var seen = new HashSet<int>()` в `WriteApi.cs:1090` — локальная переменная
-dedup в алгоритме нормализации refs, к killed mechanism отношения не имеет;
-не трогаем.
+В `WriteApi.cs` локальная переменная dedup в `redirect-refs` (защита из
+дублей при маппинге `from_ids→to_id`) переименована `seen → dedupSet` —
+чтобы слова `seen` в исходниках не было совсем.
 
 ## Точка возобновления
 

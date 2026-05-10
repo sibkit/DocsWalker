@@ -1087,11 +1087,11 @@ public sealed class WriteApi
                 {
                     int toId = op.ToId!.Value;
                     var rebuilt = new List<int>(targets.Count);
-                    var seen = new HashSet<int>();
+                    var dedupSet = new HashSet<int>();
                     foreach (var t in targets)
                     {
                         var mapped = fromSet.Contains(t) ? toId : t;
-                        if (seen.Add(mapped)) rebuilt.Add(mapped);
+                        if (dedupSet.Add(mapped)) rebuilt.Add(mapped);
                     }
                     // Cardinality=one: после переподшивки не должно быть > 1.
                     var srcType = s.ResolveType(srcNode.TypeName);
