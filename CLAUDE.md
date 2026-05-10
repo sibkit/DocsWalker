@@ -72,9 +72,11 @@ docs — даже в виде краткой выжимки. Только ссы
 
 **Не-C# файлы** (`.yml`, `.csproj`, `.md`, `.json`, `.txt`): `Read`/`Write`/`Edit` свободно.
 
-## Работа с `docs/`
+## Работа с `docs/` — только через DocsWalker
 
-`docs/` — спецификация в YAML, навигируется графом DocsWalker. По мере возможности обращаться к docs **через DocsWalker** (MCP, когда сервер зарегистрирован в Claude Code; иначе CLI через Bash), а не прямым чтением YAML-файлов. Это и проверяет интерфейс самого продукта на собственной документации, и даёт доступ к разрешённым ссылкам/путям/auto-include — то, чего сырой YAML не показывает.
+`docs/` — спецификация в YAML, навигируется графом DocsWalker. **Жёсткое правило:** к `docs/**/*.yml` запрещены `Read`, `Grep`, `Glob`, `Edit`, `Write`, `mcp__glider__get_file_contents` и любой другой прямой доступ к содержимому. Доступ к docs идёт **только** через MCP-tools `mcp__docswalker__*` (или CLI `docswalker <команда>` через `Bash`, если MCP не поднят).
+
+Зачем строго: dogfood — мы используем продукт ровно так, как используют его LLM-агенты у внешних пользователей. Любая лазейка через сырой YAML маскирует пробелы в API DocsWalker и не даёт вылавливать проблемы UX. Если задачу нельзя решить через DocsWalker — это **симптом нехватки команды/параметра**, и она фиксируется как обратная связь о продукте (см. ниже), а не обходится `Read`.
 
 **Чтение через DocsWalker:**
 - Узлы по id — `get-nodes`.
@@ -87,12 +89,99 @@ docs — даже в виде краткой выжимки. Только ссы
 - Узлы — `create-node`, `update-node`, `delete-nodes`, `move-node`.
 - Связи — `create-ref`, `delete-ref`, `redirect-refs`.
 - Атомарные пакеты правок — `transaction`.
-- Прямой `Edit`/`Write` на YAML в `docs/` для контентных изменений — только если DocsWalker не запускается или у задачи специфический повод (диагностика загрузчика, ручное восстановление).
 
-**Когда прямое чтение YAML оправдано:**
-- Отладка загрузчика DocsWalker (граф не строится — нужно смотреть сырой файл).
-- Служебные файлы (`.docswalker/meta-schema.yml`, `Схема.yml`, `sequence.txt`) — DocsWalker их использует, но не редактирует, ручная правка штатна.
-- Поиск по содержимому, который не покрывает `search` (например, поиск точной строки в комментариях YAML).
+**Узкие исключения, когда сырой файл всё-таки можно читать/писать (только эти, ничего больше):**
+- `docs/.docswalker/meta-schema.yml`, `docs/.docswalker/sequence.txt` — служебные файлы, DocsWalker их использует, но не редактирует через API; ручная правка штатна.
+- DocsWalker сломан и не загружает граф (диагностика самого загрузчика — единственный путь увидеть сырой YAML, которого ядро ещё не «понимает»). При этом нужно сначала убедиться, что kernel вообще не поднимается (см. секцию «Запуск DocsWalker»), и сообщить пользователю, что переходим в диагностический режим.
+
+Все остальные сценарии — через DocsWalker. Если соблазн «гляну в YAML быстрее» — это сигнал, что нужно либо поднять DocsWalker, либо подсветить недостающую команду как обратную связь.
+
+## Запуск DocsWalker
+
+Перед сессией с `docs/` нужно убедиться, что DocsWalker MCP-tools доступны. Это значит: kernel живой, `.dw/client.json` валидный, `.mcp.json` подцепился Claude Code'ом.
+
+### Один раз — собрать бинари
+
+AOT-публикация даёт self-contained `.exe`'шники под Windows. Делается один раз; повторять при изменениях в `src/`.
+
+```powershell
+dotnet publish src/DocsWalker.Kernel/DocsWalker.Kernel.csproj -c Release -r win-x64
+dotnet publish src/DocsWalker.Cli/DocsWalker.Cli.csproj    -c Release -r win-x64
+```
+
+После — на диске:
+- `src\DocsWalker.Kernel\bin\Release\net10.0\win-x64\publish\DocsWalker.Kernel.exe`
+- `src\DocsWalker.Cli\bin\Release\net10.0\win-x64\publish\DocsWalker.Cli.exe`
+
+### Один раз — конфиги
+
+**`kernel-config.json`** в корне проекта (gitignore'ить отдельно, если хочешь — он dev-локальный):
+
+```json
+{
+  "bind": "127.0.0.1",
+  "port": 18080,
+  "graphs": {
+    "docswalker": "D:/Dev/cs/projects/DocsWalker/docs"
+  },
+  "graph_idle_timeout": "10m"
+}
+```
+
+- `bind` — `127.0.0.1` (local-only).
+- `port` — фиксированный (клиенту в `.dw/client.json` нужен тот же).
+- `graphs` — словарь `graph_name → storage_path`. `storage_path` указывает на папку `docs/`, не на корень репо.
+
+**`.dw/client.json`** в корне проекта:
+
+```json
+{
+  "kernel": {
+    "host": "127.0.0.1",
+    "port": 18080
+  },
+  "graph": "docswalker"
+}
+```
+
+`graph` обязан совпадать с ключом из `graphs` в `kernel-config.json`.
+
+### Запуск kernel
+
+Из корня проекта в фоновом окне (kernel — windows-subsystem exe, без stdout у parent'а):
+
+```powershell
+Start-Process -FilePath "src\DocsWalker.Kernel\bin\Release\net10.0\win-x64\publish\DocsWalker.Kernel.exe" `
+  -ArgumentList "--config=kernel-config.json" `
+  -RedirectStandardError "kernel.log"
+```
+
+Sanity-check (важно: на машинах с системным `HTTP_PROXY` proxy перехватывает loopback и вернёт 502 — выставь `NO_PROXY="127.0.0.1,localhost"` для своего терминала):
+
+```powershell
+curl http://127.0.0.1:18080/health
+# {"ok":true,"pid":...,"version":"0.6.0-dev","started_at":"..."}
+```
+
+### MCP-интеграция с Claude Code
+
+`.mcp.json` в корне проекта уже настроен — он зовёт `DocsWalker.Cli.exe mcp-server --quiet=true`, который читает `.dw/client.json` поиском вверх от cwd и форвардит JSON-RPC frames к kernel'у. Никакого `--root=` в args быть не должно (после stg-0010 mcp-server параметра `root` не знает; такие args отвергаются как `unknown_parameter` и MCP-сервер не поднимается).
+
+Чтобы Claude Code увидел tool'ы — открыть проект из корня (где лежит `.mcp.json`) и перезапустить сессию. После этого должны появиться tool'ы `mcp__docswalker__get-nodes`, `mcp__docswalker__get-map` и так далее.
+
+### Остановка kernel
+
+```powershell
+Stop-Process -Name DocsWalker.Kernel -Force
+```
+
+### Что делать, если что-то не работает
+
+- `client_config_not_found` от CLI — нет `.dw/client.json` на пути от cwd вверх.
+- `unknown_graph` от kernel'а — `graph` в `.dw/client.json` не совпадает с ключом в `kernel-config.json`.
+- `kernel_unreachable` — kernel не поднят, либо порт/host в client.json не совпадает с kernel-config.
+- `kernel_http_error 502` на запросе к `127.0.0.1` — почти наверняка системный `HTTP_PROXY` перехватывает loopback, см. выше про `NO_PROXY`.
+- MCP-tool'ы не появились в Claude Code — посмотреть `kernel.log` и stderr mcp-server'а; типовая причина — устаревший `.mcp.json` с args-флагами, которых уже нет в команде.
 
 ## Обратная связь о DocsWalker
 

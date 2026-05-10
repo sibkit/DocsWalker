@@ -11,7 +11,7 @@ internal static class UsageGuideText
         """
         DocsWalker представляет docs/ как граф: узлы (units of meaning) + направленные именованные связи (out_refs). LLM работает только с узлами и связями через CLI/MCP — имена файлов и каталогов наружу не торчат.
 
-        Архитектура процессов: DocsWalker.Kernel.exe — фоновое ядро (один процесс на пользователя), HTTP+JSON-RPC 2.0 на 127.0.0.1:<dynamic-port>, держит N графов в RAM (multi-root). Все CLI-команды и MCP-вызовы идут к ядру; routing — через явный --root=<path> в каждом запросе. Если ядра нет — клиент авто-spawn'ит DocsWalker.Kernel.exe (DETACHED) и пишет на stderr строку 'kernel: spawned pid=… port=…'. Discovery — per-user kernel.json в %LOCALAPPDATA%\DocsWalker\ (Windows) либо $XDG_RUNTIME_DIR/docswalker/ (POSIX). Для LLM это прозрачно: запускай команду — ядро поднимется само.
+        Архитектура процессов: DocsWalker.Kernel.exe — фоновое ядро, HTTP+JSON-RPC 2.0 на 127.0.0.1:<port>, держит N графов в RAM (multi-graph). Все CLI-команды и MCP-вызовы идут к ядру; routing — через graph-name в URL: POST /db/<graph>/rpc. Имена графов и storage-paths объявлены в kernel-config.json (на стороне ядра, путь передаётся ему как DocsWalker.Kernel.exe --config=<path>). CLI/REPL/MCP-wrapper читают .dw/client.json (kernel host/port + graph-name) поиском вверх по родителям от cwd, как .git/. Auto-spawn убран: ядро запускается пользователем заранее; если ядро не отвечает — клиент возвращает kernel_unreachable.
 
         Контракт CLI (envelope-free):
         - Успех — exit 0, stdout — JSON-результат команды напрямую, без обёртки. Шейп — специфика команды (объект или массив).
@@ -42,10 +42,10 @@ internal static class UsageGuideText
         - move-node без --tree, если намерение — переподшить в доменном дереве: запустится реструктуризация хранилища.
 
         Команды по сценариям:
-        - Одноразовый CLI-вызов: docswalker <команда> --root=<path> (ядро auto-spawn'ится при отсутствии).
-        - Интерактивный REPL: docswalker repl --root=<path> (HTTP-клиент к ядру; команды без префикса 'docswalker'; выход — :quit/:exit/Ctrl+D).
-        - MCP-канал для Claude Code: docswalker mcp-server --root=<path> (тонкий stdio↔HTTP wrapper; обычно вызывается через .mcp.json, не вручную).
-        - Ручной запуск ядра (диагностика): docswalker kernel — пишет kernel.json и слушает /rpc. Обычно не нужен — клиенты сами поднимают.
-        Per-root idle eviction = 10 минут: если граф root'а не запрашивался дольше — выгружается из RAM, при следующем обращении re-load с диска.
+        - Одноразовый CLI-вызов: docswalker <команда> — читает .dw/client.json (вверх от cwd), форвардит в /db/<graph>/rpc ядра. Никакого --root в команде.
+        - Интерактивный REPL: docswalker repl (HTTP-клиент к ядру; команды без префикса 'docswalker'; выход — :quit/:exit/Ctrl+D).
+        - MCP-канал для Claude Code: docswalker mcp-server (тонкий stdio↔HTTP wrapper; обычно вызывается через .mcp.json, не вручную).
+        - Запуск ядра: DocsWalker.Kernel.exe --config=<path-to-kernel-config.json> — отдельный exe (не подкоманда CLI). Слушает /db/<graph>/rpc для каждого графа из config'а.
+        Per-graph idle eviction = graph_idle_timeout (default 10m, configurable в kernel-config.json): если граф не запрашивался дольше — выгружается из RAM, при следующем обращении re-load с диска.
         """;
 }
