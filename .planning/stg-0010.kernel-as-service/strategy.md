@@ -1,6 +1,6 @@
 # stg-0010 — Kernel as Service + Addressable Trees
 
-**Статус:** в работе
+**Статус:** завершена
 
 ## Задача
 
@@ -259,7 +259,7 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
   если в шаге 02 что-то не покрыто (move-node между parent'ами с
   collision, update-node title с collision, transaction с collision
   внутри батча). `dotnet test` зелёный.
-- [ ] (06) smoke — e2e на published binaries:
+- [+] (06) smoke — e2e на published binaries:
   - kernel запускается вручную из `publish/kernel/` с тестовым
     kernel-config (2 graph, `bind=127.0.0.1`).
   - 2 проектные папки, в каждой `.dw/client.json` указывает на свой

@@ -58,11 +58,13 @@ public class CreateNodeSchemaTests
     }
 
     [Fact]
-    public void Properties_IncludesUniversalRootAndDryRun()
+    public void Properties_IncludesDryRunAndOmitsRoot()
     {
+        // stg-0010 step-06: --root убран из всех MCP-tools (в том числе
+        // из inputSchema create-node). dry-run остаётся универсальным.
         var schema = BuildSchema();
         var properties = Assert.IsType<JsonObject>(schema["properties"]);
-        Assert.True(properties.ContainsKey("root"));
+        Assert.False(properties.ContainsKey("root"));
         Assert.True(properties.ContainsKey("dry-run"));
 
         var dryRun = Assert.IsType<JsonObject>(properties["dry-run"]);

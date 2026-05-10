@@ -42,14 +42,9 @@ internal static class CommandsToTools
                     ItemsJsonType: itemsType));
             }
 
-            // Универсальные параметры, не входящие в CommandSpec.Params, но
-            // обрабатываемые на уровне Dispatcher: --root (резолв корня) и
-            // --dry-run (write-команды). LLM полезно их видеть в схеме.
-            parameters.Add(new McpToolParam(
-                Name: "root",
-                JsonType: "string",
-                Required: false,
-                Description: "Каталог проекта (содержит docs/). Если не указан — auto-detect от cwd."));
+            // Универсальный --dry-run для write-команд (на уровне Dispatcher,
+            // не часть CommandSpec.Params). --root убран в stg-0010 step-06:
+            // клиент про FS не знает, kernel инжектит storage-path сам.
             if (spec.Kind == CommandKind.Write)
             {
                 parameters.Add(new McpToolParam(
@@ -99,7 +94,7 @@ internal static class CommandsToTools
     /// единый JSON-Schema object с дискриминатором по полю <c>type</c>; properties
     /// перечисляет все известные поля (type-enum, title, text, все имена связей
     /// всех типов как optional с корректным JSON-типом по cardinality), плюс
-    /// универсальные root и dry-run; oneOf-ветка на каждый создаваемый тип
+    /// универсальный dry-run; oneOf-ветка на каждый создаваемый тип
     /// фиксирует свой required-набор. Тип <c>root</c> в enum не включается —
     /// он синтезируется ядром, через create-node не создаётся (#376).
     /// </summary>
@@ -173,11 +168,6 @@ internal static class CommandsToTools
             properties[name] = prop;
         }
 
-        properties["root"] = new JsonObject
-        {
-            ["type"] = "string",
-            ["description"] = "Каталог проекта (содержит docs/). Если не указан — auto-detect от cwd.",
-        };
         properties["dry-run"] = new JsonObject
         {
             ["type"] = "boolean",

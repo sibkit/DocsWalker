@@ -104,18 +104,17 @@ public class RpcDispatcherTests
     }
 
     [Fact]
-    public async Task ToolsCall_RootInArguments_FilteredAndIgnored()
+    public async Task ToolsCall_RootInArguments_RejectedAsUnknownParameter()
     {
-        // Защита: даже если клиент пытается перенаправить kernel через
-        // arguments.root, McpArgvBuilder фильтрует это. Для check-integrity
-        // нет других обязательных параметров — kernel использует свой
-        // зарегистрированный storage-path. Если бы фильтра не было,
-        // arguments.root попал бы в --root=... и Dispatcher.Run упал бы
-        // на unknown_parameter.
+        // stg-0010 step-06: --root убран; silent-strip снят. Если LLM
+        // передаст arguments.root, McpArgvBuilder пропустит ключ в argv,
+        // Dispatcher.Run отвергнёт его с unknown_parameter (loud failure).
+        // Storage-path продолжает инжектиться kernel'ом из kernel-config'а
+        // и в user-input по-прежнему игнорируется (см. McpArgvBuilder.FilteredKeys).
         using var registry = NewRegistry(("main", TestPaths.DocsRoot));
         var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
 
-        var bogusRoot = Path.Combine(Path.GetTempPath(), "should-be-ignored");
+        var bogusRoot = Path.Combine(Path.GetTempPath(), "should-be-rejected");
         var bogusEsc = bogusRoot.Replace("\\", "\\\\");
         var requestJson =
             "{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"tools/call\"," +
@@ -128,9 +127,7 @@ public class RpcDispatcherTests
             default);
 
         Assert.NotNull(resp);
-        Assert.Contains("\"result\"", resp);
-        // Не должно быть unknown_parameter (значит фильтр сработал).
-        Assert.DoesNotContain("unknown_parameter", resp);
+        Assert.Contains("unknown_parameter", resp);
     }
 
     private static GraphRegistry NewRegistry(params (string Name, string StoragePath)[] graphs)

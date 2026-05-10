@@ -114,14 +114,15 @@ public class McpArgvBuilderTests
     }
 
     [Fact]
-    public void BuildArgv_FiltersRootKey_EvenIfClientPassedIt()
+    public void BuildArgv_RootKeyPassedThrough_ForLoudUnknownParameter()
     {
-        // Защита: клиент не должен иметь возможности перенаправить kernel
-        // через arguments.root. Builder фильтрует ключ; --root= не появляется
-        // в argv. Kernel инжектит реальный --storage-path сам.
+        // stg-0010 step-06: --root убран целиком; silent-strip снят. Если
+        // LLM-клиент всё же передаст arguments.root, builder пропускает
+        // ключ в argv (--root=...) — Dispatcher.Run на kernel-стороне
+        // вернёт unknown_parameter (loud failure вместо тихой совместимости).
         using var doc = JsonDocument.Parse(@"{""root"":""C:\\bogus"",""query"":""x""}");
         var argv = McpArgvBuilder.BuildArgvFromArguments("search", doc.RootElement);
-        Assert.DoesNotContain(argv, a => a.StartsWith("--root="));
+        Assert.Contains(argv, a => a.StartsWith("--root="));
         Assert.Contains("--query=x", argv);
     }
 

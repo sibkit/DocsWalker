@@ -14,26 +14,27 @@ namespace DocsWalker.Core.Mcp;
 /// (backward-compat для unit-тестов).
 /// </para>
 /// <para>
-/// Filter <see cref="FilteredKeys"/>: <c>root</c> / <c>storage_path</c> в
-/// user-input игнорируются. Storage-path задаётся kernel'ом из
+/// Filter <see cref="FilteredKeys"/>: только <c>storage_path</c> в
+/// user-input игнорируется. Storage-path задаётся kernel'ом из
 /// kernel-config'а (по имени графа из URL <c>/db/&lt;name&gt;/rpc</c>) и
 /// инжектится в argv в <see cref="DocsWalker.Kernel.RpcDispatcher"/> уже
-/// после этого билдера. Без фильтра LLM-клиент мог бы передать
-/// <c>arguments.root=&quot;C:\\другая\\папка&quot;</c> и перенаправить kernel
-/// на чужой граф.
+/// после этого билдера; clientside-инжекция перебила бы это, поэтому
+/// ключ режется тихо. <c>root</c> убран в stg-0010 step-06 — если LLM
+/// передаст <c>arguments.root=...</c>, оно попадёт в argv и Dispatcher
+/// ответит <c>unknown_parameter</c> (loud failure).
 /// </para>
 /// </summary>
 public static class McpArgvBuilder
 {
     /// <summary>
-    /// Ключи, которые игнорируются при сборке argv. <c>root</c> остался для
-    /// обратной совместимости со старыми клиентами (они слали его в
-    /// arguments) — теперь это server-side контракт. <c>storage-path</c>
-    /// инжектится kernel'ом, в user-input не должен встречаться.
+    /// Ключи, которые игнорируются при сборке argv. <c>storage-path</c>
+    /// инжектится kernel'ом из kernel-config'а — в user-input не должен
+    /// встречаться, иначе перебил бы инжекцию. <c>root</c> здесь больше
+    /// не фильтруется (см. xmldoc типа): если LLM его передаст —
+    /// kernel-валидатор отвергнет с <c>unknown_parameter</c>.
     /// </summary>
     private static readonly HashSet<string> FilteredKeys = new(StringComparer.Ordinal)
     {
-        "root",
         "storage-path",
     };
 

@@ -43,12 +43,15 @@ internal static class KernelHttpClient
 
         using var http = new HttpClient { Timeout = RequestTimeout };
 
-        // Собираем arguments: все params из argv (как строки), без root/storage-path.
-        // Kernel инжектит storage-path на своей стороне по имени графа из URL.
+        // Собираем arguments: все params из argv (как строки), без storage-path.
+        // Kernel инжектит storage-path на своей стороне по имени графа из URL;
+        // если клиент передаст --storage-path=, оно перебило бы инжекцию,
+        // поэтому ключ режется тихо. --root= больше не существует — если
+        // клиент его передаст, kernel ответит unknown_parameter (loud).
         var arguments = new JsonObject();
         foreach (var (k, v) in parsed.Params)
         {
-            if (k == "root" || k == "storage-path") continue;
+            if (k == "storage-path") continue;
             arguments[k.Replace('-', '_')] = v;
         }
 
