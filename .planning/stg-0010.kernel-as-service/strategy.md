@@ -247,7 +247,7 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
     `dotnet test` красный — нарушение «зелёный после каждого шага».
     Атомарно с code-changes, как в stg-0009 step-02.
   - `dotnet build` + `dotnet test` оба зелёные.
-- [ ] (04) kill-auto-spawn — удалить `KernelInfoFile`,
+- [*] (04) kill-auto-spawn — удалить `KernelInfoFile`,
   `KernelDiscovery`, часть `StalePidDetector` (auto-spawn race),
   `kernel_already_running` проверку из `Program.cs` kernel-а. Любая
   оставшаяся auto-spawn логика в `KernelHttpClient` — удалить. В

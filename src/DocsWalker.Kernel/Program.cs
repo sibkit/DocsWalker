@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using DocsWalker.Cli.Cli;
 using DocsWalker.Cli.Cli.Kernel;
-using DocsWalker.Core.Server;
 using DocsWalker.Kernel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

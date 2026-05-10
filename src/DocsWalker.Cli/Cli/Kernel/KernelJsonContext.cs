@@ -14,19 +14,6 @@ public sealed record HealthResponse(
     [property: JsonPropertyName("started_at")] DateTimeOffset StartedAt);
 
 /// <summary>
-/// Содержимое <c>kernel.json</c> — discovery-файла per-user ядра DocsWalker. Пишется
-/// ядром на старте после биндинга порта Kestrel'ом (<see cref="Port"/> уже фактический,
-/// не 0). Удаляется на graceful shutdown. <see cref="AuthToken"/> — null в local-only
-/// режиме (bind=127.0.0.1); используется в будущем при remote-bind.
-/// </summary>
-public sealed record KernelInfo(
-    [property: JsonPropertyName("pid")] int Pid,
-    [property: JsonPropertyName("port")] int Port,
-    [property: JsonPropertyName("version")] string Version,
-    [property: JsonPropertyName("started_at")] DateTimeOffset StartedAt,
-    [property: JsonPropertyName("auth_token")] string? AuthToken);
-
-/// <summary>
 /// Информация об одном графе в kernel'е. Используется в ответе
 /// <c>GET /db</c>: имя, путь к storage-папке и метка последнего запроса.
 /// </summary>
@@ -53,7 +40,6 @@ public sealed record GraphsResponse(
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(GraphInfo))]
 [JsonSerializable(typeof(GraphsResponse))]
-[JsonSerializable(typeof(KernelInfo))]
 public partial class KernelJsonContext : JsonSerializerContext
 {
 }
