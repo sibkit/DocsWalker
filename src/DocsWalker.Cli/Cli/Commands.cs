@@ -148,6 +148,19 @@ internal static class Commands
                 Opt("quiet", ParamType.String, "Глушит баннер старта в stderr (true/false). По умолчанию false."),
                 Opt("mode",  ParamType.String, "Явный override режима: 'tty' — REPL, 'headless' — блокирующее ожидание сигнала. Без параметра — автодетект Console.IsInputRedirected.")),
 
+            // REPL поверх ядра (stg-0008 step-06) — интерактивный HTTP-клиент к
+            // DocsWalker.Kernel.exe. Каждая введённая команда уходит как tools/call с
+            // фиксированным root REPL'а и общим session_id.
+            Read("repl",
+                desc: "Интерактивный REPL-клиент DocsWalker. Каждая введённая команда (без префикса 'docswalker') уходит в kernel /rpc как tools/call. Ядро auto-spawn'ится при отсутствии.",
+                examples: new[]
+                {
+                    "docswalker repl --root=.",
+                    "docswalker repl --root=. --quiet=true",
+                },
+                Req("root",  ParamType.String, "Корневой каталог проекта (содержит docs/)."),
+                Opt("quiet", ParamType.String, "Глушит баннер старта и приветствие в stderr (true/false). По умолчанию false.")),
+
             // MCP-сервер (#364, #366) — параллельный транспорт поверх ядра, JSON-RPC 2.0 через stdio.
             Read("mcp_server",
                 desc: "Запустить MCP-сервер DocsWalker для одного docs/-root: захватить тот же lock, что и `run`, и обслуживать JSON-RPC 2.0 поверх stdio. Команды CLI становятся MCP-tools 1:1. Сама команда обычно вызывается MCP-клиентом (Claude Code) через mcpServers-запись в конфиге, не вручную.",

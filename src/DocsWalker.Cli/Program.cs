@@ -17,10 +17,11 @@ if (args.Length == 0 || args[0].StartsWith("--", StringComparison.Ordinal))
 var cmd = args[0].Replace('_', '-');
 
 // cmd == "run" → серверный путь: захват lifecycle + IPC-сервер в этом процессе.
-// cmd == "mcp-server" → серверный путь поверх stdio (JSON-RPC 2.0).
-// Обе команды не идут через клиент-режим — это сами серверы.
+// cmd == "mcp-server" → stdio↔HTTP wrapper к ядру (stg-0008 step-05).
+// cmd == "repl" → интерактивный HTTP-клиент к ядру (stg-0008 step-06).
+// Все три не идут через одноразовый клиент-режим (KernelHttpClient).
 // Команда `kernel` теперь — отдельный exe DocsWalker.Kernel.exe (stg-0008 step-04).
-if (cmd == "run" || cmd == "mcp-server")
+if (cmd == "run" || cmd == "mcp-server" || cmd == "repl")
     return Dispatcher.Run(args);
 
 // Любая другая команда → клиент-режим: проксируем к запущенному серверу через IPC.
@@ -112,6 +113,7 @@ internal static class Dispatcher
         return spec.SnakeName switch
         {
             "run"             => RunHandler.Run(rootPath, parsed.Params),
+            "repl"            => ReplHandler.Run(rootPath, parsed.Params),
             "mcp_server"      => McpWrapperHandler.Run(rootPath, parsed.Params),
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
             "get_schema"      => SchemaHandlers.GetSchema(rootPath),

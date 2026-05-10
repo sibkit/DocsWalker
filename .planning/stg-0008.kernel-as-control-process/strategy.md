@@ -134,7 +134,7 @@ CLI-бинарь `DocsWalker.Cli` остаётся `OutputType=Exe` (console sub
 - [+] (03) discovery-and-spawn
 - [+] (04) cli-to-http-client
 - [+] (05) mcp-wrapper
-- [*] (06) repl-command
+- [+] (06) repl-command
 - [*] (07) cleanup-old-ipc
 - [*] (08) docs-tooling-fixes
 - [*] (09) smoke
