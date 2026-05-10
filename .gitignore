@@ -34,3 +34,9 @@ docs/.docswalker/.lock
 docs/.docswalker/run.lock
 docs/.docswalker/run.pid
 docs/.docswalker/sessions/
+
+# DocsWalker — dev-локальные kernel/client конфиги
+kernel-config.json
+.dw/
+kernel.log
+kernel.pid
