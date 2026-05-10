@@ -141,7 +141,7 @@ internal static class Commands
 
             // REPL поверх ядра (stg-0008 step-06) — интерактивный HTTP-клиент к
             // DocsWalker.Kernel.exe. Каждая введённая команда уходит как tools/call с
-            // фиксированным root REPL'а и общим session_id.
+            // фиксированным root REPL'а.
             Read("repl",
                 desc: "Интерактивный REPL-клиент DocsWalker. Каждая введённая команда (без префикса 'docswalker') уходит в kernel /rpc как tools/call. Ядро auto-spawn'ится при отсутствии.",
                 examples: new[]
@@ -155,7 +155,7 @@ internal static class Commands
             // MCP-wrapper (stg-0008 step-05) — тонкий stdio↔HTTP bridge между Claude Code
             // (JSON-RPC 2.0 поверх stdio) и DocsWalker.Kernel.exe (POST /rpc). Без бизнес-логики.
             Read("mcp_server",
-                desc: "Тонкий stdio↔HTTP bridge между MCP-клиентом (Claude Code) и DocsWalker.Kernel.exe: читает JSON-RPC frames из stdin, подмешивает фиксированный root и session_id, форвардит в /rpc ядра. Ядро auto-spawn'ится при отсутствии. Команда вызывается клиентом через mcpServers-запись в конфиге, не вручную.",
+                desc: "Тонкий stdio↔HTTP bridge между MCP-клиентом (Claude Code) и DocsWalker.Kernel.exe: читает JSON-RPC frames из stdin, подмешивает фиксированный root, форвардит в /rpc ядра. Ядро auto-spawn'ится при отсутствии. Команда вызывается клиентом через mcpServers-запись в конфиге, не вручную.",
                 examples: new[]
                 {
                     "docswalker mcp-server --root=.",

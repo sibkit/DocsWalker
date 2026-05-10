@@ -34,8 +34,8 @@ internal static class ReadHandlers
             {
                 var nodes = api.ReadApi.GetNodes(ids);
                 // Прямо запрошенные id идут первыми; auto-include-цели (#340)
-                // дописываются после ними в той же плоской выдаче. Все узлы —
-                // полные (без seen-фильтрации); для дешёвого обзора см. fields.
+                // дописываются после ними в той же плоской выдаче. Для дешёвого
+                // обзора без полного text — см. get-subtree с fields=title.
                 var autoIncludes = api.ReadApi.CollectAutoIncludes(nodes);
                 var json = ReadApiJson.NodesToJson(nodes, autoIncludes);
                 Output.WriteSuccess(json);
