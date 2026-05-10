@@ -122,7 +122,10 @@ internal static class Dispatcher
                                     parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null),
             "get_map"         => ReadHandlers.GetMap(rootPath),
             "get_nodes"       => ReadHandlers.GetNodes(rootPath, parsed.Params["ids"]),
-            "get_by_path"     => ReadHandlers.GetByPath(rootPath, parsed.Params["path"]),
+            "get_by_path"     => ReadHandlers.GetByPath(
+                                    rootPath,
+                                    parsed.Params["path"],
+                                    parsed.Params.TryGetValue("tree", out var gbpTree) ? gbpTree : null),
             "get_subtree"     => DispatchGetSubtree(rootPath, parsed.Params),
             "get_ancestors"   => ReadHandlers.GetAncestors(
                                     rootPath,

@@ -33,7 +33,7 @@ public sealed class Validator
         MetaSchemaCheck.Run(_meta, _schema, errors);
         SchemaCheck.Run(_schema, graph, errors);
         RefsCheck.Run(_schema, graph, errors);
-        UniqueCheck.Run(graph, errors);
+        UniqueCheck.Run(graph, _schema, errors);
         SequenceCheck.Run(graph, sequence, errors);
         StyleCheck.Run(_schema, graph, errors);
         return new ValidationResult(errors);

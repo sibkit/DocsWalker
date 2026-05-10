@@ -1,17 +1,20 @@
 using DocsWalker.Core.Graph;
+using DocsWalker.Core.Schema;
 using GraphModel = DocsWalker.Core.Graph.Graph;
 
 namespace DocsWalker.Core.Validation;
 
 /// <summary>
 /// Уникальность под refs-модель: id узла глобально уникален в docs/;
-/// title уникален среди узлов одного типа, разделяющих общего path-родителя
-/// (см. docs/Правила оформления.yml/«Title уникален среди siblings»);
-/// дубли внутри одного списка-связи в out_refs.
+/// дубли внутри одного списка-связи в out_refs;
+/// для каждого *addressable* дерева (tree-связь с <c>unique_sibling_titles=true</c>) —
+/// title узла уникален среди siblings под одним parent в этом дереве
+/// (см. docs/Правила оформления.yml/«Title уникален среди siblings»;
+/// docs/.docswalker/meta-schema.yml/«ref_def.unique_sibling_titles»).
 /// </summary>
 internal static class UniqueCheck
 {
-    public static void Run(GraphModel graph, List<ValidationError> errors)
+    public static void Run(GraphModel graph, SchemaDocument schema, List<ValidationError> errors)
     {
         // duplicate_id формально невозможен (Graph.Add бросает на коллизии), но
         // для согласованности контракта валидатора повторно проверяем.
@@ -43,25 +46,38 @@ internal static class UniqueCheck
             }
         }
 
-        // Title уникален среди siblings одного типа в одном path-родителе.
-        var seenTitles = new Dictionary<(int Parent, string Type, string Title), int>();
-        foreach (var node in graph.ById.Values)
+        // Title уникален среди siblings под одним parent в каждом addressable tree.
+        // Для каждого RefDef с unique_sibling_titles=true (т. е. по конкретной tree-связи
+        // в типе-источнике) собираем (tree, parent_id, title) и ищем коллизии.
+        // Имя tree-ref'а используется как имя scope в OutRefs узла.
+        foreach (var t in schema.Types)
         {
-            if (node.Id == Node.RootId) continue;
-            if (string.IsNullOrEmpty(node.Title)) continue;
+            foreach (var rd in t.OutRefs)
+            {
+                if (!rd.IsAddressable) continue;
+                var refName = rd.Name;
+                var treeName = rd.Tree!;
 
-            var parentId = node.ParentId;
-            if (parentId is null) continue;
+                var seenTitles = new Dictionary<(int Parent, string Title), int>();
+                foreach (var node in graph.ById.Values)
+                {
+                    if (node.Id == Node.RootId) continue;
+                    if (string.IsNullOrEmpty(node.Title)) continue;
+                    if (!string.Equals(node.TypeName, t.Name, StringComparison.Ordinal)) continue;
+                    if (!node.OutRefs.TryGetValue(refName, out var parents) || parents.Count == 0) continue;
 
-            var key = (parentId.Value, node.TypeName, node.Title);
-            if (seenTitles.TryGetValue(key, out var prev))
-                errors.Add(new ValidationError(
-                    "duplicate_sibling_title",
-                    $"В path-родителе id={parentId} два узла типа '{node.TypeName}' с одинаковым title='{node.Title}' (id={prev} и id={node.Id}).",
-                    node.SourceFile, node.Id,
-                    Hint: "Title должен быть уникален среди siblings одного типа; переименуй один из узлов через update-node."));
-            else
-                seenTitles[key] = node.Id;
+                    var parentId = parents[0];
+                    var key = (parentId, node.Title);
+                    if (seenTitles.TryGetValue(key, out var prev))
+                        errors.Add(new ValidationError(
+                            "duplicate_sibling_title",
+                            $"В дереве '{treeName}' под parent id={parentId} два узла с одинаковым title='{node.Title}' (id={prev} и id={node.Id}).",
+                            node.SourceFile, node.Id,
+                            Hint: "Title должен быть уникален среди siblings в addressable дереве; переименуй один из узлов через update-node."));
+                    else
+                        seenTitles[key] = node.Id;
+                }
+            }
         }
     }
 }

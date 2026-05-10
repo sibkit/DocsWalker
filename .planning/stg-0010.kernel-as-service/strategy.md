@@ -209,7 +209,7 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
   системного. Шаг через DocsWalker `transaction` (или
   fallback-Edit на YAML, если CLI не поднимается). `dotnet build/test`
   не должны измениться (только docs).
-- [ ] (02) addressable-trees — расширить meta-schema parser, добавить
+- [+] (02) addressable-trees — расширить meta-schema parser, добавить
   `unique_sibling_titles` в `TreeRefDescriptor`, опциональное
   `default_addressable_tree` в `SchemaDocument`, реализовать валидацию
   `duplicate_sibling_title` в `WriteState`, расширить `get-by-path`

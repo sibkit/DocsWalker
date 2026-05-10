@@ -185,6 +185,7 @@ public static class SchemaLoader
         string? description = null;
         IReadOnlyList<TreeDefinition>? trees = null;
         IReadOnlyList<TypeDefinition>? types = null;
+        string? defaultAddressableTree = null;
 
         while (r.Peek() is Scalar)
         {
@@ -194,6 +195,7 @@ public static class SchemaLoader
                 case "description": description = r.NextScalarValue(); break;
                 case "trees": trees = ReadTreeList(r); break;
                 case "types": types = ReadTypeList(r); break;
+                case "default_addressable_tree": defaultAddressableTree = r.NextScalarValue(); break;
                 default: r.SkipValue(); break;
             }
         }
@@ -206,7 +208,7 @@ public static class SchemaLoader
         Require(filePath, "trees", trees is not null);
         Require(filePath, "types", types is not null);
 
-        return new SchemaDocument(description!, trees!, types!);
+        return new SchemaDocument(description!, trees!, types!, defaultAddressableTree);
     }
 
     private static IReadOnlyList<TreeDefinition> ReadTreeList(YamlReader r)
@@ -316,6 +318,7 @@ public static class SchemaLoader
         string? tree = null;
         Cardinality? cardinality = null;
         bool? required = null;
+        bool? uniqueSiblingTitles = null;
         string? description = null;
 
         while (r.Peek() is Scalar)
@@ -328,6 +331,7 @@ public static class SchemaLoader
                 case "tree": tree = r.NextScalarValue(); break;
                 case "cardinality": cardinality = ParseCardinality(r.NextScalarValue()); break;
                 case "required": required = ReadBool(r, key); break;
+                case "unique_sibling_titles": uniqueSiblingTitles = ReadBool(r, key); break;
                 case "description": description = r.NextScalarValue(); break;
                 default: r.SkipValue(); break;
             }
@@ -351,8 +355,13 @@ public static class SchemaLoader
                     "invalid_schema",
                     $"ref_def '{name}': при заданном tree поле 'required' указывать запрещено (подразумевается true).");
             // tree-связь автоматически one + required.
-            return new RefDef(name, targetTypes, tree, Cardinality.One, true, description);
+            return new RefDef(name, targetTypes, tree, Cardinality.One, true, description, uniqueSiblingTitles ?? false);
         }
+
+        if (uniqueSiblingTitles is not null)
+            throw NewError(
+                "invalid_schema",
+                $"ref_def '{name}': поле 'unique_sibling_titles' допустимо только при заданном tree (для horizontal-связей запрещено).");
 
         // Дефолты non-tree refs: cardinality=many, required=false (см. docs/DocsWalker.yml,
         // секция «omit defaults»). Отсутствие поля в YAML = дефолт; повторное чтение
@@ -454,6 +463,8 @@ public static class SchemaJson
         var types = new JsonArray();
         foreach (var t in doc.Types) types.Add((JsonNode?)TypeDefinitionToJson(t));
         obj["types"] = types;
+        if (doc.DefaultAddressableTree is not null)
+            obj["default_addressable_tree"] = doc.DefaultAddressableTree;
         return obj;
     }
 
@@ -500,6 +511,7 @@ public static class SchemaJson
         if (rd.Tree is not null)
         {
             obj["tree"] = rd.Tree;
+            if (rd.UniqueSiblingTitles) obj["unique_sibling_titles"] = true;
         }
         else
         {

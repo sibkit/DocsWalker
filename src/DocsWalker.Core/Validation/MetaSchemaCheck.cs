@@ -49,6 +49,10 @@ internal static class MetaSchemaCheck
                 "path_tree_missing",
                 $"В Схеме отсутствует обязательное дерево '{TreeDefinition.PathTreeName}'."));
 
+        // default_addressable_tree (если задан): проверяется после прохода по типам,
+        // т. к. зависит от знания, какие деревья имеют addressable-tree-связь.
+        // Сначала собираем имена addressable-деревьев.
+
         var declared = new Dictionary<string, TypeDefinition>(StringComparer.Ordinal);
         foreach (var t in schema.Types)
         {
@@ -79,6 +83,53 @@ internal static class MetaSchemaCheck
             ValidateOutRefs(t, declared, trees, errors);
             ValidatePathRef(t, errors);
         }
+
+        ValidateDefaultAddressableTree(schema, errors);
+    }
+
+    private static void ValidateDefaultAddressableTree(
+        SchemaDocument schema,
+        List<ValidationError> errors)
+    {
+        var name = schema.DefaultAddressableTree;
+        if (name is null) return;
+
+        // Имя должно быть объявлено в trees.
+        var declaredTree = false;
+        foreach (var tr in schema.Trees)
+        {
+            if (string.Equals(tr.Name, name, StringComparison.Ordinal))
+            {
+                declaredTree = true;
+                break;
+            }
+        }
+        if (!declaredTree)
+        {
+            errors.Add(new ValidationError(
+                "unknown_tree_scope",
+                $"default_addressable_tree='{name}' ссылается на дерево, не объявленное в trees."));
+            return;
+        }
+
+        // Хотя бы одна tree-связь с этим именем должна быть addressable.
+        var addressable = false;
+        foreach (var t in schema.Types)
+        {
+            foreach (var rd in t.OutRefs)
+            {
+                if (rd.IsAddressable && string.Equals(rd.Tree, name, StringComparison.Ordinal))
+                {
+                    addressable = true;
+                    break;
+                }
+            }
+            if (addressable) break;
+        }
+        if (!addressable)
+            errors.Add(new ValidationError(
+                "default_tree_not_addressable",
+                $"default_addressable_tree='{name}' указывает на дерево, у которого нет ни одной tree-связи с unique_sibling_titles=true."));
     }
 
     private static void ValidatePathRef(

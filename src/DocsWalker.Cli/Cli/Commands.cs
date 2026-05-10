@@ -92,9 +92,14 @@ internal static class Commands
                 examples: new[] { "docswalker get-nodes --ids=1,8,42" },
                 Req("ids",     ParamType.IdList, "Один id или список id через запятую.")),
             Read("get_by_path",
-                desc: "Полное поддерево узла по человекочитаемому пути 'Документ/Раздел/...'.",
-                examples: new[] { "docswalker get-by-path --path=\"DocsWalker/Операции чтения\"" },
-                Req("path", ParamType.String, "Путь, разделитель '/'.")),
+                desc: "Полное поддерево узла по человекочитаемому пути 'Документ/Раздел/...' в указанном addressable дереве. По умолчанию tree берётся из schema.default_addressable_tree, либо автоматически если в Схеме ровно один addressable tree.",
+                examples: new[]
+                {
+                    "docswalker get-by-path --path=\"DocsWalker/Операции чтения\"",
+                    "docswalker get-by-path --path=\"DocsWalker/Операции чтения\" --tree=path",
+                },
+                Req("path", ParamType.String, "Путь, разделитель '/'."),
+                Opt("tree", ParamType.String, "Имя addressable дерева. По умолчанию — default_addressable_tree из Схемы либо единственный addressable tree.")),
             Read("get_subtree",
                 desc: "Поддерево узла в указанном tree-scope. По умолчанию tree=path, depth — без ограничения, fields — все поля включая токены. Каждый узел несёт tokens (только сам узел) и subtree_tokens (узел + потомки в результате) — для бюджет-планирования. Для дешёвого обзора — fields=title + depth/tree.",
                 examples: new[]

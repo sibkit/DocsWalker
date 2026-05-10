@@ -48,6 +48,10 @@ public sealed record TreeDefinition(string Name, string? Description)
 /// При <see cref="Tree"/> != null связь участвует в дереве scope-имени Tree;
 /// в этом случае <see cref="Cardinality"/>=One и <see cref="Required"/>=true
 /// подразумеваются (в YAML мета-схема запрещает их указывать рядом с tree).
+/// При <see cref="UniqueSiblingTitles"/>=true (только для tree-связей) дерево
+/// называется *addressable*: title узла должен быть уникален среди siblings
+/// под одним parent в этом дереве; такие деревья поддерживают get-by-path
+/// и проверку duplicate_sibling_title при write-операциях.
 /// </summary>
 public sealed record RefDef(
     string Name,
@@ -55,7 +59,8 @@ public sealed record RefDef(
     string? Tree,
     Cardinality Cardinality,
     bool Required,
-    string? Description)
+    string? Description,
+    bool UniqueSiblingTitles = false)
 {
     /// <summary>
     /// Связь является auto-include: <c>tree == null</c> и <c>required == true</c>.
@@ -63,6 +68,13 @@ public sealed record RefDef(
     /// (см. docs/DocsWalker.yml/«(#340) Auto-include», (#363) auto-include).
     /// </summary>
     public bool IsAutoInclude => Tree is null && Required;
+
+    /// <summary>
+    /// Связь оформляет *addressable tree*: <c>tree != null</c> и
+    /// <c>unique_sibling_titles == true</c>. Только такие деревья поддерживают
+    /// <c>get-by-path</c> и валидацию <c>duplicate_sibling_title</c>.
+    /// </summary>
+    public bool IsAddressable => Tree is not null && UniqueSiblingTitles;
 }
 
 /// <summary>

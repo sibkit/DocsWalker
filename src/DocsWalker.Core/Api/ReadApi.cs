@@ -237,57 +237,211 @@ public sealed class ReadApi
     }
 
     /// <summary>
-    /// Поддерево по человекочитаемому пути вида "Документ/Раздел/Подраздел".
-    /// Разделитель — '/'. Имя документа может содержать '/' (если файл лежит в
-    /// подкаталоге docs/) — берётся самый длинный префикс пути, совпадающий
-    /// с title какого-либо документа. Возвращает полное path-поддерево (без
-    /// ограничения depth — для глубокого анализа всего документа).
+    /// Поддерево по человекочитаемому пути вида "Документ/Раздел/Подраздел" в
+    /// заданном *addressable* дереве. Разделитель — '/'.
+    /// <para>
+    /// Параметр <paramref name="tree"/> опциональный: если null, дефолт берётся
+    /// из <see cref="SchemaDocument.DefaultAddressableTree"/>; если поле не задано,
+    /// но в Схеме ровно один addressable tree — он default; иначе ошибка
+    /// <c>tree_required</c>.
+    /// </para>
+    /// <para>
+    /// Для <c>tree="path"</c> имя документа может содержать '/' (если файл лежит
+    /// в подкаталоге docs/) — берётся самый длинный префикс пути, совпадающий
+    /// с title какого-либо документа. Для прочих addressable деревьев первый
+    /// segment пути матчится с title top-level узла дерева (узла, у которого
+    /// scope-родитель = root).
+    /// </para>
+    /// <para>
+    /// Запрос <paramref name="tree"/>=&lt;non-addressable&gt; → <c>tree_not_addressable</c>;
+    /// запрос дерева, не объявленного в Схеме → <c>unknown_tree_scope</c>.
+    /// </para>
     /// </summary>
-    public NodeSubtree GetByPath(string path)
+    public NodeSubtree GetByPath(string path, string? tree = null)
     {
         if (string.IsNullOrEmpty(path))
             throw new ReadApiException("invalid_path", "Путь не должен быть пустым.");
 
+        var resolvedTree = ResolveAddressableTree(tree);
         var segments = path.Split('/');
-        Node? doc = null;
-        int prefixLen = 0;
-        for (int k = segments.Length; k >= 1; k--)
-        {
-            var candidate = string.Join('/', segments, 0, k);
-            var match = _graph.GetDocumentByTitle(candidate);
-            if (match is not null)
-            {
-                doc = match;
-                prefixLen = k;
-                break;
-            }
-        }
-        if (doc is null)
-            throw new ReadApiException(
-                "path_not_found",
-                $"В docs/ нет документа, совпадающего с префиксом пути '{path}'.");
+        var isPathTree = string.Equals(resolvedTree, Node.PathRefName, StringComparison.Ordinal);
 
-        var current = doc;
+        Node? root = null;
+        int prefixLen;
+
+        if (isPathTree)
+        {
+            // path-tree: longest-prefix match по document.Title (имя файла может содержать '/').
+            prefixLen = 0;
+            for (int k = segments.Length; k >= 1; k--)
+            {
+                var candidate = string.Join('/', segments, 0, k);
+                var match = _graph.GetDocumentByTitle(candidate);
+                if (match is not null)
+                {
+                    root = match;
+                    prefixLen = k;
+                    break;
+                }
+            }
+            if (root is null)
+                throw new ReadApiException(
+                    "path_not_found",
+                    $"В docs/ нет документа, совпадающего с префиксом пути '{path}'.");
+        }
+        else
+        {
+            // Прочее addressable дерево: top-level узел = scope-child от RootId.
+            var topLevelIds = _graph.GetScopeChildren(Node.RootId, resolvedTree);
+            var firstSegment = segments[0];
+            foreach (var id in topLevelIds)
+            {
+                var n = _graph.GetById(id);
+                if (n is null) continue;
+                if (string.Equals(n.Title, firstSegment, StringComparison.Ordinal))
+                {
+                    root = n;
+                    break;
+                }
+            }
+            if (root is null)
+                throw new ReadApiException(
+                    "path_not_found",
+                    $"В дереве '{resolvedTree}' нет top-level узла с title='{firstSegment}'.");
+            prefixLen = 1;
+        }
+
+        var current = root;
         for (int i = prefixLen; i < segments.Length; i++)
         {
             var title = segments[i];
             Node? next = null;
-            foreach (var child in _graph.GetChildren(current.Id))
+            if (isPathTree)
             {
-                if (string.Equals(child.Title, title, StringComparison.Ordinal))
+                foreach (var child in _graph.GetChildren(current.Id))
                 {
-                    next = child;
-                    break;
+                    if (string.Equals(child.Title, title, StringComparison.Ordinal))
+                    {
+                        next = child;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                foreach (var id in _graph.GetScopeChildren(current.Id, resolvedTree))
+                {
+                    var child = _graph.GetById(id);
+                    if (child is null) continue;
+                    if (string.Equals(child.Title, title, StringComparison.Ordinal))
+                    {
+                        next = child;
+                        break;
+                    }
                 }
             }
             if (next is null)
                 throw new ReadApiException(
                     "path_not_found",
-                    $"У узла '{current.Title}' (id={current.Id}) нет дочернего узла с title='{title}'.");
+                    $"У узла '{current.Title}' (id={current.Id}) нет дочернего узла в дереве '{resolvedTree}' с title='{title}'.");
             current = next;
         }
 
-        return BuildSubtree(current);
+        return isPathTree ? BuildSubtree(current) : BuildSubtreeByScope(current, resolvedTree, remainingDepth: null);
+    }
+
+    /// <summary>
+    /// Резолвит имя addressable дерева для <see cref="GetByPath"/>:
+    ///   запрошено явно → проверяется существование и addressable-флаг;
+    ///   null + есть <see cref="SchemaDocument.DefaultAddressableTree"/> → берётся он;
+    ///   null + ровно один addressable tree → он default;
+    ///   null + 0 либо &gt;1 addressable trees → <c>tree_required</c>.
+    /// При <c>_schema == null</c> (legacy: ReadApi без схемы) — поддерживается
+    /// только <c>path</c> (требование было всегда; LLM получает понятную ошибку).
+    /// </summary>
+    private string ResolveAddressableTree(string? requested)
+    {
+        if (requested is not null)
+        {
+            if (_schema is null)
+            {
+                if (!string.Equals(requested, Node.PathRefName, StringComparison.Ordinal))
+                    throw new ReadApiException(
+                        "tree_required",
+                        "Schema не передана в ReadApi; без неё единственный доступный tree — 'path'.");
+                return requested;
+            }
+
+            var declared = false;
+            foreach (var tr in _schema.Trees)
+            {
+                if (string.Equals(tr.Name, requested, StringComparison.Ordinal))
+                {
+                    declared = true;
+                    break;
+                }
+            }
+            if (!declared)
+                throw new ReadApiException(
+                    "unknown_tree_scope",
+                    $"Дерево '{requested}' не объявлено в schema.trees.",
+                    "Сверь имя дерева со списком из get-schema.trees.");
+
+            if (!IsAddressableTree(_schema, requested))
+                throw new ReadApiException(
+                    "tree_not_addressable",
+                    $"Дерево '{requested}' не является addressable (нет tree-связи с unique_sibling_titles=true).",
+                    "Используй get-subtree --tree=<name> --id=<root> для обхода не-addressable деревьев.");
+
+            return requested;
+        }
+
+        if (_schema is null) return Node.PathRefName;
+
+        if (_schema.DefaultAddressableTree is not null)
+            return _schema.DefaultAddressableTree;
+
+        var addressables = CollectAddressableTrees(_schema);
+        if (addressables.Count == 1) return addressables[0];
+
+        if (addressables.Count == 0)
+            throw new ReadApiException(
+                "tree_required",
+                "В Схеме нет ни одного addressable tree (с unique_sibling_titles=true). get-by-path неприменим.",
+                "Используй get-subtree --tree=<name> --id=<root> для обхода произвольного дерева.");
+
+        throw new ReadApiException(
+            "tree_required",
+            $"В Схеме несколько addressable trees ({string.Join(", ", addressables)}); параметр --tree= обязателен.",
+            "Задай default_addressable_tree в schema_root либо передай --tree=<name>.");
+    }
+
+    private static bool IsAddressableTree(SchemaDocument schema, string treeName)
+    {
+        foreach (var t in schema.Types)
+        {
+            foreach (var rd in t.OutRefs)
+            {
+                if (rd.IsAddressable && string.Equals(rd.Tree, treeName, StringComparison.Ordinal))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<string> CollectAddressableTrees(SchemaDocument schema)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var ordered = new List<string>();
+        foreach (var t in schema.Types)
+        {
+            foreach (var rd in t.OutRefs)
+            {
+                if (rd.IsAddressable && rd.Tree is not null && seen.Add(rd.Tree))
+                    ordered.Add(rd.Tree);
+            }
+        }
+        return ordered;
     }
 
     private NodeSubtree BuildSubtree(Node node)

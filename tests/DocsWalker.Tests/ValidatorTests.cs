@@ -103,6 +103,57 @@ public class ValidatorTests
         Assert.DoesNotContain(result.Errors, e => e.Code == "sequence_underflow");
     }
 
+    [Fact]
+    public void Validate_SiblingTitleCollisionInPathTree_Reports_DuplicateSiblingTitle()
+    {
+        // stg-0010 step-02: ключ uniqueness под addressable tree (path) — (parent, title).
+        // Берём двух siblings одного path-parent и переименовываем второго в title первого.
+        var (v, g, _, schema) = Setup();
+        var (donor, victim) = FindTwoSiblingsUnderSamePathParent(g);
+        var renamed = ReplaceTitle(victim, donor.Title);
+        var rebuilt = RebuildWithReplacement(g, schema, renamed);
+        var result = v.Validate(rebuilt);
+        Assert.Contains(result.Errors, e => e.Code == "duplicate_sibling_title" && e.NodeId == victim.Id);
+    }
+
+    /// <summary>
+    /// Возвращает пару узлов (donor, victim), у которых общий path-родитель;
+    /// donor.Title будет «отдан» victim'у, чтобы вызвать sibling-collision.
+    /// Для path-tree ключ collision'а — <c>(parent_id, title)</c> (без типа), т. е.
+    /// donor и victim могут быть как одного типа, так и разных. Реальный <c>docs/</c>
+    /// DocsWalker гарантированно содержит пары siblings одного типа (атомы внутри section).
+    /// </summary>
+    private static (Node Donor, Node Victim) FindTwoSiblingsUnderSamePathParent(GraphModel graph)
+    {
+        var byParent = new Dictionary<int, List<Node>>();
+        foreach (var n in graph.ById.Values)
+        {
+            if (n.Id == Node.RootId) continue;
+            if (n.ParentId is not int pid) continue;
+            if (!byParent.TryGetValue(pid, out var list))
+            {
+                list = new List<Node>();
+                byParent[pid] = list;
+            }
+            list.Add(n);
+        }
+        foreach (var (_, siblings) in byParent)
+        {
+            if (siblings.Count < 2) continue;
+            // Берём первых двух с разными title (чтобы переименование действительно меняло title).
+            for (int i = 0; i < siblings.Count; i++)
+            {
+                for (int j = i + 1; j < siblings.Count; j++)
+                {
+                    if (!string.Equals(siblings[i].Title, siblings[j].Title, StringComparison.Ordinal))
+                        return (siblings[i], siblings[j]);
+                }
+            }
+        }
+        throw new InvalidOperationException(
+            "В docs/ нет двух siblings под одним path-parent с разными title — невозможно построить тест.");
+    }
+
     private static Node ReplaceText(Node original, string newText) => new()
     {
         Id = original.Id,

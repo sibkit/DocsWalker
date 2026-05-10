@@ -49,13 +49,13 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetByPath(string root, string path)
+    public static int GetByPath(string root, string path, string? tree)
     {
         return WithApi(root, api =>
         {
             try
             {
-                var subtree = api.ReadApi.GetByPath(path);
+                var subtree = api.ReadApi.GetByPath(path, tree);
                 var autoIncludes = api.ReadApi.CollectAutoIncludes(subtree);
                 var json = ReadApiJson.SubtreeToJsonWithAutoIncludes(
                     subtree, fields: null, autoIncludes);
