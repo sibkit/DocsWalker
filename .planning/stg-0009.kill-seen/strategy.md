@@ -38,7 +38,7 @@
 
 - [+] (01) spec-rewrite
 - [+] (02) code-removal
-- [ ] (03) tests-cleanup
+- [+] (03) tests-cleanup
 - [ ] (04) smoke
 
 ## Итоговый порядок выполнения
