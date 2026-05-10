@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using DocsWalker.Cli.Cli;
 using DocsWalker.Cli.Cli.Handlers;
+using DocsWalker.Cli.Cli.Kernel;
 
 // JSON-вывод DocsWalker — всегда UTF-8 без BOM. На Windows Console.Out по умолчанию
 // использует кодовую страницу консоли (CP866/CP1251), что искажает кириллицу при
@@ -17,9 +18,9 @@ var cmd = args[0].Replace('_', '-');
 
 // cmd == "run" → серверный путь: захват lifecycle + IPC-сервер в этом процессе.
 // cmd == "mcp-server" → серверный путь поверх stdio (JSON-RPC 2.0).
-// cmd == "kernel" → серверный путь поверх HTTP (JSON-RPC 2.0), multi-root (stg-0008).
-// Все три команды не идут через клиент-режим — это сами серверы.
-if (cmd == "run" || cmd == "mcp-server" || cmd == "kernel")
+// Обе команды не идут через клиент-режим — это сами серверы.
+// Команда `kernel` теперь — отдельный exe DocsWalker.Kernel.exe (stg-0008 step-04).
+if (cmd == "run" || cmd == "mcp-server")
     return Dispatcher.Run(args);
 
 // Любая другая команда → клиент-режим: проксируем к запущенному серверу через IPC.
@@ -33,17 +34,9 @@ if (!TryResolveClientRoot(args, out var rootPath))
     return 1;
 }
 
-if (!PidFileReader.TryReadLivePid(rootPath, out _))
-{
-    Output.WriteError(
-        "server_not_running",
-        path: null,
-        $"Сервер DocsWalker не запущен (root={rootPath}).",
-        hint: $"docswalker run --root={rootPath}");
-    return 1;
-}
-
-return await IpcClient.SendCommandAsync(rootPath, args);
+// Клиентский путь: HTTP+JSON-RPC к per-user kernel. Если ядро не запущено —
+// KernelClient.EnsureRunningAsync (внутри KernelHttpClient) сам поднимет detached.
+return await KernelHttpClient.SendCommandAsync(args, rootPath);
 
 // Быстрый резолв root для клиент-режима: --root= из argv или подъём по дереву от CWD.
 // Path.GetFullPath нормализует путь так же, как ServerLifecycle при старте сервера.
@@ -89,19 +82,6 @@ internal static class Dispatcher
                 path: null,
                 $"Неизвестная команда '{parsed.CommandKebab}'.");
             return 1;
-        }
-
-        // Спец-кейс kernel: ядро multi-root (stg-0008), --root отсутствует, TryResolveRoot
-        // не применим. Валидируем параметры (bind/port/root-idle-timeout — все optional)
-        // и сразу уходим в KernelHandler. Возврат в общий путь не нужен.
-        if (spec.SnakeName == "kernel")
-        {
-            if (TryValidateParams(spec, parsed.Params) is { } kernelValidationError)
-            {
-                Output.WriteError(kernelValidationError.Code, path: null, kernelValidationError.Message);
-                return 1;
-            }
-            return KernelHandler.Run(parsed.Params);
         }
 
         // root резолвим ДО валидации параметров — чтобы при missing/invalid_parameter

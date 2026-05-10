@@ -148,21 +148,6 @@ internal static class Commands
                 Opt("quiet", ParamType.String, "Глушит баннер старта в stderr (true/false). По умолчанию false."),
                 Opt("mode",  ParamType.String, "Явный override режима: 'tty' — REPL, 'headless' — блокирующее ожидание сигнала. Без параметра — автодетект Console.IsInputRedirected.")),
 
-            // Ядро DocsWalker (kernel-as-control-process, stg-0008) — long-lived HTTP-сервер
-            // на пользователя, multi-root внутри. JSON-RPC 2.0 поверх HTTP.
-            // Команда без --root (multi-root через arguments.root в каждом /rpc-вызове).
-            Read("kernel",
-                desc: "Запустить ядро DocsWalker: HTTP-сервер на 127.0.0.1:<port> с JSON-RPC 2.0 на /rpc, плюс /health и /roots для диагностики. Multi-root: один процесс обслуживает N разных docs/-репозиториев, routing — через явный 'root' в каждом tools/call. Команда обычно поднимается клиентом (CLI/MCP-wrapper/REPL) автоматически при отсутствии живого ядра.",
-                examples: new[]
-                {
-                    "docswalker kernel",
-                    "docswalker kernel --port=51234",
-                    "docswalker kernel --bind=127.0.0.1 --port=0 --root-idle-timeout=10m",
-                },
-                Opt("bind",              ParamType.String,  "IP-адрес прослушивания. По умолчанию 127.0.0.1 (local-only)."),
-                Opt("port",              ParamType.Integer, "TCP-порт. 0 = динамический (Kestrel выберет свободный). По умолчанию 0."),
-                Opt("root-idle-timeout", ParamType.String,  "Idle-таймаут per-root (Ns/Nm/Nh/Nms): root выгружается из RAM после периода без обращений. По умолчанию 10m.")),
-
             // MCP-сервер (#364, #366) — параллельный транспорт поверх ядра, JSON-RPC 2.0 через stdio.
             Read("mcp_server",
                 desc: "Запустить MCP-сервер DocsWalker для одного docs/-root: захватить тот же lock, что и `run`, и обслуживать JSON-RPC 2.0 поверх stdio. Команды CLI становятся MCP-tools 1:1. Сама команда обычно вызывается MCP-клиентом (Claude Code) через mcpServers-запись в конфиге, не вручную.",

@@ -9,7 +9,7 @@ using DocsWalker.Core.Server;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 
-namespace DocsWalker.Cli.Cli.Kernel;
+namespace DocsWalker.Kernel;
 
 /// <summary>
 /// JSON-RPC 2.0 endpoint ядра DocsWalker. Принимает <c>POST /rpc</c>, диспатчит

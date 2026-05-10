@@ -41,15 +41,13 @@ internal static class KernelClient
     /// <b>не silent</b>, см. (#311) docs/DocsWalker.yml).
     /// </summary>
     /// <param name="kernelExePath">
-    /// Путь к exe ядра (обычно <see cref="Environment.ProcessPath"/> — клиент сам и
-    /// есть бинарь DocsWalker.Cli, который умеет команду <c>kernel</c>).
+    /// Путь к <c>DocsWalker.Kernel.exe</c>. Резолв стандартный:
+    /// <see cref="KernelSpawner.ResolveKernelExePath"/>.
     /// </param>
-    /// <param name="extraKernelArgs">Опц. флаги для kernel-команды (например, <c>--port=51234</c>).</param>
     /// <param name="httpClient">HttpClient для health-проверок. Можно переиспользовать.</param>
     /// <param name="ct">Cancellation для всей операции (включая retry-петлю).</param>
     public static async Task<KernelEndpoint> EnsureRunningAsync(
         string kernelExePath,
-        IEnumerable<string>? extraKernelArgs,
         HttpClient httpClient,
         CancellationToken ct = default)
     {
@@ -65,8 +63,8 @@ internal static class KernelClient
             using var lockHandle = KernelLock.TryAcquireOnce();
             if (lockHandle is not null)
             {
-                // 3) Winner: spawn + wait health.
-                var pid = KernelSpawner.SpawnDetached(kernelExePath, extraKernelArgs ?? Array.Empty<string>());
+                // 3) Winner: spawn DocsWalker.Kernel.exe + wait health.
+                var pid = KernelSpawner.SpawnDetached(kernelExePath);
                 Console.Error.WriteLine($"kernel: spawned pid={pid}");
 
                 var endpoint = await WaitHealthAsync(httpClient, HealthRetryTotal, ct);

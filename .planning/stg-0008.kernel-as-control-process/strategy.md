@@ -119,16 +119,20 @@ Override для тестов/CI: `--idle-timeout=<duration>` или `--idle-time
 
 YAML загрузчики/сериализаторы не трогаем. Переход на JSON — отдельная стадия `stg-0009.storage-format-json` после стабилизации kernel'а. Sole-writer + отсутствие #359 делают переход к JSON безопасным, но ортогональным текущей задаче.
 
-### 15. Kestrel — embedded, без отдельного web-приложения
+### 15. Kestrel — embedded, в отдельном exe `DocsWalker.Kernel`
 
-`WebApplication.CreateSlimBuilder` + `MapPost("/rpc", ...)` + `MapGet("/health", ...)` + `MapGet("/roots", ...)`. Минимальный набор middleware. Никаких view-engines, статики, Razor — чистый JSON endpoint. Зависимость `Microsoft.AspNetCore.App` (framework reference, не NuGet) — добавляется в `DocsWalker.Cli.csproj`.
+`WebApplication.CreateSlimBuilder` + `MapPost("/rpc", ...)` + `MapGet("/health", ...)` + `MapGet("/roots", ...)`. Минимальный набор middleware. Никаких view-engines, статики, Razor — чистый JSON endpoint.
+
+Ядро живёт **в отдельном проекте** `src/DocsWalker.Kernel/` (Sdk=`Microsoft.NET.Sdk.Web`, `OutputType=WinExe`, `PublishAot=true`). На Windows это «windows subsystem» — child-процесс не имеет console и не наследует console-handles parent'а CLI. Это снимает класс ошибок «kernel падает на `Console.Error.WriteLine` после exit'а спавнящего CLI» — `Process.Start` детач работает «из коробки», без PowerShell-wrapper'ов и Win32 P/Invoke. На POSIX subsystem-понятия нет; spawn — через `setsid`/`nohup` с redirect stdio в /dev/null.
+
+CLI-бинарь `DocsWalker.Cli` остаётся `OutputType=Exe` (console subsystem) — пользователь видит вывод. CLI спавнит ядро как отдельный exe рядом со своим (`DocsWalker.Kernel.exe` на Windows / `DocsWalker.Kernel` на POSIX).
 
 ## Шаги
 
 - [+] (01) docs-rewrite
 - [+] (02) kernel-host
 - [+] (03) discovery-and-spawn
-- [*] (04) cli-to-http-client
+- [+] (04) cli-to-http-client
 - [*] (05) mcp-wrapper
 - [*] (06) repl-command
 - [*] (07) cleanup-old-ipc
@@ -139,11 +143,11 @@ YAML загрузчики/сериализаторы не трогаем. Пер
 
 1. **docs-rewrite** — переписать узлы `docs/DocsWalker.yml` под новую модель через DocsWalker `transaction`. Существенно затрагивает: #305 (модель процесса), #307 (CLI client-mode), #308 (выбрасываем lock на данные), #309 (multi-root внутри одного ядра, не отложен), #310 (HTTP вместо named pipe), #311 (auto-spawn разрешён, но не silent), #313 (per-root semaphore), #314 (StalePidDetector переезжает на kernel.json), #316, #317–#321, #322–#324, #359 (выбрасываем checksum invalidation), #367 (уничтожен как класс), #372 (MCP-wrapper). Добавить новые узлы: «Ядро (kernel)», «MCP-wrapper», «HTTP transport», «kernel.json discovery (per-user)», «spawn race (global lock)», «root routing», «per-root idle eviction», «kernel always-running». Шаг не трогает код.
 
-2. **kernel-host** — реализация ядра: команда `docswalker kernel` (без `--root`, multi-root). ASP.NET Core minimal API (Kestrel, `WebApplication.CreateSlimBuilder`). Endpoints `POST /rpc` (JSON-RPC 2.0 с явным `root` в каждом `tools/call` → `Dispatcher.Run`), `GET /health`, `GET /roots`. `RootRegistry` (lazy load графов, словарь `root → graph + last-used`). Per-root `SemaphoreSlim`. Per-root idle-timer (10 мин default, configurable). Без kernel-level idle. Graceful shutdown через `IHostApplicationLifetime`.
+2. **kernel-host** — реализация ядра: HTTP-сервер на `127.0.0.1:<dynamic-port>`. ASP.NET Core minimal API (Kestrel, `WebApplication.CreateSlimBuilder`). Endpoints `POST /rpc` (JSON-RPC 2.0 с явным `root` в каждом `tools/call` → `Dispatcher.Run`), `GET /health`, `GET /roots`. `RootRegistry` (lazy load графов, словарь `root → graph + last-used`). Per-root `SemaphoreSlim`. Per-root idle-timer (10 мин default, configurable). Без kernel-level idle. Graceful shutdown через `IHostApplicationLifetime`. **Step-04 retroactively** ядро вынесено в отдельный проект `src/DocsWalker.Kernel/` (см. decision #15).
 
 3. **discovery-and-spawn** — per-user `kernel.json` (Windows `%LOCALAPPDATA%\DocsWalker\`, POSIX `$XDG_RUNTIME_DIR/docswalker/`) — запись ядром на старте, чтение клиентами. Global `kernel.lock` (winner-of-spawn-race, per-user не per-root). `StalePidDetector` (переиспользовать). Helper-функции для detached spawn (Windows DETACHED_PROCESS / POSIX double-fork). Health-handshake с retry. Без CLI-команд — только инфраструктура.
 
-4. **cli-to-http-client** — переписать non-server CLI команды на `HttpClient` к `/rpc`. Logic: разрешить root → прочитать `kernel.json` → spawn если нет/stale → `tools/call` с явным `root` → распаковать ответ → exit. Старый `IpcClient` остаётся параллельно для `mcp-server` (удалится в шаге 7).
+4. **cli-to-http-client** — переписать non-server CLI команды на `HttpClient` к `/rpc`. Logic: разрешить root → прочитать `kernel.json` → spawn если нет/stale → `tools/call` с явным `root` → распаковать ответ → exit. Старый `IpcClient` остаётся параллельно для `mcp-server` (удалится в шаге 7). **В рамках step-04 ядро вынесено в отдельный проект `src/DocsWalker.Kernel/`** (`Sdk=Microsoft.NET.Sdk.Web`, `OutputType=WinExe`) — без этого detached spawn на Windows ломается из-за наследования console-handles. CLI спавнит `DocsWalker.Kernel.exe` рядом со своим бинарём.
 
 5. **mcp-wrapper** — переписать `mcp-server` команду на тонкий stdio↔HTTP bridge (~80–150 строк, без бизнес-логики). Читает JSON-RPC frame из stdin, **подставляет фиксированный `root` (из своего `--root=`)** во все `tools/call`, форвардит в `/rpc` ядра, пишет ответ в stdout. Spawn ядра при отсутствии. Старый `McpServer` класс пока живёт параллельно (удалится в шаге 7).
 

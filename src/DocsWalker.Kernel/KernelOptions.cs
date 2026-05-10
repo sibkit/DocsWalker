@@ -1,20 +1,20 @@
 using System.Globalization;
 
-namespace DocsWalker.Cli.Cli.Kernel;
+namespace DocsWalker.Kernel;
 
 /// <summary>
-/// Параметры запуска ядра <c>docswalker kernel</c>.
+/// Параметры запуска ядра <c>DocsWalker.Kernel.exe</c>.
 /// <para>
 /// <see cref="Bind"/> — IP-интерфейс прослушивания. По умолчанию <c>127.0.0.1</c>
 /// (local-only, см. (#306) docs/DocsWalker.yml).
 /// </para>
 /// <para>
 /// <see cref="Port"/> — TCP-порт. <c>0</c> = динамический (Kestrel выберет
-/// свободный, фактический порт публикуется в <c>kernel.json</c> на step-03).
+/// свободный, фактический порт публикуется в <c>kernel.json</c>).
 /// </para>
 /// <para>
 /// <see cref="RootIdleTimeout"/> — после этого периода без обращений к
-/// конкретному root его entry в <see cref="RootRegistry"/> выгружается
+/// конкретному root его entry в <c>RootRegistry</c> выгружается
 /// (см. (#316) docs/DocsWalker.yml). Default 10 минут. Конфигурируется
 /// через <c>--root-idle-timeout=&lt;duration&gt;</c>.
 /// </para>
@@ -30,6 +30,27 @@ internal sealed record KernelOptions(
     public static readonly TimeSpan DefaultRootIdleTimeout = TimeSpan.FromMinutes(10);
     public const string DefaultBind = "127.0.0.1";
     public const int DefaultPort = 0;
+
+    /// <summary>
+    /// Парс argv вида <c>--bind=...</c>, <c>--port=...</c>, <c>--root-idle-timeout=...</c>.
+    /// Возвращает <see cref="KernelOptions"/> с дефолтами для отсутствующих ключей; при
+    /// невалидном значении выставляет <paramref name="error"/>.
+    /// </summary>
+    public static KernelOptions ParseArgv(string[] argv, out string? error)
+    {
+        error = null;
+        var args = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var token in argv)
+        {
+            if (!token.StartsWith("--", StringComparison.Ordinal)) continue;
+            var eq = token.IndexOf('=');
+            if (eq < 0) continue;
+            var key = token.Substring(2, eq - 2).Replace('_', '-');
+            var value = token[(eq + 1)..];
+            args[key] = value;
+        }
+        return Parse(args, out error);
+    }
 
     public static KernelOptions Parse(IReadOnlyDictionary<string, string> args, out string? error)
     {
@@ -61,16 +82,11 @@ internal sealed record KernelOptions(
         return new KernelOptions(bind, port, rootIdle);
     }
 
-    /// <summary>
-    /// Парс duration в формате <c>500ms</c> | <c>30s</c> | <c>10m</c> | <c>1h</c>.
-    /// Регистр суффикса не важен. Целое неотрицательное число + один из суффиксов.
-    /// </summary>
     internal static bool TryParseDuration(string raw, out TimeSpan value)
     {
         value = default;
         if (string.IsNullOrEmpty(raw)) return false;
 
-        // Сначала пробуем самый длинный суффикс (ms), потом одиночные.
         string suffix;
         long multiplierTicks;
         if (raw.EndsWith("ms", StringComparison.OrdinalIgnoreCase))

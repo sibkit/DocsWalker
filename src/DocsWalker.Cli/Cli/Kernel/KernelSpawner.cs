@@ -4,58 +4,50 @@ using System.Globalization;
 namespace DocsWalker.Cli.Cli.Kernel;
 
 /// <summary>
-/// Detached spawn ядра DocsWalker клиентом. После успешного запуска родительский
-/// процесс может exit'нуть — ядро живёт автономно.
+/// Detached spawn ядра <c>DocsWalker.Kernel.exe</c> клиентом. После успешного запуска
+/// родительский процесс CLI может exit'нуть — ядро живёт автономно.
 /// <para>
-/// <b>Windows:</b> <see cref="Process.Start(ProcessStartInfo)"/> с
-/// <c>CreateNoWindow=true</c> и <c>UseShellExecute=false</c>. Без окна ядро теряет
-/// связь с родительской console group, Ctrl-C в терминале клиента не передаётся.
+/// На Windows ядро — отдельный exe с <c>OutputType=WinExe</c> (windows subsystem):
+/// child-процесс не имеет console и не пытается унаследовать handles parent'а.
+/// Это снимает класс ошибок «kernel падает на Console.Error.WriteLine после exit
+/// CLI» — не нужны ни PowerShell-wrapper, ни <c>cmd /c start /B</c>.
 /// </para>
 /// <para>
-/// <b>POSIX:</b> wrap через <c>/bin/sh -c "setsid &lt;exe&gt; ... &lt;/dev/null
-/// &gt;/dev/null 2&gt;&amp;1 &amp;"</c>. <c>setsid</c> создаёт новую сессию;
-/// fallback — <c>nohup</c>; редирект stdio в /dev/null отвязывает от controlling
-/// terminal.
-/// </para>
-/// <para>
-/// Spawn — strategy.md «Принятые решения» #8.
+/// На POSIX subsystem-понятия нет: spawn'им через <c>setsid</c> (fallback <c>nohup</c>),
+/// перенаправляя stdio в /dev/null — child отвязывается от controlling terminal.
 /// </para>
 /// </summary>
 internal static class KernelSpawner
 {
     /// <summary>
-    /// Спавнит детачд-ядро. Возвращает pid дочернего процесса (для логирования);
-    /// сам процесс не отслеживается. <paramref name="kernelArgs"/> — argv для CLI
-    /// после имени exe (например, <c>["kernel", "--port=0"]</c>).
+    /// Спавнит детачд-ядро. Возвращает pid дочернего процесса (для логирования).
     /// </summary>
     /// <exception cref="KernelSpawnException">
-    /// Не удалось запустить процесс (exe не найден, нет прав, sh/setsid недоступны
-    /// на POSIX).
+    /// exe не найден, нет прав, sh/setsid недоступны на POSIX.
     /// </exception>
-    public static int SpawnDetached(string exePath, IEnumerable<string> kernelArgs)
+    public static int SpawnDetached(string kernelExePath)
     {
-        if (string.IsNullOrEmpty(exePath))
-            throw new KernelSpawnException("invalid_exe_path", "exePath is empty");
+        if (string.IsNullOrEmpty(kernelExePath))
+            throw new KernelSpawnException("invalid_exe_path", "kernelExePath is empty");
+        if (!File.Exists(kernelExePath))
+            throw new KernelSpawnException("kernel_exe_not_found",
+                $"DocsWalker.Kernel.exe не найден по пути '{kernelExePath}'.");
 
         if (OperatingSystem.IsWindows())
-            return SpawnWindows(exePath, kernelArgs);
-        return SpawnPosix(exePath, kernelArgs);
+            return SpawnWindows(kernelExePath);
+        return SpawnPosix(kernelExePath);
     }
 
-    private static int SpawnWindows(string exePath, IEnumerable<string> kernelArgs)
+    private static int SpawnWindows(string exePath)
     {
+        // DocsWalker.Kernel.exe — Windows subsystem (OutputType=WinExe). Без console.
+        // Process.Start с UseShellExecute=false — простейший детач: child не наследует
+        // console handles parent'а (потому что у него их нет — он WinExe).
         var psi = new ProcessStartInfo(exePath)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
-            // Redirect — чтобы child получил отдельные pipe-handles вместо унаследования
-            // консольных handle'ов родителя; мы их сразу закроем после Start.
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
         };
-        foreach (var a in kernelArgs) psi.ArgumentList.Add(a);
-
         Process? p;
         try { p = Process.Start(psi); }
         catch (Exception ex)
@@ -65,37 +57,22 @@ internal static class KernelSpawner
         if (p is null)
             throw new KernelSpawnException("spawn_failed", "Process.Start returned null");
 
-        // Закрываем pipe-handles в parent'е — child уже получил свои.
-        try { p.StandardInput.Close();  } catch { }
-        try { p.StandardOutput.Close(); } catch { }
-        try { p.StandardError.Close();  } catch { }
-
         var pid = p.Id;
-        // НЕ диспозим: dispose Process при HasExited=false работает, но мы уже
-        // отвязались; pid сохранён.
         p.Dispose();
         return pid;
     }
 
-    private static int SpawnPosix(string exePath, IEnumerable<string> kernelArgs)
+    private static int SpawnPosix(string exePath)
     {
-        // Собираем shell-команду: setsid <exe> <args...> </dev/null >/dev/null 2>&1 &
-        // Если setsid недоступен — пробуем nohup.
-        var argsJoined = string.Join(' ', kernelArgs.Select(EscapeShellArg));
         var exeQuoted = EscapeShellArg(exePath);
-
-        // setsid сначала, fallback — nohup.
-        // command -v <prog> возвращает 0 если найдено.
         var shellScript =
             $"if command -v setsid >/dev/null 2>&1; then " +
-            $"  setsid {exeQuoted} {argsJoined} </dev/null >/dev/null 2>&1 & " +
+            $"  setsid {exeQuoted} </dev/null >/dev/null 2>&1 & " +
             $"elif command -v nohup >/dev/null 2>&1; then " +
-            $"  nohup {exeQuoted} {argsJoined} </dev/null >/dev/null 2>&1 & " +
+            $"  nohup {exeQuoted} </dev/null >/dev/null 2>&1 & " +
             $"else " +
             $"  echo 'spawn_helper_missing: setsid и nohup недоступны' 1>&2; exit 64; " +
-            $"fi; " +
-            // Печатаем pid дочернего процесса в stdout — родитель прочтёт.
-            $"echo $!";
+            $"fi; echo $!";
 
         var psi = new ProcessStartInfo("/bin/sh")
         {
@@ -138,11 +115,22 @@ internal static class KernelSpawner
         }
     }
 
-    /// <summary>
-    /// Минимальный shell-escape: оборачиваем в single-quotes, экранируем внутренние
-    /// quotes как <c>'\''</c>. Достаточно для путей и наших argv-значений.
-    /// </summary>
     private static string EscapeShellArg(string s) => "'" + s.Replace("'", "'\\''") + "'";
+
+    /// <summary>
+    /// Резолв пути к <c>DocsWalker.Kernel.exe</c>: ожидаем рядом с <paramref name="cliExePath"/>
+    /// (стандартный publish-layout). Имя бинаря per-OS: <c>.exe</c> на Windows,
+    /// без расширения на POSIX.
+    /// </summary>
+    public static string ResolveKernelExePath(string cliExePath)
+    {
+        var dir = Path.GetDirectoryName(cliExePath);
+        if (string.IsNullOrEmpty(dir))
+            throw new KernelSpawnException("kernel_exe_not_found",
+                $"Не удалось определить каталог CLI exe: '{cliExePath}'");
+        var name = OperatingSystem.IsWindows() ? "DocsWalker.Kernel.exe" : "DocsWalker.Kernel";
+        return Path.Combine(dir, name);
+    }
 }
 
 /// <summary>
