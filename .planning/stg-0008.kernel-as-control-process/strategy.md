@@ -132,7 +132,8 @@ YAML загрузчики/сериализаторы не трогаем. Пер
 - [*] (05) mcp-wrapper
 - [*] (06) repl-command
 - [*] (07) cleanup-old-ipc
-- [*] (08) smoke
+- [*] (08) docs-tooling-fixes
+- [*] (09) smoke
 
 ## Итоговый порядок выполнения
 
@@ -148,9 +149,15 @@ YAML загрузчики/сериализаторы не трогаем. Пер
 
 6. **repl-command** — переименовать `run` в `repl`. HTTP-клиент к ядру: readline → парс argv → `tools/call` с фиксированным `root` (из `--root=` REPL'а) → печать ответа. Spawn ядра при отсутствии. TTY/headless dual-mode из старого `RunHandler` выкидывается полностью.
 
-7. **cleanup-old-ipc** — удалить старый IPC-стек: `IpcServer`, `IpcChannel`, `NamedPipeChannel`, `UnixSocketChannel`, старый `IpcClient`, большую часть `ServerLifecycle`, `RunHandler`, старый `McpServerHandler`. Удалить `#359` checksum-invalidation код целиком. Обновить тесты — выкинуть тесты на named pipe/socket framing и checksum-invalidation, добавить тесты на multi-root `/rpc` roundtrip.
+7. **cleanup-old-ipc** — удалить старый IPC-стек: `IpcServer`, `IpcChannel`, `NamedPipeChannel`, `UnixSocketChannel`, старый `IpcClient`, большую часть `ServerLifecycle`, `RunHandler`, старый `McpServerHandler`. Удалить `#359` (Hash-detection / SHA256 checksum) код целиком. Переписать `mental_model` в `get-usage-guide` (`UsageGuideHandler`) — выкинуть упоминания `run --root=`, named pipe, `server_not_running`, IPC-сервера; добавить новую модель: kernel/auto-spawn/multi-root/per-root-eviction/JSON-RPC. Обновить описания команд `kernel`, `repl`, `mcp-server` в выдаче `get-usage-guide`. Обновить тесты — выкинуть тесты на named pipe/socket framing и checksum-invalidation, добавить тесты на multi-root `/rpc` roundtrip.
 
-8. **smoke** — `dotnet publish` бинаря, прогнать на собственном `docs/`:
+8. **docs-tooling-fixes** — закрыть API-неудобства DocsWalker, накопленные за step-01 (фиксировались как dogfooding-обратная связь):
+   - **transaction format в `get-usage-guide`** — для команды `transaction` сейчас стоит «см. формат в TransactionParser». LLM ловит ошибку `missing_field 'from_ids'` на ровном месте, потому что транзакционные операции используют snake_case+массивы (`from_ids:[42], to_id:8, unlink:true`), а одноимённые CLI-команды — kebab-case+скаляры (`--from=42 --to=8 --unlink`). Описать каждую операцию в выдаче get-usage-guide (или отдельной выдаче `describe-transaction`): имена полей, типы, required/optional, маппинг от CLI-флага к JSON-ключу.
+   - **`--no-seen=true` в `get-subtree`** — флаг сейчас есть только у `get-nodes`. Когда нужно вытянуть полный текст детей раздела через `get-subtree` после ранее сделанного `get-nodes` той же сессии — children приходят как `{id, seen:true}`-плейсхолдеры; приходится переспрашивать `get-nodes` пакетом. Добавить флаг (поведение симметрично `get-nodes`: отключает фильтрацию seen-set, seen всё равно обновляется).
+   - **`--command=<name>` в `get-usage-guide`** — сейчас выдаётся весь манифест на 26 команд. Параметр `--command=<name>` отдаёт описание одной команды (с примерами). Альтернатива — переиспользовать `describe-type`-стиль, но команды и типы — разные сущности.
+   - **Расхождение `get-in-refs` vs `redirect-refs`** — `get-in-refs --id=368` возвращает `{rules:[44]}`, но `redirect-refs --from=368` падает с `no_effect`. Похоже, `get-in-refs` включает computed-связи (collected по path-children с типом X), а `redirect-refs` работает только с физическими cross-refs. Расследовать: либо привести в синхрон (одна выдача, единый набор), либо подсветить computed-flag в выдаче in-refs (например, отдельные секции `physical:` и `computed:`), чтобы LLM знала, на каких связях нужно/можно делать redirect.
+
+9. **smoke** — `dotnet publish` бинаря, прогнать на собственном `docs/`:
    - `docswalker kernel --root-idle-timeout=10s` — ядро поднимается, отвечает на `/health`, `/roots` пуст.
    - `docswalker get-nodes --root=. #1` — CLI поднимает/находит ядро, root load'ится, ответ корректный.
    - `docswalker get-nodes --root=<другой_root>` — параллельно второй root в том же ядре, оба видны в `/roots`.
