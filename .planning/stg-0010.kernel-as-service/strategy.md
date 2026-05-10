@@ -61,21 +61,27 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
      "bind": "127.0.0.1",
      "port": 8080,
      "graphs": {
-       "docswalker": "/srv/docs/myproject",
-       "another": "/data/another"
+       "docswalker": "/srv/projects/docswalker/docs",
+       "another": "/data/another/docs"
      },
      "graph_idle_timeout": "10m"
    }
    ```
 
-   Имя графа — alias, путь — internal storage path. Клиент про путь не знает.
+   Имя графа — alias, путь — внутренний storage path **прямо к
+   docs-folder** (не к project-folder; см. Блок 2.4). Клиент про путь не
+   знает.
 
 2. **URL формат:** `http://<host>:<port>/db/<graph-name>/rpc` для RPC.
-   `/health` остаётся (kernel-level, без graph). `/db` (если оставляем) —
-   список граф-имён (без путей).
+   `/health` остаётся (kernel-level, без graph). Текущий endpoint
+   `/roots` переименовывается в `/db` — отдаёт массив объектов
+   `{name, loaded, last_access}` (только декларированные в kernel-config
+   имена, без путей). `name` — единственное, что клиент видит про graph.
 
-3. **Client-config — JSON, обязательный.** Один способ конфигурации,
-   никаких argv override / env / каскадов.
+3. **Client-config — JSON в `.dw/client.json` проектной папки.** Один
+   способ конфигурации, никаких argv override / env / каскадов
+   значений. По духу аналог `.claude/`, `.git/`, `.vscode/` — конфиг
+   живёт **в проекте**, рядом с тем, что им управляется.
 
    ```json
    {
@@ -84,24 +90,47 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
    }
    ```
 
-   Расположение: `%APPDATA%\DocsWalker\client.json` (Windows) /
-   `$XDG_CONFIG_HOME/docswalker/client.json` или `~/.config/docswalker/client.json`
-   (POSIX). Если файла нет / невалидный — fail с `client_config_missing`
-   или `client_config_invalid`.
+   **Resolution:** клиент ищет `.dw/client.json` начиная от cwd, затем
+   вверх по родителям до filesystem-root (как `git` ищет `.git/`).
+   Первый найденный — используется. Если не найдено — ошибка
+   `client_config_not_found` с подсказкой «создай `.dw/client.json` в
+   корне проекта».
 
-4. **Один client-config = один graph.** Жёсткая привязка. Override в
+4. **Storage path в kernel-config — путь к docs-folder напрямую,**
+   без угадывания подпапки `docs/`. Kernel ищет `<storage_path>/Схема.yml`,
+   `<storage_path>/.docswalker/...`. Сохранять в репо удобно как
+   `<repo>/docs/` — тогда в kernel-config писать
+   `"docswalker": "/path/to/repo/docs"`. Никакой автоматики на стороне
+   kernel про слово «docs» больше нет.
+
+5. **Один client-config = один graph.** Жёсткая привязка. Override в
    запросе — не делаем.
 
-5. **Multi-graph use-case** = N MCP/CLI инстансов с N разных
-   client-config'ов. Под Claude Code — две записи в `.mcp.json` с
-   разными ENV/args, указывающими на разные client-config'и.
+6. **Multi-graph use-case** = N инстансов клиента, запущенных из N
+   разных проектных папок (каждая со своим `.dw/client.json`). Под
+   Claude Code — две записи в `.mcp.json` с разными `cwd` (или с
+   командой `cd <project> && docswalker mcp-server`), указывающими на
+   разные проектные папки → разные `.dw/`.
 
-6. **`--root=` удаляется из всех команд.** CLI/MCP/REPL ничего про FS
+7. **`--root=` удаляется из всех команд.** CLI/MCP/REPL ничего про FS
    не знают. `Commands.cs`, `KernelHttpClient`, `McpWrapperHandler`,
    `ReplHandler`, `Program.cs` (CLI) — упрощаются.
 
-7. **Kernel.exe не имеет CLI-обёртки** `docswalker kernel`. Запуск
-   только напрямую `DocsWalker.Kernel.exe --config=<path>`.
+8. **Kernel.exe не имеет CLI-обёртки** `docswalker kernel`. Запуск
+   только напрямую `DocsWalker.Kernel.exe --config=<path>`. Команда
+   `kernel` удаляется из реестра CLI-команд (`Commands.cs`).
+   Kernel-config — argv (а не `.dw/`), потому что kernel — service,
+   часто запускается systemd/NSSM/manually, а не «из проекта».
+   Асимметрия с клиентским конфигом — оправдана разным контекстом.
+
+9. **Клиентский конфиг не требуется для `--help` / `--version`.**
+   Эти команды не делают RPC-вызов и работают всегда (для
+   bootstrapping / debugging).
+
+10. **Sole-writer гарантия — trust boundary.** Один graph пишется
+    одним kernel-ом. Защиты от ошибки оператора (два kernel-а на одном
+    storage) в этой страте **нет** — это его ответственность. Явный
+    file-lock — отдельная страт, если появится конкретная нужда.
 
 ### Блок 3 — Addressable trees
 
@@ -125,10 +154,16 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
    meta-схеме — следствие.
 
 3. **`get-by-path --tree=<name>` generalization.** Параметр `--tree=`
-   опциональный. Default tree выбирается **Схемой** (для DocsWalker
-   convention — `path`), не системой. Если `--tree=` указывает на
-   non-addressable tree — ошибка `tree_not_addressable` с hint'ом
-   «используй get-subtree --tree=<name> --id=<root> или get-refs».
+   опциональный. Resolution default-а:
+   - Если в meta-schema задано опциональное top-level поле
+     `default_addressable_tree: <name>` — используется оно.
+   - Иначе если в Схеме ровно один addressable tree — он default.
+   - Иначе (addressable tree больше одного, поле не задано) — `--tree=`
+     обязателен; ошибка `tree_required`.
+
+   Если `--tree=<name>` указывает на non-addressable tree — ошибка
+   `tree_not_addressable` с hint'ом «используй get-subtree
+   --tree=<name> --id=<root> или get-refs».
 
 4. **Валидация при write.** При `create-node` / `move-node` (если меняется
    parent в addressable tree) / `update-node` (если меняется title и
@@ -143,6 +178,11 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
    (`materialize_tree: <name>` в kernel-config) или вообще отвязано
    (JSON-storage).
 
+6. **`default_addressable_tree` в meta-schema.** Опциональное top-level
+   поле в meta-schema (рядом с уже существующими секциями). Семантика —
+   см. п.3 выше. Не валидируется per-Схема (пустое поле = «нет default,
+   действует автоматическая логика»).
+
 ## Что остаётся целым
 
 - **Транзакционная семантика write** — atomic, all-or-nothing.
@@ -152,36 +192,92 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
 - **Per-graph idle eviction** (раньше per-root, теперь per-graph).
 - **JSON-RPC 2.0** как протокол.
 - **Sole-writer гарантия** на graph — kernel единственный пишет в свой
-  storage, теперь это его внутреннее свойство (один kernel на graph
-  обеспечивается — на уровне Schema/конфигурации kernel-а).
+  storage; обеспечивается **разумным использованием** kernel-config'а
+  (один storage path — в одном kernel-config'е). Защиты от ошибки
+  оператора не делаем (см. Блок 2.10).
 - **Все типы операций (read/write)** — те же, минус `--root=` параметр.
+- **`get-usage-guide`, `describe-type`, `get-schema`, `get-meta-schema`**
+  — структура та же; только убирается `--root=` из сигнатур.
 
 ## Шаги
 
 - [ ] (01) spec-rewrite — переписать `docs/DocsWalker.yml` под новую
-  модель процесса + ввести `unique_sibling_titles` в meta-schema +
-  переписать описание tree-связей.
+  модель процесса (Блок 1+2) + meta-schema (`unique_sibling_titles`,
+  опциональный `default_addressable_tree`) + переписать описание
+  tree-связей (Блок 3) + удалить из спеки упоминания `--root=`,
+  per-user kernel.json, auto-spawn, материализации `path` как
+  системного. Шаг через DocsWalker `transaction` (или
+  fallback-Edit на YAML, если CLI не поднимается). `dotnet build/test`
+  не должны измениться (только docs).
 - [ ] (02) addressable-trees — расширить meta-schema parser, добавить
-  `unique_sibling_titles` в `TreeRefDescriptor`, реализовать валидацию
+  `unique_sibling_titles` в `TreeRefDescriptor`, опциональное
+  `default_addressable_tree` в `SchemaDocument`, реализовать валидацию
   `duplicate_sibling_title` в `WriteState`, расширить `get-by-path`
-  параметром `--tree=`, ошибка `tree_not_addressable`.
-- [ ] (03) named-graphs — kernel-config (`KernelOptions` → `KernelConfig`
-  с graphs map), URL routing `/db/<name>/rpc` в `Program.cs` kernel-а,
-  переход с `RootRegistry` на `GraphRegistry` (named lookup).
-- [ ] (04) client-config — JSON-config-файл для клиента, чтение endpoint
-  + graph-name, ошибки `client_config_missing` / `client_config_invalid`.
-- [ ] (05) kill-root-param — удалить `--root=` из всех CLI команд,
-  обновить `Commands.cs`, `KernelHttpClient` (URL формирует из
-  client-config), `McpWrapperHandler` (не подмешивает `root` в
-  arguments), `ReplHandler` (не принимает `--root=`).
-- [ ] (06) kill-auto-spawn — удалить `KernelInfoFile`, `KernelDiscovery`,
-  часть `StalePidDetector` (которая обслуживала auto-spawn race),
-  `kernel_already_running` проверку из `Program.cs` kernel-а.
-- [ ] (07) tests-cleanup — обновить тесты под новую модель.
-- [ ] (08) smoke — e2e на published binaries: вручную запущенный kernel
-  с config'ом, два client-config (на два graph), CLI / MCP / REPL
-  отрабатывают, addressable-trees валидация работает, `tree_not_addressable`
-  возвращается корректно.
+  параметром `--tree=` (default по новой логике), ошибки
+  `tree_not_addressable` / `tree_required`. `dotnet test` зелёный
+  (новые тесты на oба errors + sibling-collision на create/move/update).
+- [ ] (03) client-server-reshape — **атомарный шаг,** перестраивает
+  весь client-server контракт. Промежуточно делить нельзя: kernel
+  и клиент должны переходить на новый URL/протокол одновременно,
+  иначе e2e ломается. Содержание:
+  - **Kernel-side:** `KernelOptions` → `KernelConfig` (JSON-файл,
+    `--config=<path>` argv), graphs map `<name> → <docs-folder-path>`,
+    URL routing `/db/<name>/rpc` + `/db` (вместо `/roots`) + `/health`
+    в `Program.cs` kernel-а, `RootRegistry` → `GraphRegistry` (lookup
+    by name из config'а), `SchemaLoader` / `DocumentLoader` — путь
+    напрямую к docs-folder (без подкаталога `docs/`),
+    `graph_idle_timeout` из config'а.
+  - **Client-side:** JSON-config-файл (`.dw/client.json`), поиск вверх
+    по родителям от cwd до filesystem root, ошибки
+    `client_config_not_found` / `client_config_invalid`,
+    `kernel_unreachable` (если kernel offline),
+    `KernelHttpClient` формирует URL из client-config'а
+    (`http://host:port/db/<graph>/rpc`).
+  - **CLI surface:** удалить `--root=` из всех команд (становится
+    `unknown_parameter` автоматически), удалить `Read("kernel", ...)`
+    запись из `Commands.cs`, `McpWrapperHandler` не подмешивает
+    `root` в arguments + использует cwd для `.dw/` resolution,
+    `ReplHandler` не принимает `--root=` + баннер показывает
+    `graph=<name>, kernel=<host>:<port>`, `Program.cs` (CLI) —
+    упрощается dispatcher.
+  - **Help/version exempt:** не требуют client-config для запуска
+    (не делают RPC).
+  - **Тесты на `--root=`:** в этом же шаге обновляются на новую
+    модель (mock client-config / kernel-config). Иначе после шага
+    `dotnet test` красный — нарушение «зелёный после каждого шага».
+    Атомарно с code-changes, как в stg-0009 step-02.
+  - `dotnet build` + `dotnet test` оба зелёные.
+- [ ] (04) kill-auto-spawn — удалить `KernelInfoFile`,
+  `KernelDiscovery`, часть `StalePidDetector` (auto-spawn race),
+  `kernel_already_running` проверку из `Program.cs` kernel-а. Любая
+  оставшаяся auto-spawn логика в `KernelHttpClient` — удалить. В
+  этом же шаге удалить тесты, прямо ссылающиеся на эти типы
+  (по тому же принципу атомарности). `dotnet build/test` зелёные.
+- [ ] (05) error-case-tests — добавить тесты на новые error-coды
+  (`client_config_not_found`, `client_config_invalid`,
+  `kernel_unreachable`); добавить edge-cases для addressable-trees,
+  если в шаге 02 что-то не покрыто (move-node между parent'ами с
+  collision, update-node title с collision, transaction с collision
+  внутри батча). `dotnet test` зелёный.
+- [ ] (06) smoke — e2e на published binaries:
+  - kernel запускается вручную из `publish/kernel/` с тестовым
+    kernel-config (2 graph, `bind=127.0.0.1`).
+  - 2 проектные папки, в каждой `.dw/client.json` указывает на свой
+    graph.
+  - `docswalker get-nodes --ids=1` из обеих папок — каждая видит свой
+    graph.
+  - `docswalker mcp-server` (запущенный с разным `cwd`) — отвечает на
+    initialize + tools/call в правильном graph'е.
+  - REPL — баннер показывает graph и kernel-endpoint.
+  - `--root=...` → `unknown_parameter`.
+  - `get-by-path --path="..."` без `--tree=` — работает (default из
+    Схемы / автоматически).
+  - `create-node` с дублирующим title в addressable tree → ошибка
+    `duplicate_sibling_title`.
+  - `get-by-path --tree=<non-addressable>` (если в Схеме появится
+    такой) → `tree_not_addressable`.
+  - kernel остановлен → клиент даёт `kernel_unreachable`.
+  - Запуск без `.dw/client.json` → `client_config_not_found`.
 
 ## Решение по разрезу
 
@@ -210,19 +306,30 @@ multi-graph через named graphs в URL, decoupling клиентов от FS,
 
 Что **не** надо пересматривать (зафиксировано в чате):
 
-- Endpoint клиента — **только client-config JSON.** Никаких argv / env /
-  каскадов. Окончательно.
+- Endpoint клиента — **только `.dw/client.json`** (поиск вверх по
+  родителям, как `.git`). Никаких argv для endpoint, никаких ENV.
+  Окончательно.
+- Kernel запускается **только** через `DocsWalker.Kernel.exe --config=<path>`.
+  Команда `docswalker kernel` удаляется. Окончательно.
 - Auth — **в этой страт не делаем.** Окончательно.
 - `--root=` уходит **полностью.** Клиент про FS не знает. Окончательно.
 - Multi-graph — **named graphs в kernel-config + URL `/db/<name>/rpc`.**
   Не «один kernel = один graph», не «graph как опциональный override
   в запросе». Окончательно.
 - Один client-config = один graph. Multi-graph use-case = N инстансов
-  клиента. Окончательно.
+  клиента, запускаемых из N разных проектных папок. Окончательно.
+- Storage path в kernel-config = **path к docs-folder напрямую** (не
+  к project-folder). Никакой автоматики «docs/» подпапки. Окончательно.
 - Addressable tree — **производное свойство Схемы** (через
   `unique_sibling_titles`), не system-reserved имя `path`. Окончательно.
+- Default tree для `get-by-path` — опциональное поле
+  `default_addressable_tree` в meta-schema; иначе автоматический выбор
+  если addressable tree один. Окончательно (если не возразишь по
+  «всегда обязательное» — см. блок 3.6).
 - FS-материализация — **kernel-internal,** не часть API-контракта.
   Окончательно.
+- Sole-writer — **trust boundary,** защиту от ошибки оператора в этой
+  страт не делаем. Окончательно.
 
 ## Замечание по нумерации
 
