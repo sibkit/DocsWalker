@@ -1,4 +1,4 @@
-description: Описание типов узлов проекта DocsWalker. Schema-файл валидируется по docs/.docswalker/meta-schema.yml (v5) и сам валидирует все остальные docs/*.yml.
+description: Описание типов узлов проекта DocsWalker. Schema-файл валидируется по docs/.docswalker/meta-schema.yml (v6) и сам валидирует все остальные docs/*.yml.
 trees:
   - name: path
     description: |
@@ -19,6 +19,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - root
           - folder
@@ -30,6 +31,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - root
           - folder
@@ -47,6 +49,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - document
         description: Размещение раздела в документе.
@@ -99,6 +102,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - section
         description: Размещение утверждения в разделе.
@@ -109,6 +113,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - section
         description: Размещение правила в разделе.
@@ -125,6 +130,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - section
         description: Размещение правила в разделе.
@@ -135,6 +141,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - section
         description: Размещение заметки в разделе.
@@ -145,6 +152,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - section
         description: Размещение определения в разделе.
@@ -155,6 +163,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - section
         description: Размещение примера в разделе.
@@ -165,6 +174,7 @@ types:
     out_refs:
       - name: path
         tree: path
+        unique_sibling_titles: true
         target_types:
           - section
         description: Размещение указания в разделе.

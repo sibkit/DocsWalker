@@ -201,7 +201,7 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
 
 ## Шаги
 
-- [ ] (01) spec-rewrite — переписать `docs/DocsWalker.yml` под новую
+- [+] (01) spec-rewrite — переписать `docs/DocsWalker.yml` под новую
   модель процесса (Блок 1+2) + meta-schema (`unique_sibling_titles`,
   опциональный `default_addressable_tree`) + переписать описание
   tree-связей (Блок 3) + удалить из спеки упоминания `--root=`,

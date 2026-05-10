@@ -28,12 +28,22 @@ schema_root:
       of: type_definition
       required: true
       description: Список определений типов проекта.
+    - name: default_addressable_tree
+      type: string
+      required: false
+      description: |
+        Имя дерева, используемого как default в API/CLI (`get-by-path` без --tree=).
+        Если не задано и в проекте ровно один addressable tree (с
+        `unique_sibling_titles: true` в ref_def) — он default автоматически.
+        Если addressable trees больше одного и поле не задано — --tree=
+        обязателен (ошибка tree_required).
   constraints:
     - Дополнительные ключи на корневом уровне не допускаются.
     - Имена типов уникальны в пределах schema-файла.
     - Идентификация schema-файла — по имени файла (см. Правила оформления/Идентификация документа); внутреннего поля schema/document не объявляется.
     - 'Имя ''root'' зарезервировано за корневым синглтоном ядра DocsWalker (узел с id=0). Объявляется как обычный type_definition с особенностью: отсутствует обязательная связь name=path (см. constraint типа).'
-    - 'Дерево с именем path обязательно присутствует в trees: оно соответствует встроенному scope хранилища ядра.'
+    - 'Имя ''path'' — конвенция для дерева, материализуемого ядром в FS-структуру (текущая реализация). Жёсткого требования наличия именно ''path'' в trees мета-схема не накладывает.'
+    - '''default_addressable_tree'' (если задан) обязан ссылаться на имя дерева из trees, у которого хотя бы одна tree-связь в типах-источниках имеет ''unique_sibling_titles: true''.'
 tree_definition:
   description: Объявление именованного дерева. Дерево образовано всеми ref_def с tree=<name> в любых типах.
   fields:
@@ -110,6 +120,16 @@ ref_def:
       type: bool
       required: false
       description: 'Обязательно ли заполнить связь хотя бы одной целью при создании узла. Указывается, только если tree не задан. Для cardinality=one и required=true — ровно одна цель; для cardinality=many и required=true — не менее одной.'
+    - name: unique_sibling_titles
+      type: bool
+      required: false
+      description: |
+        Только для tree-связей. true — title узла должен быть уникальным среди
+        siblings под одним parent в этом дереве; false (default) — sibling-дубли
+        разрешены. Tree-связь с unique_sibling_titles=true называется
+        addressable; такие деревья поддерживают get-by-path и проверку
+        duplicate_sibling_title при write (create-node, move-node с change of
+        parent, update-node с change of title).
     - name: description
       type: text
       required: false
@@ -118,3 +138,4 @@ ref_def:
     - 'Если задан tree — указывать cardinality и required запрещено: они подразумеваются (cardinality=one, required=true).'
     - 'Если tree не задан — cardinality и required обязательны.'
     - 'Поле tree (если задано) ссылается на существующее имя в schema_root.trees.'
+    - 'Поле unique_sibling_titles допустимо только при заданном tree; для horizontal-связи (без tree) — запрещено.'
