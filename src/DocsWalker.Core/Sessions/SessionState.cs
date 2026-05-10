@@ -1,11 +1,11 @@
 namespace DocsWalker.Core.Sessions;
 
 /// <summary>
-/// In-memory состояние seen-set всех активных LLM-сессий процесса-сервера.
-/// Не блокирующий контейнер: thread-safety обеспечивается общим семафором
-/// сервера (см. <c>docs/DocsWalker.yml</c> §Модель процесса), который
-/// сериализует обработку запросов. Persistence — через
-/// <see cref="SessionFile"/>, инвалидация снаружи — через <see cref="DocsChecksum"/>.
+/// In-memory состояние seen-set всех активных LLM-сессий per-root. Не блокирующий
+/// контейнер: thread-safety обеспечивается per-root семафором ядра, который
+/// сериализует обработку запросов одного root. Persistence — через
+/// <see cref="SessionFile"/>. Внешняя checksum-инвалидация ушла вместе с (#359):
+/// ядро sole-writer, RAM-граф = диск.
 /// </summary>
 public sealed class SessionState
 {

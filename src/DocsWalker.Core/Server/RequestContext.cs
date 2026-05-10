@@ -3,10 +3,11 @@ using DocsWalker.Core.Sessions;
 namespace DocsWalker.Core.Server;
 
 /// <summary>
-/// Ambient-контекст текущего запроса сервера. Хранится в <see cref="AsyncLocal{T}"/>
-/// и устанавливается <see cref="IpcServer"/> до вызова диспетчера, очищается после.
+/// Ambient-контекст текущего запроса. Хранится в <see cref="AsyncLocal{T}"/>
+/// и устанавливается ядром (<c>RpcDispatcher.ExecuteWithCaptureAsync</c>) до
+/// вызова диспетчера, очищается после.
 /// Несёт <see cref="SessionId"/> — UUID LLM-сессии (docs/DocsWalker.yml #322, #342) —
-/// и ссылку на <see cref="SessionState"/> сервера для read-handlers'ов: seen-фильтрация
+/// и ссылку на <see cref="SessionState"/> для read-handlers'ов: seen-фильтрация
 /// (#344), reset на guide (#348), write-инвалидация (#358) — все дёргают эту пару из
 /// <see cref="Current"/>.
 /// </summary>
@@ -19,9 +20,9 @@ public sealed class RequestContext
     public string? SessionId { get; }
 
     /// <summary>
-    /// Общий <see cref="SessionState"/> процесса-сервера. Null означает, что
-    /// диспетчер вызван вне серверного транспорта (одноразовый CLI без `run`,
-    /// тесты с пустым ctx) — handlers пропускают seen-логику.
+    /// Общий <see cref="SessionState"/> per-root (поднимает ядро). Null означает,
+    /// что диспетчер вызван без поднятого ctx (тест, kernel pre-integration) —
+    /// handlers пропускают seen-логику.
     /// </summary>
     public SessionState? Sessions { get; }
 

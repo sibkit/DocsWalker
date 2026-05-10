@@ -16,12 +16,12 @@ if (args.Length == 0 || args[0].StartsWith("--", StringComparison.Ordinal))
 
 var cmd = args[0].Replace('_', '-');
 
-// cmd == "run" → серверный путь: захват lifecycle + IPC-сервер в этом процессе.
 // cmd == "mcp-server" → stdio↔HTTP wrapper к ядру (stg-0008 step-05).
 // cmd == "repl" → интерактивный HTTP-клиент к ядру (stg-0008 step-06).
-// Все три не идут через одноразовый клиент-режим (KernelHttpClient).
+// Обе не идут через одноразовый клиент-режим (KernelHttpClient): живут до
+// EOF stdin / выхода REPL и сами держат HttpClient к ядру.
 // Команда `kernel` теперь — отдельный exe DocsWalker.Kernel.exe (stg-0008 step-04).
-if (cmd == "run" || cmd == "mcp-server" || cmd == "repl")
+if (cmd == "mcp-server" || cmd == "repl")
     return Dispatcher.Run(args);
 
 // Любая другая команда → клиент-режим: проксируем к запущенному серверу через IPC.
@@ -40,7 +40,7 @@ if (!TryResolveClientRoot(args, out var rootPath))
 return await KernelHttpClient.SendCommandAsync(args, rootPath);
 
 // Быстрый резолв root для клиент-режима: --root= из argv или подъём по дереву от CWD.
-// Path.GetFullPath нормализует путь так же, как ServerLifecycle при старте сервера.
+// Path.GetFullPath нормализует путь — ядро использует его как ключ в RootRegistry.
 static bool TryResolveClientRoot(string[] argv, out string root)
 {
     foreach (var arg in argv)
@@ -112,7 +112,6 @@ internal static class Dispatcher
 
         return spec.SnakeName switch
         {
-            "run"             => RunHandler.Run(rootPath, parsed.Params),
             "repl"            => ReplHandler.Run(rootPath, parsed.Params),
             "mcp_server"      => McpWrapperHandler.Run(rootPath, parsed.Params),
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
@@ -212,9 +211,9 @@ internal static class Dispatcher
             {
                 // Универсальные общие параметры — обрабатываются вне CommandSpec:
                 // --root → TryResolveRoot, --dry-run → TryResolveDryRun,
-                // --session-id → IpcClient/REPL читают и кладут в frame; сервер
-                // получает argv as-is и должен игнорировать ключ при валидации
-                // параметров команды (docs/DocsWalker.yml #342).
+                // --session-id → KernelHttpClient/REPL читают и кладут в JSON-RPC
+                // arguments; диспетчер получает argv as-is и должен игнорировать
+                // ключ при валидации параметров команды (docs/DocsWalker.yml #342).
                 if (key == "root" || key == "dry-run" || key == "session-id")
                     continue;
                 if (!HasParam(spec, key))

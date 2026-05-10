@@ -11,7 +11,7 @@ internal static class UsageGuideText
         """
         DocsWalker представляет docs/ как граф: узлы (units of meaning) + направленные именованные связи (out_refs). LLM работает только с узлами и связями через CLI/MCP — имена файлов и каталогов наружу не торчат.
 
-        ВАЖНО — серверная модель: все команды (кроме `run`) работают только через локальный IPC к запущенному серверу. Перед любой командой должен быть запущен `docswalker run --root=<path>`. CI-pipeline: `docswalker run --root=. &` → команды → kill. Если сервер не запущен — любая команда вернёт exit 1 и {"code":"server_not_running","hint":"docswalker run --root=<path>"}.
+        Архитектура процессов: DocsWalker.Kernel.exe — фоновое ядро (один процесс на пользователя), HTTP+JSON-RPC 2.0 на 127.0.0.1:<dynamic-port>, держит N графов в RAM (multi-root). Все CLI-команды и MCP-вызовы идут к ядру; routing — через явный --root=<path> в каждом запросе. Если ядра нет — клиент авто-spawn'ит DocsWalker.Kernel.exe (DETACHED) и пишет на stderr строку 'kernel: spawned pid=… port=…'. Discovery — per-user kernel.json в %LOCALAPPDATA%\DocsWalker\ (Windows) либо $XDG_RUNTIME_DIR/docswalker/ (POSIX). Для LLM это прозрачно: запускай команду — ядро поднимется само.
 
         Контракт CLI (envelope-free):
         - Успех — exit 0, stdout — JSON-результат команды напрямую, без обёртки. Шейп — специфика команды (объект или массив).
@@ -37,10 +37,15 @@ internal static class UsageGuideText
         Переподшивка узла в дереве — move-node --tree=<scope> (по умолчанию 'path'). Массовая переподшивка cross-refs — redirect-refs.
 
         Запреты:
-        - Прямая правка YAML / sequence.txt / folders.yml в обход API — теряются sequence-инвариант, целостность графа, атомарность.
+        - Прямая правка YAML / sequence.txt / folders.yml в обход API — ядро sole-writer; внешний edit ломает консистентность RAM-графа в ядре. Если правка действительно нужна — graceful kernel stop, edit, restart.
         - Изменение Схемы — задача человека, не LLM (нет API-команды).
         - move-node без --tree, если намерение — переподшить в доменном дереве: запустится реструктуризация хранилища.
 
-        Серверный режим (особая команда `run`): docswalker run --root=<path> запускает long-lived сервер для одного docs/-root — захватывает file-lock на docs/.docswalker/run.lock, открывает локальный IPC-канал, держит граф в RAM до выхода. В TTY открывает REPL-prompt, при редиректе stdin — блокируется на сигнал. Опции: --quiet=true глушит баннер старта в stderr; --mode=tty|headless даёт явный override автодетекта. Корректное завершение — :quit / Ctrl+D в REPL либо SIGINT/SIGTERM/Ctrl+C в headless. `run` сама не вызывается LLM; её запускает оператор/CI.
+        Команды по сценариям:
+        - Одноразовый CLI-вызов: docswalker <команда> --root=<path> (ядро auto-spawn'ится при отсутствии).
+        - Интерактивный REPL: docswalker repl --root=<path> (HTTP-клиент к ядру; команды без префикса 'docswalker'; выход — :quit/:exit/Ctrl+D).
+        - MCP-канал для Claude Code: docswalker mcp-server --root=<path> (тонкий stdio↔HTTP wrapper; обычно вызывается через .mcp.json, не вручную).
+        - Ручной запуск ядра (диагностика): docswalker kernel — пишет kernel.json и слушает /rpc. Обычно не нужен — клиенты сами поднимают.
+        Per-root idle eviction = 10 минут: если граф root'а не запрашивался дольше — выгружается из RAM, при следующем обращении re-load с диска.
         """;
 }

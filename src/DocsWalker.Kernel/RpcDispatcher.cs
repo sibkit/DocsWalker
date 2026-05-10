@@ -244,7 +244,7 @@ internal sealed class RpcDispatcher
         try
         {
             var paramByName = tool.Params.ToDictionary(p => p.Name, StringComparer.Ordinal);
-            argv = McpServer.BuildArgvFromArguments(callParams.Name, callParams.Arguments, paramByName);
+            argv = McpArgvBuilder.BuildArgvFromArguments(callParams.Name, callParams.Arguments, paramByName);
         }
         catch (ArgumentException ex)
         {

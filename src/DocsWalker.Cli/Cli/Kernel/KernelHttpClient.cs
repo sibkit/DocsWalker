@@ -9,8 +9,7 @@ using DocsWalker.Core.Mcp;
 namespace DocsWalker.Cli.Cli.Kernel;
 
 /// <summary>
-/// Клиентский путь CLI поверх HTTP+JSON-RPC. Заменяет старый <see cref="IpcClient"/>
-/// (named pipe + бинарный handshake) — теперь все non-server CLI команды идут через
+/// Клиентский путь CLI поверх HTTP+JSON-RPC. Все non-server CLI команды идут через
 /// <c>POST /rpc</c> ядра, поднятого <see cref="KernelClient.EnsureRunningAsync"/>.
 /// <para>
 /// Алгоритм:

@@ -4,8 +4,7 @@ namespace DocsWalker.Tests;
 
 /// <summary>
 /// Инфраструктура seen-state процесса: <see cref="SessionState"/>,
-/// <see cref="SessionFile"/>, <see cref="DocsChecksum"/>.
-/// Тесты не задействуют сетевые/IPC-каналы: чистая работа с RAM и temp-каталогом.
+/// <see cref="SessionFile"/>. Тесты работают с RAM и temp-каталогом.
 /// </summary>
 public class SessionsInfrastructureTests
 {
@@ -184,87 +183,6 @@ public class SessionsInfrastructureTests
 
             Assert.Empty(Directory.EnumerateFiles(dir, "*.yml"));
             Assert.True(File.Exists(Path.Combine(dir, ".checksum")));
-        }
-        finally { CleanUp(dir); }
-    }
-
-    // ── DocsChecksum ───────────────────────────────────────────────────────
-
-    [Fact]
-    public void ComputeForDocs_DeterministicForSameContent()
-    {
-        var dir = NewTempDir();
-        try
-        {
-            File.WriteAllText(Path.Combine(dir, "a.yml"), "id: 1\n");
-            File.WriteAllText(Path.Combine(dir, "b.yml"), "id: 2\n");
-
-            var h1 = DocsChecksum.ComputeForDocs(dir, ".docswalker/sessions");
-            var h2 = DocsChecksum.ComputeForDocs(dir, ".docswalker/sessions");
-
-            Assert.Equal(h1, h2);
-            Assert.Equal(64, h1.Length); // SHA-256 hex
-        }
-        finally { CleanUp(dir); }
-    }
-
-    [Fact]
-    public void ComputeForDocs_FileEdited_HashChanges()
-    {
-        var dir = NewTempDir();
-        try
-        {
-            var p = Path.Combine(dir, "a.yml");
-            File.WriteAllText(p, "id: 1\n");
-            var before = DocsChecksum.ComputeForDocs(dir, ".docswalker/sessions");
-            File.WriteAllText(p, "id: 2\n");
-            var after = DocsChecksum.ComputeForDocs(dir, ".docswalker/sessions");
-            Assert.NotEqual(before, after);
-        }
-        finally { CleanUp(dir); }
-    }
-
-    [Fact]
-    public void ComputeForDocs_ExcludesSessionsSubtree()
-    {
-        var dir = NewTempDir();
-        try
-        {
-            File.WriteAllText(Path.Combine(dir, "a.yml"), "id: 1\n");
-            var sessionsDir = Path.Combine(dir, ".docswalker", "sessions");
-            Directory.CreateDirectory(sessionsDir);
-
-            var before = DocsChecksum.ComputeForDocs(dir, ".docswalker/sessions");
-
-            File.WriteAllText(Path.Combine(sessionsDir, Guid.NewGuid().ToString("D") + ".yml"), "seen: [1]\n");
-
-            var after = DocsChecksum.ComputeForDocs(dir, ".docswalker/sessions");
-            Assert.Equal(before, after);
-        }
-        finally { CleanUp(dir); }
-    }
-
-    [Fact]
-    public void Stored_RoundtripsThroughDisk()
-    {
-        var dir = NewTempDir();
-        try
-        {
-            var p = Path.Combine(dir, ".checksum");
-            DocsChecksum.WriteStored(p, "deadbeef");
-            Assert.Equal("deadbeef", DocsChecksum.ReadStored(p));
-        }
-        finally { CleanUp(dir); }
-    }
-
-    [Fact]
-    public void Stored_MissingFile_ReturnsNull()
-    {
-        var dir = NewTempDir();
-        try
-        {
-            var p = Path.Combine(dir, ".checksum");
-            Assert.Null(DocsChecksum.ReadStored(p));
         }
         finally { CleanUp(dir); }
     }
