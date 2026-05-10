@@ -17,8 +17,9 @@ var cmd = args[0].Replace('_', '-');
 
 // cmd == "run" → серверный путь: захват lifecycle + IPC-сервер в этом процессе.
 // cmd == "mcp-server" → серверный путь поверх stdio (JSON-RPC 2.0).
-// Обе команды не идут через клиент-режим — это сами серверы (#367).
-if (cmd == "run" || cmd == "mcp-server")
+// cmd == "kernel" → серверный путь поверх HTTP (JSON-RPC 2.0), multi-root (stg-0008).
+// Все три команды не идут через клиент-режим — это сами серверы.
+if (cmd == "run" || cmd == "mcp-server" || cmd == "kernel")
     return Dispatcher.Run(args);
 
 // Любая другая команда → клиент-режим: проксируем к запущенному серверу через IPC.
@@ -88,6 +89,19 @@ internal static class Dispatcher
                 path: null,
                 $"Неизвестная команда '{parsed.CommandKebab}'.");
             return 1;
+        }
+
+        // Спец-кейс kernel: ядро multi-root (stg-0008), --root отсутствует, TryResolveRoot
+        // не применим. Валидируем параметры (bind/port/root-idle-timeout — все optional)
+        // и сразу уходим в KernelHandler. Возврат в общий путь не нужен.
+        if (spec.SnakeName == "kernel")
+        {
+            if (TryValidateParams(spec, parsed.Params) is { } kernelValidationError)
+            {
+                Output.WriteError(kernelValidationError.Code, path: null, kernelValidationError.Message);
+                return 1;
+            }
+            return KernelHandler.Run(parsed.Params);
         }
 
         // root резолвим ДО валидации параметров — чтобы при missing/invalid_parameter
