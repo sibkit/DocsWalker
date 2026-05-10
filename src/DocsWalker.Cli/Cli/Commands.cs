@@ -104,11 +104,13 @@ internal static class Commands
                     "docswalker get-subtree --id=42 --depth=2",
                     "docswalker get-subtree --id=0 --fields=id,type,title,tokens",
                     "docswalker get-subtree --id=PROJECT --tree=strategic",
+                    "docswalker get-subtree --id=42 --no-seen=true",
                 },
-                Req("id",     ParamType.Integer, "id корня поддерева."),
-                Opt("tree",   ParamType.String,  "Имя дерева (tree-scope). По умолчанию 'path'."),
-                Opt("depth",  ParamType.Integer, "Максимальная глубина обхода: 0 — только корень, 1 — корень + один уровень. Без параметра — без ограничения."),
-                Opt("fields", ParamType.String,  "Whitelist полей через запятую: id,type,title,text,out_refs,tokens,subtree_tokens. Без параметра — все поля. Поле id присутствует всегда.")),
+                Req("id",      ParamType.Integer, "id корня поддерева."),
+                Opt("tree",    ParamType.String,  "Имя дерева (tree-scope). По умолчанию 'path'."),
+                Opt("depth",   ParamType.Integer, "Максимальная глубина обхода: 0 — только корень, 1 — корень + один уровень. Без параметра — без ограничения."),
+                Opt("fields",  ParamType.String,  "Whitelist полей через запятую: id,type,title,text,out_refs,tokens,subtree_tokens. Без параметра — все поля. Поле id присутствует всегда."),
+                Opt("no-seen", ParamType.String,  "true/false. Отключает seen-фильтрацию транзитивных детей (полная выдача узлов вместо placeholder'а), seen-set всё равно обновляется. Симметрично get-nodes (#350). По умолчанию false.")),
             Read("get_ancestors",
                 desc: "Цепочка родителей в указанном tree-scope (от ближайшего к корню дерева).",
                 examples: new[] { "docswalker get-ancestors --id=42", "docswalker get-ancestors --id=42 --tree=strategic" },
@@ -132,8 +134,13 @@ internal static class Commands
                 desc: "Полный прогон валидатора на текущем docs/ без записи. Возвращает {ok, errors[]}; exit code всегда 0.",
                 examples: new[] { "docswalker check-integrity" }),
             Read("get_usage_guide",
-                desc: "Manifest всех команд + ментальная модель + перечень tree-scope'ов + слепок графа. Зови в начале сессии.",
-                examples: new[] { "docswalker get-usage-guide" }),
+                desc: "Manifest всех команд + ментальная модель + перечень tree-scope'ов + слепок графа. Зови в начале сессии. Опциональный --command=<kebab-name> отдаёт описание одной команды (mental_model/trees/snapshot остаются).",
+                examples: new[]
+                {
+                    "docswalker get-usage-guide",
+                    "docswalker get-usage-guide --command=get-nodes",
+                },
+                Opt("command", ParamType.String, "Kebab-имя команды для targeted-выдачи. Без параметра — манифест всех команд.")),
 
             // REPL поверх ядра (stg-0008 step-06) — интерактивный HTTP-клиент к
             // DocsWalker.Kernel.exe. Каждая введённая команда уходит как tools/call с

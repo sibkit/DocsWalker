@@ -546,7 +546,8 @@ public sealed class ReadApi
             MentalModel: source.GetMentalModel(),
             Trees: schema.Trees,
             Commands: source.GetCommands(),
-            Snapshot: snapshot);
+            Snapshot: snapshot,
+            TransactionOperations: source.GetTransactionOperations());
     }
 
     /// <summary>

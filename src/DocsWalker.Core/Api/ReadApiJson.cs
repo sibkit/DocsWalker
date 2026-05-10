@@ -120,19 +120,21 @@ public static class ReadApiJson
     /// auto-include-целей, если он не пуст. Применяется в get-subtree / get-by-path
     /// как top-level sibling к <c>root</c>/полям subtree. Каждая цель проходит через
     /// <see cref="AutoIncludeNodeToJson"/>: при попадании в seen становится placeholder.
-    /// noSeen для get-subtree/get-by-path всегда false (#350): флаг принимается
-    /// только командой get-nodes.
+    /// <paramref name="noSeen"/>=true (#350, get-nodes / get-subtree) — отключает
+    /// placeholder для auto-include'ов; полные узлы, seen-set пополняется.
+    /// Default false — текущее поведение get-by-path.
     /// </summary>
     private static void AddAutoIncludesField(
         JsonObject obj,
         IReadOnlyList<Node>? autoIncludes,
         IReadOnlyCollection<string>? fields,
-        SeenScope? scope)
+        SeenScope? scope,
+        bool noSeen = false)
     {
         if (autoIncludes is null || autoIncludes.Count == 0) return;
         var arr = new JsonArray();
         foreach (var n in autoIncludes)
-            arr.Add((JsonNode?)AutoIncludeNodeToJson(n, fields, scope, noSeen: false));
+            arr.Add((JsonNode?)AutoIncludeNodeToJson(n, fields, scope, noSeen));
         obj["auto_includes"] = arr;
     }
 
@@ -194,8 +196,14 @@ public static class ReadApiJson
     /// по seen-set; <paramref name="scope"/> применяется только к транзитивно подтянутым
     /// дочерним узлам через <see cref="SubtreeChildToJson"/>.
     /// </para>
+    /// <para>
+    /// <paramref name="noSeen"/>=true (#350, get-subtree) — отключает превращение уже
+    /// виденных транзитивных детей в placeholder; узлы выдаются полностью, seen-set
+    /// всё равно обновляется через <c>scope.Mark</c>. Default false — существующий
+    /// контракт get-by-path и других потребителей.
+    /// </para>
     /// </summary>
-    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields, SeenScope? scope)
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields, SeenScope? scope, bool noSeen = false)
     {
         var n = subtree.Node;
         var obj = new JsonObject { ["id"] = n.Id };
@@ -214,7 +222,7 @@ public static class ReadApiJson
         if (subtree.Children.Count > 0)
         {
             var children = new JsonArray();
-            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeChildToJson(c, fields, scope));
+            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeChildToJson(c, fields, scope, noSeen));
             obj["children"] = children;
         }
         return obj;
@@ -222,18 +230,20 @@ public static class ReadApiJson
 
     /// <summary>
     /// Сериализация одного транзитивно подтянутого узла поддерева. Если
-    /// <paramref name="scope"/> не null и узел уже в seen (предыдущий запрос
-    /// или этот же ответ выше) — узел заменяется на placeholder
-    /// <c>{id, seen:true}</c> без других полей и без рекурсии в его children
-    /// (#344). В placeholder'е возрастает риск, что LLM не дойдёт до глубины,
-    /// но альтернатива — повторная выдача узла — стоит токенов и нарушает
-    /// контракт «новое в этом запросе». Иначе узел эмитится полным, вместе с
-    /// детьми (рекурсивно через эту же функцию).
+    /// <paramref name="scope"/> не null, <paramref name="noSeen"/>=false и узел
+    /// уже в seen (предыдущий запрос или этот же ответ выше) — узел заменяется
+    /// на placeholder <c>{id, seen:true}</c> без других полей и без рекурсии в
+    /// его children (#344). В placeholder'е возрастает риск, что LLM не дойдёт
+    /// до глубины, но альтернатива — повторная выдача узла — стоит токенов и
+    /// нарушает контракт «новое в этом запросе». Иначе узел эмитится полным,
+    /// вместе с детьми (рекурсивно через эту же функцию).
+    /// <paramref name="noSeen"/>=true (#350, get-subtree) — отключает placeholder:
+    /// все узлы выдаются полностью, seen-set всё равно пополняется.
     /// </summary>
-    private static JsonObject SubtreeChildToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields, SeenScope? scope)
+    private static JsonObject SubtreeChildToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields, SeenScope? scope, bool noSeen)
     {
         var n = subtree.Node;
-        if (scope is not null && scope.ShouldHideTransitive(n.Id))
+        if (!noSeen && scope is not null && scope.ShouldHideTransitive(n.Id))
         {
             scope.Mark(n.Id);
             return PlaceholderJson(n.Id);
@@ -251,7 +261,7 @@ public static class ReadApiJson
         if (subtree.Children.Count > 0)
         {
             var children = new JsonArray();
-            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeChildToJson(c, fields, scope));
+            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeChildToJson(c, fields, scope, noSeen));
             obj["children"] = children;
         }
         return obj;
@@ -289,20 +299,24 @@ public static class ReadApiJson
     /// <paramref name="autoIncludes"/> непуст. Каждая цель проходит через seen-фильтр
     /// (#346): уже-выданный узел становится placeholder'ом. Поле опускается, когда
     /// auto-include на текущей Схеме не сработал.
+    /// <paramref name="noSeen"/>=true (#350, get-subtree) — отключает seen-фильтр
+    /// и для транзитивных детей корня, и для auto-includes (полные узлы вместо
+    /// placeholder'ов); seen-set всё равно пополняется.
     /// </summary>
     public static JsonObject SubtreeToJson(
         NodeSubtree subtree,
         string tree,
         IReadOnlyCollection<string>? fields,
         SeenScope? scope,
-        IReadOnlyList<Node>? autoIncludes)
+        IReadOnlyList<Node>? autoIncludes,
+        bool noSeen = false)
     {
         var obj = new JsonObject
         {
             ["tree"] = tree,
-            ["root"] = SubtreeToJson(subtree, fields, scope),
+            ["root"] = SubtreeToJson(subtree, fields, scope, noSeen),
         };
-        AddAutoIncludesField(obj, autoIncludes, fields, scope);
+        AddAutoIncludesField(obj, autoIncludes, fields, scope, noSeen);
         return obj;
     }
 
@@ -414,11 +428,16 @@ public static class ReadApiJson
             });
         }
 
+        var transactionOps = new JsonArray();
+        foreach (var op in u.TransactionOperations)
+            transactionOps.Add((JsonNode?)TransactionOpToJson(op));
+
         return new JsonObject
         {
             ["mental_model"] = u.MentalModel,
             ["trees"] = trees,
             ["commands"] = commands,
+            ["transaction_operations"] = transactionOps,
             ["graph_snapshot"] = new JsonObject
             {
                 ["total_nodes"] = u.Snapshot.TotalNodes,
@@ -426,6 +445,36 @@ public static class ReadApiJson
                 ["schema_types_count"] = u.Snapshot.SchemaTypesCount,
             },
         };
+    }
+
+    /// <summary>
+    /// Сериализация одной операции <c>transaction</c> для get-usage-guide. Поля
+    /// идут в порядке: op → cli_command → description → fields[]; каждое поле —
+    /// json_key/json_type/required + опциональные cli_flag/description.
+    /// </summary>
+    private static JsonObject TransactionOpToJson(UsageGuideTransactionOp op)
+    {
+        var fields = new JsonArray();
+        foreach (var f in op.Fields)
+        {
+            var fobj = new JsonObject
+            {
+                ["json_key"] = f.JsonKey,
+                ["json_type"] = f.JsonType,
+                ["required"] = f.Required,
+            };
+            if (f.CliFlag is not null)     fobj["cli_flag"] = f.CliFlag;
+            if (f.Description is not null) fobj["description"] = f.Description;
+            fields.Add((JsonNode?)fobj);
+        }
+        var obj = new JsonObject
+        {
+            ["op"] = op.Op,
+            ["cli_command"] = op.CliCommand,
+        };
+        if (op.Description is not null) obj["description"] = op.Description;
+        obj["fields"] = fields;
+        return obj;
     }
 
     private static JsonObject CommandToJson(UsageGuideCommand c)

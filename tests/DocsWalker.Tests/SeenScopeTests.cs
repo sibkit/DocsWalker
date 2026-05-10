@@ -51,6 +51,35 @@ public class SeenScopeTests
     }
 
     [Fact]
+    public void SubtreeToJson_NoSeen_TransitiveChildInSeenSet_StillFullAndSeenAccumulates()
+    {
+        var (api, _) = Build();
+        var subtree = api.GetSubtree(rootId: 2, tree: Node.PathRefName, depth: 1);
+        var firstChildId = subtree.Children[0].Node.Id;
+
+        var sessions = new SessionState();
+        var sid = Guid.NewGuid();
+        // Первый ребёнок уже в seen — без noSeen стал бы placeholder'ом.
+        sessions.MarkSeen(sid, new[] { firstChildId }, DateTime.UtcNow);
+
+        var scope = SeenScope.Create(sessions, sid);
+        // noSeen=true — отключает placeholder; узел выдаётся полностью.
+        var json = ReadApiJson.SubtreeToJson(subtree, fields: null, scope, noSeen: true);
+        scope.Commit(DateTime.UtcNow);
+
+        var children = (JsonArray)json["children"]!;
+        var firstChild = (JsonObject)children.First(c => (int)c!["id"]! == firstChildId)!;
+
+        // Полный узел: больше двух полей, есть title/text.
+        Assert.True(firstChild.Count > 2);
+        Assert.NotNull(firstChild["title"]);
+        Assert.Null(firstChild["seen"]); // никаких placeholder-меток.
+
+        // seen-set всё равно пополняется — повторный запрос без noSeen вернёт placeholder.
+        Assert.Contains(firstChildId, sessions.Sessions[sid].Ids);
+    }
+
+    [Fact]
     public void SubtreeToJson_DirectRoot_NeverFiltered_EvenIfInSeenSet()
     {
         var (api, _) = Build();

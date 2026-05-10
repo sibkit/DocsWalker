@@ -71,8 +71,13 @@ internal static class SchemaHandlers
     /// Manifest для LLM-агента: ментальная модель + tree-scopes + список команд +
     /// слепок графа. Загружает Схему и граф (для snapshot), берёт mental_model и
     /// commands из <see cref="CliUsageGuideSource"/>.
+    /// <para>
+    /// <paramref name="commandFilter"/> (опц., kebab-имя команды) — отдаёт описание
+    /// одной команды в массиве <c>commands</c>. Остальные поля guide (mental_model,
+    /// trees, snapshot) остаются. Невалидное имя — exit 1 с <c>unknown_command</c>.
+    /// </para>
     /// </summary>
-    public static int GetUsageGuide(string root)
+    public static int GetUsageGuide(string root, string? commandFilter = null)
     {
         var docsRoot = Path.Combine(root, "docs");
         var schemaPath = Path.Combine(docsRoot, "Схема.yml");
@@ -106,6 +111,22 @@ internal static class SchemaHandlers
         }
 
         var dto = ReadApi.GetUsageGuide(new CliUsageGuideSource(), schema, loaded.Graph);
+
+        if (!string.IsNullOrEmpty(commandFilter))
+        {
+            var filtered = dto.Commands.Where(c => string.Equals(c.Name, commandFilter, StringComparison.Ordinal)).ToList();
+            if (filtered.Count == 0)
+            {
+                Output.WriteError(
+                    "unknown_command",
+                    path: null,
+                    $"Команда '{commandFilter}' не найдена в манифесте get-usage-guide.",
+                    "Сверь kebab-имя через get-usage-guide без --command=.");
+                return 1;
+            }
+            dto = new UsageGuideResponse(dto.MentalModel, dto.Trees, filtered, dto.Snapshot, dto.TransactionOperations);
+        }
+
         Output.WriteSuccess(ReadApiJson.UsageGuideToJson(dto));
         return 0;
     }

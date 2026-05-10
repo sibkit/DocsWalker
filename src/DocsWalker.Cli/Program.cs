@@ -117,18 +117,13 @@ internal static class Dispatcher
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
             "get_schema"      => SchemaHandlers.GetSchema(rootPath),
             "describe_type"   => SchemaHandlers.DescribeType(rootPath, parsed.Params["name"]),
-            "get_usage_guide" => SchemaHandlers.GetUsageGuide(rootPath),
+            "get_usage_guide" => SchemaHandlers.GetUsageGuide(
+                                    rootPath,
+                                    parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null),
             "get_map"         => ReadHandlers.GetMap(rootPath),
             "get_nodes"       => DispatchGetNodes(rootPath, parsed.Params),
             "get_by_path"     => ReadHandlers.GetByPath(rootPath, parsed.Params["path"]),
-            "get_subtree"     => ReadHandlers.GetSubtree(
-                                    rootPath,
-                                    int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
-                                    parsed.Params.TryGetValue("tree", out var ts) ? ts : null,
-                                    parsed.Params.TryGetValue("depth", out var ds)
-                                        ? int.Parse(ds, System.Globalization.CultureInfo.InvariantCulture)
-                                        : (int?)null,
-                                    ParseFields(parsed.Params)),
+            "get_subtree"     => DispatchGetSubtree(rootPath, parsed.Params),
             "get_ancestors"   => ReadHandlers.GetAncestors(
                                     rootPath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
@@ -166,32 +161,53 @@ internal static class Dispatcher
 
     /// <summary>
     /// Разбирает <c>--no-seen=true|false</c> для <c>get-nodes</c> и вызывает
-    /// <see cref="ReadHandlers.GetNodes"/>. Допустимые значения: <c>true/1/false/0</c>
-    /// (регистр не важен), иначе <c>invalid_parameter</c>. Без параметра — false
-    /// (фильтрация включена, как описано в (#350)). Команды get-subtree / get-by-path
-    /// не получают этого флага: для них он отвергается универсальной валидацией
-    /// <see cref="TryValidateParams"/> как unknown_parameter (поведение зафиксировано
-    /// в (#350) docs/DocsWalker.yml).
+    /// <see cref="ReadHandlers.GetNodes"/>. См. <see cref="TryParseNoSeen"/> для
+    /// контракта значений. Без параметра — false (фильтрация включена, #350).
     /// </summary>
     private static int DispatchGetNodes(string root, IReadOnlyDictionary<string, string> args)
     {
-        bool noSeen = false;
-        if (args.TryGetValue("no-seen", out var raw))
-        {
-            if (string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || raw == "1")
-                noSeen = true;
-            else if (string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || raw == "0")
-                noSeen = false;
-            else
-            {
-                Output.WriteError(
-                    "invalid_parameter",
-                    path: null,
-                    $"Параметр '--no-seen': ожидается 'true' или 'false', получено '{raw}'.");
-                return 1;
-            }
-        }
+        if (!TryParseNoSeen(args, out var noSeen)) return 1;
         return ReadHandlers.GetNodes(root, args["ids"], noSeen);
+    }
+
+    /// <summary>
+    /// Разбирает <c>--no-seen=true|false</c> для <c>get-subtree</c> и вызывает
+    /// <see cref="ReadHandlers.GetSubtree"/>. С <c>noSeen=true</c> транзитивные
+    /// дети не превращаются в placeholder'ы (#350); seen-set всё равно
+    /// обновляется. Без параметра — false.
+    /// </summary>
+    private static int DispatchGetSubtree(string root, IReadOnlyDictionary<string, string> args)
+    {
+        if (!TryParseNoSeen(args, out var noSeen)) return 1;
+        var id = int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture);
+        var tree = args.TryGetValue("tree", out var ts) ? ts : null;
+        int? depth = args.TryGetValue("depth", out var ds)
+            ? int.Parse(ds, System.Globalization.CultureInfo.InvariantCulture)
+            : (int?)null;
+        return ReadHandlers.GetSubtree(root, id, tree, depth, ParseFields(args), noSeen);
+    }
+
+    /// <summary>
+    /// Парсит <c>--no-seen=</c> из argv-словаря: true/1 → true, false/0 → false,
+    /// отсутствует → false. Любое другое значение — печатает <c>invalid_parameter</c>
+    /// и возвращает false (caller возвращает exit 1). Регистр не важен.
+    /// </summary>
+    private static bool TryParseNoSeen(IReadOnlyDictionary<string, string> args, out bool noSeen)
+    {
+        noSeen = false;
+        if (!args.TryGetValue("no-seen", out var raw)) return true;
+        if (string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || raw == "1")
+        {
+            noSeen = true;
+            return true;
+        }
+        if (string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || raw == "0")
+            return true;
+        Output.WriteError(
+            "invalid_parameter",
+            path: null,
+            $"Параметр '--no-seen': ожидается 'true' или 'false', получено '{raw}'.");
+        return false;
     }
 
     private static ParamValidationError? TryValidateParams(

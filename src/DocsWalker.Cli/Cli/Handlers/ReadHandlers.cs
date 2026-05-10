@@ -76,7 +76,7 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetSubtree(string root, int id, string? tree, int? depth, IReadOnlyCollection<string>? fields)
+    public static int GetSubtree(string root, int id, string? tree, int? depth, IReadOnlyCollection<string>? fields, bool noSeen = false)
     {
         var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
         return WithApi(root, api =>
@@ -86,7 +86,7 @@ internal static class ReadHandlers
                 var subtree = api.ReadApi.GetSubtree(id, scope, depth);
                 var autoIncludes = api.ReadApi.CollectAutoIncludes(subtree);
                 var seen = SeenScope.FromCurrentContext();
-                var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, seen, autoIncludes);
+                var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, seen, autoIncludes, noSeen);
                 seen?.Commit(DateTime.UtcNow);
                 Output.WriteSuccess(json);
                 return 0;

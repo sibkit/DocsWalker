@@ -1048,6 +1048,13 @@ public sealed class WriteApi
         var changes = new List<(int SourceId, string RefName, int RemovedCount)>();
         var nodesToReplace = new Dictionary<int, Node>();
 
+        // Диагностика: считаем, сколько path-child связей было пропущено, чтобы при
+        // no_effect показать LLM правильный путь решения (move-node вместо
+        // redirect-refs). Без этого LLM путается: get-in-refs показывает связь
+        // (она физическая в out_refs родителя), а redirect-refs тихо игнорирует
+        // её под капотом и возвращает no_effect.
+        int pathChildSkippedHits = 0;
+
         foreach (var srcNode in s.AllNodes.ToList())
         {
             // Не правим сами узлы из набора (они и так уйдут на удаление, либо будут изолированы).
@@ -1063,9 +1070,14 @@ public sealed class WriteApi
                     continue;
                 // path-child refs — структурное зеркало path, ими управляет ядро через
                 // create-node / delete-nodes / move-node. Свободно переподшивать их нельзя
-                // (это ломает синхрон с path-child'ами), redirect-refs их пропускает.
+                // (это ломает синхрон с path-child'ами), redirect-refs их пропускает —
+                // но считаем «пропущенные хиты» для диагностики (см. no_effect ниже).
                 if (IsPathChildRefName(s, srcNode.TypeName, refName))
+                {
+                    foreach (var t in targets)
+                        if (fromSet.Contains(t)) pathChildSkippedHits++;
                     continue;
+                }
 
                 // Сколько целей этой связи попадает в FromIds?
                 int hits = 0;
@@ -1120,10 +1132,22 @@ public sealed class WriteApi
         }
 
         if (nodesToReplace.Count == 0)
+        {
+            // Если все совпавшие связи — path-child refs, значит цели — это path-children
+            // источников, и redirect-refs их трогать не должен (управление структурой
+            // дерева — задача move-node). Подсказка должна вести именно к нему,
+            // иначе LLM застревает: get-in-refs показывает связи, а redirect-refs
+            // молча отказывается их менять.
+            if (pathChildSkippedHits > 0)
+                throw new WriteApiException(
+                    "no_effect",
+                    $"Все совпавшие входящие связи ({pathChildSkippedHits} шт.) — path-child refs (структурное зеркало path-дерева). redirect-refs их не трогает: смена parent в path-дереве — операция move-node.",
+                    "Используй move-node --id=<child_id> --to=<new_parent_id> для переподшивки в path-дереве. redirect-refs предназначен только для cross-refs (вне tree-scopes).");
             throw new WriteApiException(
                 "no_effect",
                 "Ни одной cross-ref на узлы из FromIds не найдено — переподшивать нечего.",
                 "Сверь набор источников через get-in-refs --id=<from_id>.");
+        }
 
         foreach (var (id, updated) in nodesToReplace)
         {
