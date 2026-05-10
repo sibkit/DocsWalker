@@ -21,7 +21,7 @@ public class UsageGuideTests
         Console.SetOut(sw);
         try
         {
-            var exit = SchemaHandlers.GetUsageGuide(TestPaths.RepoRoot, commandFilter);
+            var exit = SchemaHandlers.GetUsageGuide(TestPaths.DocsRoot, commandFilter);
             Assert.Equal(0, exit);
         }
         finally { Console.SetOut(oldOut); }
@@ -115,7 +115,7 @@ public class UsageGuideTests
         Console.SetOut(sw);
         Console.SetError(sErr);
         int exit;
-        try { exit = SchemaHandlers.GetUsageGuide(TestPaths.RepoRoot, "no-such-command"); }
+        try { exit = SchemaHandlers.GetUsageGuide(TestPaths.DocsRoot, "no-such-command"); }
         finally
         {
             Console.SetOut(oldOut);

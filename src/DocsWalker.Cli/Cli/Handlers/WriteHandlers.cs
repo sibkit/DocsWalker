@@ -21,13 +21,13 @@ internal static class WriteHandlers
 {
     /// <summary>
     /// Фиксированные параметры <c>create-node</c>, известные на уровне CLI
-    /// независимо от Схемы. Всё остальное в args (кроме общих <c>root</c> и
-    /// <c>dry-run</c>) трактуется как имя out_ref-связи и парсится как ID-список.
+    /// независимо от Схемы. Всё остальное в args (кроме общих <c>storage-path</c>
+    /// и <c>dry-run</c>) трактуется как имя out_ref-связи и парсится как ID-список.
     /// </summary>
     private static readonly HashSet<string> CreateNodeFixedKeys =
-        new(StringComparer.Ordinal) { "type", "title", "text", "root", "dry-run" };
+        new(StringComparer.Ordinal) { "type", "title", "text", "storage-path", "dry-run" };
 
-    public static int CreateNode(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
+    public static int CreateNode(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var typeName = args["type"];
         var title = args["title"];
@@ -56,10 +56,10 @@ internal static class WriteHandlers
             Title: title,
             Text: text,
             Refs: refs);
-        return Run(root, op, dryRun);
+        return Run(storagePath, op, dryRun);
     }
 
-    public static int UpdateNode(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
+    public static int UpdateNode(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var newTitle = args.TryGetValue("title", out var t) ? t : null;
         var newText  = args.TryGetValue("text",  out var x) ? x : null;
@@ -76,10 +76,10 @@ internal static class WriteHandlers
             Id: int.Parse(args["id"], CultureInfo.InvariantCulture),
             NewTitle: newTitle,
             NewText: newText);
-        return Run(root, op, dryRun);
+        return Run(storagePath, op, dryRun);
     }
 
-    public static int DeleteNodes(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
+    public static int DeleteNodes(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         if (!TryParseIdList(args["ids"], out var ids, out var parseError))
         {
@@ -91,10 +91,10 @@ internal static class WriteHandlers
             return 1;
         }
         var op = new DeleteNodesOp(ids);
-        return Run(root, op, dryRun);
+        return Run(storagePath, op, dryRun);
     }
 
-    public static int RedirectRefs(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
+    public static int RedirectRefs(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var hasFrom = args.TryGetValue("from", out var fromRaw);
         var hasFromSubtree = args.TryGetValue("from-subtree", out var fromSubtreeRaw);
@@ -137,8 +137,6 @@ internal static class WriteHandlers
             return 1;
         }
 
-        // Сборка набора FromIds: --from=<id> → [id]; --from-subtree=<root_id> → BFS вниз
-        // по path-children, включая root_id (cascading set за счёт path-замкнутости).
         IReadOnlyList<int> fromIds;
         try
         {
@@ -149,7 +147,7 @@ internal static class WriteHandlers
             else
             {
                 var rootId = int.Parse(fromSubtreeRaw!, CultureInfo.InvariantCulture);
-                fromIds = ResolveSubtreeIds(root, rootId);
+                fromIds = ResolveSubtreeIds(storagePath, rootId);
             }
         }
         catch (FormatException)
@@ -181,7 +179,7 @@ internal static class WriteHandlers
             : null;
 
         var op = new RedirectRefsOp(fromIds, toId, name, unlink);
-        return Run(root, op, dryRun);
+        return Run(storagePath, op, dryRun);
     }
 
     /// <summary>
@@ -189,9 +187,9 @@ internal static class WriteHandlers
     /// path-поддерева (включая сам root). Используется только в redirect-refs;
     /// нужен здесь, а не в WriteApi, потому что ядро принимает уже готовый плоский набор.
     /// </summary>
-    private static IReadOnlyList<int> ResolveSubtreeIds(string root, int rootId)
+    private static IReadOnlyList<int> ResolveSubtreeIds(string storagePath, int rootId)
     {
-        var ctx = WriteContext.FromRoot(root);
+        var ctx = WriteContext.FromStoragePath(storagePath);
         var schema = SchemaLoader.LoadSchema(ctx.SchemaPath);
         var loaded = DocumentLoader.Load(ctx.DocsRoot, schema);
         var graph = loaded.Graph;
@@ -214,7 +212,7 @@ internal static class WriteHandlers
         return result;
     }
 
-    public static int MoveNode(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
+    public static int MoveNode(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var tree = args.TryGetValue("tree", out var tr) && !string.IsNullOrEmpty(tr)
             ? tr
@@ -223,28 +221,28 @@ internal static class WriteHandlers
             Id: int.Parse(args["id"], CultureInfo.InvariantCulture),
             NewParentId: int.Parse(args["to"], CultureInfo.InvariantCulture),
             Tree: tree);
-        return Run(root, op, dryRun);
+        return Run(storagePath, op, dryRun);
     }
 
-    public static int CreateRef(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
+    public static int CreateRef(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var op = new CreateRefOp(
             FromId: int.Parse(args["from-id"], CultureInfo.InvariantCulture),
             Name: args["name"],
             ToId: int.Parse(args["to-id"], CultureInfo.InvariantCulture));
-        return Run(root, op, dryRun);
+        return Run(storagePath, op, dryRun);
     }
 
-    public static int DeleteRef(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
+    public static int DeleteRef(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var op = new DeleteRefOp(
             FromId: int.Parse(args["from-id"], CultureInfo.InvariantCulture),
             Name: args["name"],
             ToId: int.Parse(args["to-id"], CultureInfo.InvariantCulture));
-        return Run(root, op, dryRun);
+        return Run(storagePath, op, dryRun);
     }
 
-    public static int Transaction(string root, IReadOnlyDictionary<string, string> args, bool dryRun)
+    public static int Transaction(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         IReadOnlyList<WriteOp> ops;
         try
@@ -263,50 +261,42 @@ internal static class WriteHandlers
             return 1;
         }
 
-        return RunMany(root, ops, dryRun);
+        return RunMany(storagePath, ops, dryRun);
     }
 
-    private static int Run(string root, WriteOp op, bool dryRun) =>
-        RunCore(root, new[] { op }, transaction: false, dryRun);
+    private static int Run(string storagePath, WriteOp op, bool dryRun) =>
+        RunCore(storagePath, new[] { op }, transaction: false, dryRun);
 
-    private static int RunMany(string root, IReadOnlyList<WriteOp> ops, bool dryRun) =>
-        RunCore(root, ops, transaction: true, dryRun);
+    private static int RunMany(string storagePath, IReadOnlyList<WriteOp> ops, bool dryRun) =>
+        RunCore(storagePath, ops, transaction: true, dryRun);
 
-    private static int RunCore(string root, IReadOnlyList<WriteOp> ops, bool transaction, bool dryRun)
+    private static int RunCore(string storagePath, IReadOnlyList<WriteOp> ops, bool transaction, bool dryRun)
     {
         try
         {
-            var ctx = WriteContext.FromRoot(root);
+            var ctx = WriteContext.FromStoragePath(storagePath);
             var api = new WriteApi(ctx);
             var result = api.Apply(ops, dryRun);
 
             if (transaction)
             {
-                // Для transaction результат — top-level массив; applied уже впечён в
-                // каждый элемент TransactionResultToJson'ом. Single-arg WriteSuccess
-                // печатает массив как есть.
                 Output.WriteSuccess(TransactionResultToJson(result));
             }
             else
             {
-                // Одиночная write-команда: result — JsonObject, two-arg overload
-                // подмешивает applied как top-level-поле.
                 Output.WriteSuccess(SingleResultToJson(result), applied: result.Applied);
             }
             return 0;
         }
         catch (WriteValidationException ex)
         {
-            // focusRefName: первый ref-локализованный код в списке валидационных ошибок —
-            // multi-ref-trim в один объект ошибки не вписывается, потому берём первый
-            // (комментарий step-trim-error-describe-type, раздел «Риски»).
             var focusRef = ex.Errors.FirstOrDefault(e => e.RefName is not null)?.RefName;
             Output.WriteError(
                 "validation_failed",
                 path: null,
                 FormatValidationMessage(ex.Errors),
                 FormatValidationHint(ex.Errors),
-                describeType: ErrorEnrichment.TryDescribeType(root, FirstCreateNodeType(ops), focusRef));
+                describeType: ErrorEnrichment.TryDescribeType(storagePath, FirstCreateNodeType(ops), focusRef));
             return 1;
         }
         catch (WriteApiException ex)
@@ -316,7 +306,7 @@ internal static class WriteHandlers
                 path: null,
                 ex.Message,
                 ex.Hint,
-                describeType: ErrorEnrichment.TryDescribeType(root, FirstCreateNodeType(ops), ex.RefName));
+                describeType: ErrorEnrichment.TryDescribeType(storagePath, FirstCreateNodeType(ops), ex.RefName));
             return 1;
         }
         catch (GraphLoadException ex)
@@ -341,15 +331,6 @@ internal static class WriteHandlers
         }
     }
 
-    /// <summary>
-    /// Возвращает имя типа из первой <see cref="CreateNodeOp"/> в наборе операций, или null.
-    /// Используется для embed'а <c>describe-type</c> в ошибки <see cref="WriteApiException"/> /
-    /// <see cref="WriteValidationException"/>: контракт типа подсказывает LLM, какие
-    /// именно out_refs она забыла или указала неверно. Для прочих write-операций
-    /// (update/move/delete/redirect) тип целевого узла из op'а явно не выводится — там
-    /// LLM получит ошибку без describe_type, что приемлемо: эти операции не требуют
-    /// заполнения out_refs контракта.
-    /// </summary>
     private static string? FirstCreateNodeType(IReadOnlyList<WriteOp> ops)
     {
         foreach (var op in ops)
@@ -387,10 +368,6 @@ internal static class WriteHandlers
         return true;
     }
 
-    /// <summary>
-    /// Для одиночных write-команд (`create-node`, `update-node` и т. д.) поле `result`
-    /// содержит данные единственной операции напрямую — без обёрток `operations[0].data`.
-    /// </summary>
     private static JsonNode SingleResultToJson(WriteResult result)
     {
         if (result.OpResults.Count != 1)
@@ -399,13 +376,6 @@ internal static class WriteHandlers
         return result.OpResults[0].Data.DeepClone();
     }
 
-    /// <summary>
-    /// Для команды `transaction` — массив объектов формы
-    /// <c>{op: имя, ...поля результата операции, applied}</c> в порядке исходных операций
-    /// (top-level массив без обёртки). Поле <c>op</c> отличает шейп от одиночной команды;
-    /// <c>applied</c> повторяется в каждом элементе — значение одно (transaction атомарна),
-    /// но envelope-free контракт требует, чтобы оно было видно на каждом результате.
-    /// </summary>
     private static JsonNode TransactionResultToJson(WriteResult result)
     {
         var arr = new JsonArray();
@@ -431,12 +401,6 @@ internal static class WriteHandlers
         return "Запись отклонена валидатором:\n" + string.Join('\n', lines);
     }
 
-    /// <summary>
-    /// Сводный hint для validation_failed: первая ненулевая подсказка из списка ошибок.
-    /// Для нескольких ошибок более подробно — каждая ValidationError несёт свой Hint и
-    /// доступна через машинное API; CLI ограничивается короткой пометкой, чтобы LLM не
-    /// читала простыню.
-    /// </summary>
     private static string? FormatValidationHint(IReadOnlyList<ValidationError> errors)
     {
         foreach (var e in errors)

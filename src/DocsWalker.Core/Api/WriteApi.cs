@@ -156,9 +156,15 @@ public sealed class WriteContext
         MetaSchema = metaSchema;
     }
 
-    public static WriteContext FromRoot(string root)
+    /// <summary>
+    /// Строит <see cref="WriteContext"/> от пути к storage-папке (= папке
+    /// <c>docs/</c> графа). После stg-0010 step-03 kernel передаёт эту
+    /// папку напрямую в <c>--storage-path=</c>; раньше CLI принимал
+    /// project-folder и сам приклеивал <c>/docs</c>.
+    /// </summary>
+    public static WriteContext FromStoragePath(string storagePath)
     {
-        var docsRoot = Path.Combine(root, "docs");
+        var docsRoot = storagePath;
         var schemaPath = Path.Combine(docsRoot, "Схема.yml");
         var metaSchemaPath = Path.Combine(docsRoot, ".docswalker", "meta-schema.yml");
         var sequencePath = Path.Combine(docsRoot, ".docswalker", "sequence.txt");

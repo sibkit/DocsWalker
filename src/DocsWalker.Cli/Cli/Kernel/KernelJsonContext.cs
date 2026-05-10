@@ -27,19 +27,20 @@ public sealed record KernelInfo(
     [property: JsonPropertyName("auth_token")] string? AuthToken);
 
 /// <summary>
-/// Информация об одном root, загруженном в kernel. <see cref="ExpiresAt"/> — момент,
-/// когда entry будет evict'нут idle-таймером, если до этого не будет обращений.
+/// Информация об одном графе в kernel'е. Используется в ответе
+/// <c>GET /db</c>: имя, путь к storage-папке и метка последнего запроса.
 /// </summary>
-public sealed record RootInfo(
-    [property: JsonPropertyName("root")] string Root,
-    [property: JsonPropertyName("last_used")] DateTimeOffset LastUsed,
-    [property: JsonPropertyName("expires_at")] DateTimeOffset ExpiresAt);
+public sealed record GraphInfo(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("storage_path")] string StoragePath,
+    [property: JsonPropertyName("last_used")] DateTimeOffset LastUsed);
 
 /// <summary>
-/// Ответ <c>GET /roots</c> — снимок текущих entry в <see cref="RootRegistry"/>.
+/// Ответ <c>GET /db</c> — список графов, известных kernel'у из
+/// kernel-config'а.
 /// </summary>
-public sealed record RootsResponse(
-    [property: JsonPropertyName("roots")] IReadOnlyList<RootInfo> Roots);
+public sealed record GraphsResponse(
+    [property: JsonPropertyName("graphs")] IReadOnlyList<GraphInfo> Graphs);
 
 /// <summary>
 /// Source-gen JsonSerializerContext для kernel-специфичных типов. AOT-совместим:
@@ -50,8 +51,8 @@ public sealed record RootsResponse(
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(HealthResponse))]
-[JsonSerializable(typeof(RootInfo))]
-[JsonSerializable(typeof(RootsResponse))]
+[JsonSerializable(typeof(GraphInfo))]
+[JsonSerializable(typeof(GraphsResponse))]
 [JsonSerializable(typeof(KernelInfo))]
 public partial class KernelJsonContext : JsonSerializerContext
 {

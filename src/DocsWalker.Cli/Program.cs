@@ -10,60 +10,31 @@ using DocsWalker.Cli.Cli.Kernel;
 Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
 // Нет аргументов или первый аргумент — параметр: отдаём Dispatcher'у.
-// Это ошибки argv (no_command), не нужен сервер — выдаём сразу.
+// Это ошибки argv (no_command, --help, --version), не нужен сервер — выдаём сразу.
 if (args.Length == 0 || args[0].StartsWith("--", StringComparison.Ordinal))
     return Dispatcher.Run(args);
 
 var cmd = args[0].Replace('_', '-');
 
-// cmd == "mcp-server" → stdio↔HTTP wrapper к ядру (stg-0008 step-05).
-// cmd == "repl" → интерактивный HTTP-клиент к ядру (stg-0008 step-06).
+// cmd == "mcp-server" → stdio↔HTTP wrapper к ядру.
+// cmd == "repl" → интерактивный HTTP-клиент к ядру.
 // Обе не идут через одноразовый клиент-режим (KernelHttpClient): живут до
-// EOF stdin / выхода REPL и сами держат HttpClient к ядру.
-// Команда `kernel` теперь — отдельный exe DocsWalker.Kernel.exe (stg-0008 step-04).
+// EOF stdin / выхода REPL и сами читают .dw/client.json + держат HttpClient к ядру.
+// Команда `kernel` — отдельный exe DocsWalker.Kernel.exe.
 if (cmd == "mcp-server" || cmd == "repl")
     return Dispatcher.Run(args);
 
-// Любая другая команда → клиент-режим: проксируем к запущенному серверу через IPC.
-if (!TryResolveClientRoot(args, out var rootPath))
+// Любая другая команда → клиент-режим: читаем .dw/client.json, форвардим
+// в /db/{graph}/rpc kernel'а. Auto-spawn убран в stg-0010 step-04 — kernel
+// должен быть уже запущен пользователем.
+ClientConfig clientCfg;
+try { clientCfg = ClientConfig.Resolve(); }
+catch (ClientConfigException ex)
 {
-    Output.WriteError(
-        "docs_not_found",
-        Directory.GetCurrentDirectory(),
-        "Не найден каталог 'docs/' ни в текущей директории, ни выше. " +
-        "Используйте '--root=<path>' для явного указания корня проекта.");
+    Output.WriteError(ex.Code, path: null, ex.Message);
     return 1;
 }
-
-// Клиентский путь: HTTP+JSON-RPC к per-user kernel. Если ядро не запущено —
-// KernelClient.EnsureRunningAsync (внутри KernelHttpClient) сам поднимет detached.
-return await KernelHttpClient.SendCommandAsync(args, rootPath);
-
-// Быстрый резолв root для клиент-режима: --root= из argv или подъём по дереву от CWD.
-// Path.GetFullPath нормализует путь — ядро использует его как ключ в RootRegistry.
-static bool TryResolveClientRoot(string[] argv, out string root)
-{
-    foreach (var arg in argv)
-    {
-        if (arg.StartsWith("--root=", StringComparison.Ordinal))
-        {
-            root = Path.GetFullPath(arg["--root=".Length..]);
-            return true;
-        }
-    }
-    var current = new DirectoryInfo(Directory.GetCurrentDirectory());
-    while (current is not null)
-    {
-        if (Directory.Exists(Path.Combine(current.FullName, "docs")))
-        {
-            root = current.FullName;
-            return true;
-        }
-        current = current.Parent;
-    }
-    root = string.Empty;
-    return false;
-}
+return await KernelHttpClient.SendCommandAsync(args, clientCfg);
 
 internal static class Dispatcher
 {
@@ -85,20 +56,24 @@ internal static class Dispatcher
             return 1;
         }
 
-        // root резолвим ДО валидации параметров — чтобы при missing/invalid_parameter
-        // write-команды можно было embed'ить describe-type из Схемы, обогащая ошибку
-        // контрактом типа. На read-командах резолв тоже всё равно нужен; стоимость —
-        // одна проверка наличия каталога, незаметная.
-        if (!TryResolveRoot(parsed.Params, out var rootPath, out var rootError))
+        // storage-path для repl/mcp_server не нужен (эти wrapper'ы сами читают
+        // ClientConfig). Для остальных команд — обязателен; kernel инжектит его
+        // через --storage-path=<docs-folder> до вызова Dispatcher.Run. Прямой
+        // запуск CLI с этими командами без --storage-path = ошибка контракта.
+        string storagePath = string.Empty;
+        if (spec.SnakeName != "repl" && spec.SnakeName != "mcp_server")
         {
-            Output.WriteError(rootError!.Code, rootError.Path, rootError.Message);
-            return 1;
+            if (!TryResolveStoragePath(parsed.Params, out storagePath, out var spError))
+            {
+                Output.WriteError(spError!.Code, spError.Path, spError.Message);
+                return 1;
+            }
         }
 
         if (TryValidateParams(spec, parsed.Params) is { } validationError)
         {
             var enrichment = spec.Kind == CommandKind.Write
-                ? ErrorEnrichment.TryDescribeType(rootPath, parsed.Params.GetValueOrDefault("type"))
+                ? ErrorEnrichment.TryDescribeType(storagePath, parsed.Params.GetValueOrDefault("type"))
                 : null;
             Output.WriteError(validationError.Code, path: null, validationError.Message, describeType: enrichment);
             return 1;
@@ -112,43 +87,43 @@ internal static class Dispatcher
 
         return spec.SnakeName switch
         {
-            "repl"            => ReplHandler.Run(rootPath, parsed.Params),
-            "mcp_server"      => McpWrapperHandler.Run(rootPath, parsed.Params),
-            "get_meta_schema" => SchemaHandlers.GetMetaSchema(rootPath),
-            "get_schema"      => SchemaHandlers.GetSchema(rootPath),
-            "describe_type"   => SchemaHandlers.DescribeType(rootPath, parsed.Params["name"]),
+            "repl"            => ReplHandler.Run(parsed.Params),
+            "mcp_server"      => McpWrapperHandler.Run(parsed.Params),
+            "get_meta_schema" => SchemaHandlers.GetMetaSchema(storagePath),
+            "get_schema"      => SchemaHandlers.GetSchema(storagePath),
+            "describe_type"   => SchemaHandlers.DescribeType(storagePath, parsed.Params["name"]),
             "get_usage_guide" => SchemaHandlers.GetUsageGuide(
-                                    rootPath,
+                                    storagePath,
                                     parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null),
-            "get_map"         => ReadHandlers.GetMap(rootPath),
-            "get_nodes"       => ReadHandlers.GetNodes(rootPath, parsed.Params["ids"]),
+            "get_map"         => ReadHandlers.GetMap(storagePath),
+            "get_nodes"       => ReadHandlers.GetNodes(storagePath, parsed.Params["ids"]),
             "get_by_path"     => ReadHandlers.GetByPath(
-                                    rootPath,
+                                    storagePath,
                                     parsed.Params["path"],
                                     parsed.Params.TryGetValue("tree", out var gbpTree) ? gbpTree : null),
-            "get_subtree"     => DispatchGetSubtree(rootPath, parsed.Params),
+            "get_subtree"     => DispatchGetSubtree(storagePath, parsed.Params),
             "get_ancestors"   => ReadHandlers.GetAncestors(
-                                    rootPath,
+                                    storagePath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
                                     parsed.Params.TryGetValue("tree", out var ta) ? ta : null),
             "get_refs"        => ReadHandlers.GetRefs(
-                                    rootPath,
+                                    storagePath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
                                     parsed.Params.TryGetValue("name", out var n1) ? n1 : null),
             "get_in_refs"     => ReadHandlers.GetInRefs(
-                                    rootPath,
+                                    storagePath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
                                     parsed.Params.TryGetValue("name", out var n2) ? n2 : null),
-            "search"          => ReadHandlers.Search(rootPath, parsed.Params["query"]),
-            "check_integrity" => ReadHandlers.CheckIntegrity(rootPath),
-            "create_node"     => WriteHandlers.CreateNode(rootPath, parsed.Params, dryRun),
-            "update_node"     => WriteHandlers.UpdateNode(rootPath, parsed.Params, dryRun),
-            "delete_nodes"    => WriteHandlers.DeleteNodes(rootPath, parsed.Params, dryRun),
-            "move_node"       => WriteHandlers.MoveNode(rootPath, parsed.Params, dryRun),
-            "create_ref"      => WriteHandlers.CreateRef(rootPath, parsed.Params, dryRun),
-            "delete_ref"      => WriteHandlers.DeleteRef(rootPath, parsed.Params, dryRun),
-            "redirect_refs"   => WriteHandlers.RedirectRefs(rootPath, parsed.Params, dryRun),
-            "transaction"     => WriteHandlers.Transaction(rootPath, parsed.Params, dryRun),
+            "search"          => ReadHandlers.Search(storagePath, parsed.Params["query"]),
+            "check_integrity" => ReadHandlers.CheckIntegrity(storagePath),
+            "create_node"     => WriteHandlers.CreateNode(storagePath, parsed.Params, dryRun),
+            "update_node"     => WriteHandlers.UpdateNode(storagePath, parsed.Params, dryRun),
+            "delete_nodes"    => WriteHandlers.DeleteNodes(storagePath, parsed.Params, dryRun),
+            "move_node"       => WriteHandlers.MoveNode(storagePath, parsed.Params, dryRun),
+            "create_ref"      => WriteHandlers.CreateRef(storagePath, parsed.Params, dryRun),
+            "delete_ref"      => WriteHandlers.DeleteRef(storagePath, parsed.Params, dryRun),
+            "redirect_refs"   => WriteHandlers.RedirectRefs(storagePath, parsed.Params, dryRun),
+            "transaction"     => WriteHandlers.Transaction(storagePath, parsed.Params, dryRun),
             _                 => NotImplemented(spec),
         };
     }
@@ -162,14 +137,14 @@ internal static class Dispatcher
         return 1;
     }
 
-    private static int DispatchGetSubtree(string root, IReadOnlyDictionary<string, string> args)
+    private static int DispatchGetSubtree(string storagePath, IReadOnlyDictionary<string, string> args)
     {
         var id = int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture);
         var tree = args.TryGetValue("tree", out var ts) ? ts : null;
         int? depth = args.TryGetValue("depth", out var ds)
             ? int.Parse(ds, System.Globalization.CultureInfo.InvariantCulture)
             : (int?)null;
-        return ReadHandlers.GetSubtree(root, id, tree, depth, ParseFields(args));
+        return ReadHandlers.GetSubtree(storagePath, id, tree, depth, ParseFields(args));
     }
 
     private static ParamValidationError? TryValidateParams(
@@ -188,8 +163,8 @@ internal static class Dispatcher
             foreach (var key in provided.Keys)
             {
                 // Универсальные общие параметры — обрабатываются вне CommandSpec:
-                // --root → TryResolveRoot, --dry-run → TryResolveDryRun.
-                if (key == "root" || key == "dry-run")
+                // --storage-path → TryResolveStoragePath, --dry-run → TryResolveDryRun.
+                if (key == "storage-path" || key == "dry-run")
                     continue;
                 if (!HasParam(spec, key))
                 {
@@ -323,46 +298,40 @@ internal static class Dispatcher
         }
     }
 
-    private static bool TryResolveRoot(
+    /// <summary>
+    /// Резолвит storage-path из argv: единственный источник —
+    /// <c>--storage-path=&lt;path&gt;</c> (kernel инжектит его перед вызовом
+    /// Dispatcher.Run). Никакого upward-search'а от cwd: эта логика
+    /// перенесена в <see cref="ClientConfig"/> на CLI top-level.
+    /// </summary>
+    private static bool TryResolveStoragePath(
         IReadOnlyDictionary<string, string> args,
-        out string root,
-        out RootError? error)
+        out string storagePath,
+        out StoragePathError? error)
     {
-        if (args.TryGetValue("root", out var explicitRoot))
+        if (args.TryGetValue("storage-path", out var sp) && !string.IsNullOrWhiteSpace(sp))
         {
-            var docsPath = Path.Combine(explicitRoot, "docs");
-            if (!Directory.Exists(docsPath))
+            if (!Directory.Exists(sp))
             {
-                root = string.Empty;
-                error = new RootError(
-                    "docs_not_found",
-                    explicitRoot,
-                    $"В каталоге '{explicitRoot}' нет подкаталога 'docs/'.");
+                storagePath = string.Empty;
+                error = new StoragePathError(
+                    "storage_path_not_found",
+                    sp,
+                    $"Папка storage-path '{sp}' не существует.");
                 return false;
             }
-            root = explicitRoot;
+            storagePath = sp;
             error = null;
             return true;
         }
 
-        var current = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (current is not null)
-        {
-            if (Directory.Exists(Path.Combine(current.FullName, "docs")))
-            {
-                root = current.FullName;
-                error = null;
-                return true;
-            }
-            current = current.Parent;
-        }
-
-        root = string.Empty;
-        error = new RootError(
-            "docs_not_found",
+        storagePath = string.Empty;
+        error = new StoragePathError(
+            "missing_storage_path",
             Directory.GetCurrentDirectory(),
-            "Не найден каталог 'docs/' ни в текущей директории, ни выше по дереву. " +
-            "Используйте '--root=<path>' для явного указания корня проекта.");
+            "Параметр --storage-path=<path> обязателен; kernel инжектит его автоматически " +
+            "при обращении к /db/<graph>/rpc. Прямой вызов CLI с graph-командами без " +
+            "--storage-path — ошибка контракта.");
         return false;
     }
 
@@ -417,7 +386,7 @@ internal static class Dispatcher
 
     private sealed record ParamValidationError(string Code, string Message);
 
-    private sealed record RootError(string Code, string Path, string Message);
+    private sealed record StoragePathError(string Code, string Path, string Message);
 
     private sealed record DryRunError(string Code, string Message, string? Hint);
 }

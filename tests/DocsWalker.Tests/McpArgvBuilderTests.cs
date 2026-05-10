@@ -112,4 +112,28 @@ public class McpArgvBuilderTests
         var argv = McpArgvBuilder.BuildArgvFromArguments("get-map", null);
         Assert.Equal(new[] { "get-map" }, argv);
     }
+
+    [Fact]
+    public void BuildArgv_FiltersRootKey_EvenIfClientPassedIt()
+    {
+        // Защита: клиент не должен иметь возможности перенаправить kernel
+        // через arguments.root. Builder фильтрует ключ; --root= не появляется
+        // в argv. Kernel инжектит реальный --storage-path сам.
+        using var doc = JsonDocument.Parse(@"{""root"":""C:\\bogus"",""query"":""x""}");
+        var argv = McpArgvBuilder.BuildArgvFromArguments("search", doc.RootElement);
+        Assert.DoesNotContain(argv, a => a.StartsWith("--root="));
+        Assert.Contains("--query=x", argv);
+    }
+
+    [Fact]
+    public void BuildArgv_FiltersStoragePathKey_EvenIfClientPassedIt()
+    {
+        // Та же защита для нового имени параметра. Snake_case storage_path
+        // нормализуется в kebab storage-path, потом фильтруется.
+        using var doc = JsonDocument.Parse(@"{""storage_path"":""C:\\bogus"",""path"":""Doc""}");
+        var argv = McpArgvBuilder.BuildArgvFromArguments("get-by-path", doc.RootElement);
+        Assert.DoesNotContain(argv, a => a.StartsWith("--storage-path="));
+        Assert.DoesNotContain(argv, a => a.StartsWith("--storage_path="));
+        Assert.Contains("--path=Doc", argv);
+    }
 }

@@ -9,15 +9,17 @@ namespace DocsWalker.Cli.Cli.Handlers;
 
 /// <summary>
 /// Обработчики read-команд CLI. Каждая команда:
-/// 1. Загружает Схему и граф документов из <paramref name="root"/>/docs.
+/// 1. Загружает Схему и граф документов из <paramref name="storagePath"/>
+///    (папка <c>docs/</c> графа, передаётся kernel'ом через
+///    <c>--storage-path=</c>).
 /// 2. Дёргает <see cref="ReadApi"/>.
 /// 3. Печатает результат через <see cref="Output"/>.
 /// </summary>
 internal static class ReadHandlers
 {
-    public static int GetMap(string root)
+    public static int GetMap(string storagePath)
     {
-        return WithApi(root, api =>
+        return WithApi(storagePath, api =>
         {
             var map = api.ReadApi.GetMap();
             Output.WriteSuccess(ReadApiJson.MapToJson(map));
@@ -25,17 +27,14 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetNodes(string root, string idsParam)
+    public static int GetNodes(string storagePath, string idsParam)
     {
         var ids = ParseIds(idsParam);
-        return WithApi(root, api =>
+        return WithApi(storagePath, api =>
         {
             try
             {
                 var nodes = api.ReadApi.GetNodes(ids);
-                // Прямо запрошенные id идут первыми; auto-include-цели (#340)
-                // дописываются после ними в той же плоской выдаче. Для дешёвого
-                // обзора без полного text — см. get-subtree с fields=title.
                 var autoIncludes = api.ReadApi.CollectAutoIncludes(nodes);
                 var json = ReadApiJson.NodesToJson(nodes, autoIncludes);
                 Output.WriteSuccess(json);
@@ -49,9 +48,9 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetByPath(string root, string path, string? tree)
+    public static int GetByPath(string storagePath, string path, string? tree)
     {
-        return WithApi(root, api =>
+        return WithApi(storagePath, api =>
         {
             try
             {
@@ -70,10 +69,10 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetSubtree(string root, int id, string? tree, int? depth, IReadOnlyCollection<string>? fields)
+    public static int GetSubtree(string storagePath, int id, string? tree, int? depth, IReadOnlyCollection<string>? fields)
     {
         var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
-        return WithApi(root, api =>
+        return WithApi(storagePath, api =>
         {
             try
             {
@@ -91,10 +90,10 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetAncestors(string root, int id, string? tree)
+    public static int GetAncestors(string storagePath, int id, string? tree)
     {
         var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
-        return WithApi(root, api =>
+        return WithApi(storagePath, api =>
         {
             try
             {
@@ -110,9 +109,9 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetRefs(string root, int id, string? name)
+    public static int GetRefs(string storagePath, int id, string? name)
     {
-        return WithApi(root, api =>
+        return WithApi(storagePath, api =>
         {
             try
             {
@@ -128,9 +127,9 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetInRefs(string root, int id, string? name)
+    public static int GetInRefs(string storagePath, int id, string? name)
     {
-        return WithApi(root, api =>
+        return WithApi(storagePath, api =>
         {
             try
             {
@@ -146,18 +145,17 @@ internal static class ReadHandlers
         });
     }
 
-    public static int CheckIntegrity(string root)
+    public static int CheckIntegrity(string storagePath)
     {
-        var docsRoot = Path.Combine(root, "docs");
-        var schemaPath = Path.Combine(docsRoot, "Схема.yml");
-        var metaSchemaPath = Path.Combine(docsRoot, ".docswalker", "meta-schema.yml");
-        var sequencePath = Path.Combine(docsRoot, ".docswalker", "sequence.txt");
+        var schemaPath = Path.Combine(storagePath, "Схема.yml");
+        var metaSchemaPath = Path.Combine(storagePath, ".docswalker", "meta-schema.yml");
+        var sequencePath = Path.Combine(storagePath, ".docswalker", "sequence.txt");
 
         try
         {
             var meta = SchemaLoader.LoadMetaSchema(metaSchemaPath);
             var schema = SchemaLoader.LoadSchema(schemaPath);
-            var loaded = DocumentLoader.Load(docsRoot, schema);
+            var loaded = DocumentLoader.Load(storagePath, schema);
             int? sequence = File.Exists(sequencePath) ? new SequenceCounter(sequencePath).Read() : null;
             var api = new ReadApi(loaded.Graph, schema);
             var result = api.CheckIntegrity(meta, schema, sequence);
@@ -181,9 +179,9 @@ internal static class ReadHandlers
         }
     }
 
-    public static int Search(string root, string query)
+    public static int Search(string storagePath, string query)
     {
-        return WithApi(root, api =>
+        return WithApi(storagePath, api =>
         {
             try
             {
@@ -205,10 +203,9 @@ internal static class ReadHandlers
     /// Загружает Схему и граф один раз, отдаёт обёртку c <see cref="ReadApi"/>.
     /// Ошибки загрузки превращаются в structured CLI-ошибку с exit-кодом 1.
     /// </summary>
-    private static int WithApi(string root, Func<LoadedApi, int> action)
+    private static int WithApi(string storagePath, Func<LoadedApi, int> action)
     {
-        var docsRoot = Path.Combine(root, "docs");
-        var schemaPath = Path.Combine(docsRoot, "Схема.yml");
+        var schemaPath = Path.Combine(storagePath, "Схема.yml");
 
         SchemaDocument schema;
         try
@@ -224,7 +221,7 @@ internal static class ReadHandlers
         DocumentLoadResult loaded;
         try
         {
-            loaded = DocumentLoader.Load(docsRoot, schema);
+            loaded = DocumentLoader.Load(storagePath, schema);
         }
         catch (GraphLoadException ex)
         {
@@ -242,7 +239,6 @@ internal static class ReadHandlers
         var ids = new List<int>(parts.Length);
         foreach (var p in parts)
         {
-            // ArgParser/ParamType.IdList уже проверил формат.
             ids.Add(int.Parse(p.Trim(), System.Globalization.CultureInfo.InvariantCulture));
         }
         return ids;

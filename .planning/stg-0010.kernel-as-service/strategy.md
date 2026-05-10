@@ -216,7 +216,7 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
   параметром `--tree=` (default по новой логике), ошибки
   `tree_not_addressable` / `tree_required`. `dotnet test` зелёный
   (новые тесты на oба errors + sibling-collision на create/move/update).
-- [ ] (03) client-server-reshape — **атомарный шаг,** перестраивает
+- [+] (03) client-server-reshape — **атомарный шаг,** перестраивает
   весь client-server контракт. Промежуточно делить нельзя: kernel
   и клиент должны переходить на новый URL/протокол одновременно,
   иначе e2e ломается. Содержание:

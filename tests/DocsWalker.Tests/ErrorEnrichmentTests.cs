@@ -12,7 +12,7 @@ public class ErrorEnrichmentTests
     [Fact]
     public void TryDescribeType_KnownType_ReturnsDescribeTypeShape()
     {
-        var json = ErrorEnrichment.TryDescribeType(TestPaths.RepoRoot, "rule");
+        var json = ErrorEnrichment.TryDescribeType(TestPaths.DocsRoot, "rule");
         Assert.NotNull(json);
         var obj = json!.AsObject();
         Assert.Equal("rule", (string?)obj["name"]);
@@ -28,8 +28,8 @@ public class ErrorEnrichmentTests
     [Fact]
     public void TryDescribeType_NullOrEmpty_ReturnsNull()
     {
-        Assert.Null(ErrorEnrichment.TryDescribeType(TestPaths.RepoRoot, null));
-        Assert.Null(ErrorEnrichment.TryDescribeType(TestPaths.RepoRoot, string.Empty));
+        Assert.Null(ErrorEnrichment.TryDescribeType(TestPaths.DocsRoot, null));
+        Assert.Null(ErrorEnrichment.TryDescribeType(TestPaths.DocsRoot, string.Empty));
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public class ErrorEnrichmentTests
     {
         // Не существует, но enrichment не должен бросить — просто отдать null,
         // чтобы основная ошибка дошла до LLM как есть.
-        var json = ErrorEnrichment.TryDescribeType(TestPaths.RepoRoot, "definitely_not_a_type");
+        var json = ErrorEnrichment.TryDescribeType(TestPaths.DocsRoot, "definitely_not_a_type");
         Assert.Null(json);
     }
 }

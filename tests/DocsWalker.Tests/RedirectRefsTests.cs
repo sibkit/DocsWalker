@@ -15,7 +15,7 @@ public class RedirectRefsTests
     public void RedirectRefs_FromPathChildOnly_NoEffectExplainsPathChildSkip()
     {
         using var env = new WriteTestEnvironment();
-        var api = new WriteApi(WriteContext.FromRoot(env.Root));
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
 
         // id=8 — definition «узел» внутри section «Модель данных» (id=2);
         // см. ReadApiTests.FormatPath_BuildsHumanReadablePath. Его in-refs —
@@ -35,7 +35,7 @@ public class RedirectRefsTests
     public void RedirectRefs_FromUnknownIdWithNoIncomingRefs_NoEffectGenericHint()
     {
         using var env = new WriteTestEnvironment();
-        var api = new WriteApi(WriteContext.FromRoot(env.Root));
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
 
         // Реальный узел без cross-refs на него и без path-children: id корня (0)
         // имеет path-children, поэтому не подходит. Выбираем «глубокий лист»:

@@ -10,16 +10,16 @@ namespace DocsWalker.Cli.Cli.Kernel;
 
 /// <summary>
 /// Клиентский путь CLI поверх HTTP+JSON-RPC. Все non-server CLI команды идут через
-/// <c>POST /rpc</c> ядра, поднятого <see cref="KernelClient.EnsureRunningAsync"/>.
+/// <c>POST /db/{graph}/rpc</c> kernel'а, заранее запущенного пользователем (kernel-config'ом).
+/// Auto-spawn убран в stg-0010 step-04.
 /// <para>
 /// Алгоритм:
 /// </para>
 /// <list type="number">
 ///   <item><see cref="ArgParser.Parse"/> — argv → command + params dict.</item>
-///   <item><see cref="KernelClient.EnsureRunningAsync"/> — discovery + spawn.</item>
 ///   <item>Сборка JSON-RPC <c>tools/call</c>: <c>name</c> = command, <c>arguments</c> =
-///   <c>{root, ...params}</c>.</item>
-///   <item>POST на <c>/rpc</c>; разбор <see cref="JsonRpcResponse"/>.</item>
+///   params (без <c>root</c> / <c>storage_path</c> — kernel сам знает по graph-name).</item>
+///   <item>POST на <c>/db/{graph}/rpc</c>; разбор <see cref="JsonRpcResponse"/>.</item>
 ///   <item>Печать <c>content[0].text</c> в stdout (или stderr при <c>isError</c>) +
 ///   exit-code 0/1.</item>
 /// </list>
@@ -32,7 +32,7 @@ internal static class KernelHttpClient
     /// </summary>
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
 
-    public static async Task<int> SendCommandAsync(string[] argv, string rootPath, CancellationToken ct = default)
+    public static async Task<int> SendCommandAsync(string[] argv, ClientConfig config, CancellationToken ct = default)
     {
         var (parsed, parseError) = ArgParser.Parse(argv);
         if (parsed is null)
@@ -41,50 +41,14 @@ internal static class KernelHttpClient
             return 1;
         }
 
-        // Один HttpClient на всю операцию: и для health-handshake в KernelClient,
-        // и для самого /rpc-вызова. Disposable, but RequestTimeout — глобальный.
         using var http = new HttpClient { Timeout = RequestTimeout };
 
-        var cliExe = Environment.ProcessPath
-                     ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
-        if (string.IsNullOrEmpty(cliExe))
-        {
-            Output.WriteError("cli_exe_not_found", path: null,
-                "Не удалось определить путь к собственному exe (Environment.ProcessPath null).");
-            return 1;
-        }
-
-        string kernelExe;
-        try { kernelExe = KernelSpawner.ResolveKernelExePath(cliExe); }
-        catch (KernelSpawnException ex)
-        {
-            Output.WriteError(ex.Code, path: null, ex.Message);
-            return 1;
-        }
-
-        KernelEndpoint endpoint;
-        try
-        {
-            endpoint = await KernelClient.EnsureRunningAsync(kernelExe, http, ct);
-        }
-        catch (KernelStartException ex)
-        {
-            Output.WriteError(ex.Code, path: null, ex.Message);
-            return 1;
-        }
-        catch (KernelSpawnException ex)
-        {
-            Output.WriteError(ex.Code, path: null, ex.Message);
-            return 1;
-        }
-
-        // Собираем arguments: все params из argv (как строки) + явный root.
-        var arguments = new JsonObject { ["root"] = rootPath };
+        // Собираем arguments: все params из argv (как строки), без root/storage-path.
+        // Kernel инжектит storage-path на своей стороне по имени графа из URL.
+        var arguments = new JsonObject();
         foreach (var (k, v) in parsed.Params)
         {
-            if (k == "root") continue;
-            // Все значения — как строки. Server'овский McpServer.JsonValueToCliString
-            // (вызывается RpcDispatcher) принимает string и кладёт в --key=value as-is.
+            if (k == "root" || k == "storage-path") continue;
             arguments[k.Replace('-', '_')] = v;
         }
 
@@ -103,18 +67,21 @@ internal static class KernelHttpClient
         };
         var requestJson = requestObj.ToJsonString();
 
+        var rpcUrl = $"http://{config.KernelHost}:{config.KernelPort}/db/{config.Graph}/rpc";
+
         HttpResponseMessage httpResp;
         try
         {
             using var content = new StringContent(requestJson, Encoding.UTF8);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
-            httpResp = await http.PostAsync($"{endpoint.Url}/rpc", content, ct);
+            httpResp = await http.PostAsync(rpcUrl, content, ct);
         }
         catch (HttpRequestException ex)
         {
             Output.WriteError("kernel_unreachable", path: null,
-                $"Не удалось дозвониться до ядра ({endpoint.Url}): {ex.Message}",
-                hint: "Проверьте, не убито ли ядро. Удалите kernel.json и повторите вызов.");
+                $"Не удалось дозвониться до ядра ({rpcUrl}): {ex.Message}",
+                hint: "Проверьте, что DocsWalker.Kernel.exe запущен с корректным kernel-config'ом " +
+                      "и что host/port в .dw/client.json совпадают с kernel-config.");
             return 1;
         }
         catch (TaskCanceledException) when (ct.IsCancellationRequested)
@@ -184,7 +151,6 @@ internal static class KernelHttpClient
             }
             if (toolResult is null || toolResult.Content.Count == 0)
             {
-                // Пустой результат — успех без вывода. Exit 0.
                 return 0;
             }
 

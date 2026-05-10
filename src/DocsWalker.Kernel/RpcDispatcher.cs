@@ -11,20 +11,16 @@ using Microsoft.Extensions.Hosting;
 namespace DocsWalker.Kernel;
 
 /// <summary>
-/// JSON-RPC 2.0 endpoint ядра DocsWalker. Принимает <c>POST /rpc</c>, диспатчит
-/// <c>initialize</c> / <c>tools/list</c> / <c>tools/call</c> / <c>shutdown</c>.
+/// JSON-RPC 2.0 endpoint ядра DocsWalker. Принимает <c>POST /db/{graph}/rpc</c>,
+/// диспатчит <c>initialize</c> / <c>tools/list</c> / <c>tools/call</c> /
+/// <c>shutdown</c>.
 /// <para>
-/// Отличия от <see cref="McpServer"/>:
+/// Контракт: имя графа лежит в URL-сегменте, а не в <c>arguments.root</c>.
+/// Kernel по имени графа находит storage-path в <see cref="GraphRegistry"/> и
+/// инжектит <c>--storage-path=&lt;path&gt;</c> в argv команды перед вызовом
+/// <see cref="DocsWalker.Cli.Cli.Dispatcher.Run"/>. Клиент storage-path не
+/// передаёт и не видит — это server-side контракт.
 /// </para>
-/// <list type="bullet">
-///   <item>Транспорт — HTTP, не stdio (frame-on-newline).</item>
-///   <item><c>tools/call</c> требует <c>arguments.root</c> — ядро multi-root
-///   (см. (#305) docs/DocsWalker.yml), routing решается per-call.</item>
-///   <item>Per-root semaphore из <see cref="RootRegistry"/> (вместо global #313).</item>
-///   <item>Capture stdout/stderr — пока через глобальный mutex (см. комментарий
-///   в <see cref="ExecuteWithCaptureAsync"/>); per-root concurrency на capture
-///   требует TextWriter-параметра в handlers — отдельный шаг.</item>
-/// </list>
 /// </summary>
 internal sealed class RpcDispatcher
 {
@@ -32,10 +28,6 @@ internal sealed class RpcDispatcher
     private const string ServerVersion = "0.1";
     private const string McpProtocolVersion = "2024-11-05";
 
-    /// <summary>
-    /// Source-gen-context с relaxed-encoder: не экранирует не-ASCII (кириллицу) в JSON.
-    /// Соответствует правилу (#221) docs/DocsWalker.yml.
-    /// </summary>
     private static readonly McpJsonContext RelaxedCtx = new(
         new JsonSerializerOptions(McpJsonContext.Default.Options)
         {
@@ -45,19 +37,19 @@ internal sealed class RpcDispatcher
     /// <summary>
     /// Глобальный mutex на capture stdout/stderr. <see cref="Console.SetOut(TextWriter)"/>
     /// process-global; пока handlers пишут в Console.Out, параллельные вызовы
-    /// разных roots переписали бы друг другу буфер. Per-root semaphore из
-    /// <see cref="RootRegistry"/> блокирует параллельность только на одном root —
-    /// между разными roots она существует. До тех пор, пока handlers не примут
+    /// разных графов переписали бы друг другу буфер. Per-graph semaphore из
+    /// <see cref="GraphRegistry"/> блокирует параллельность только на одном графе —
+    /// между разными графами она существует. До тех пор, пока handlers не примут
     /// TextWriter явным параметром, capture-фаза сериализуется глобально.
     /// </summary>
     private readonly SemaphoreSlim _globalCaptureLock = new(1, 1);
 
-    private readonly RootRegistry _registry;
+    private readonly GraphRegistry _registry;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly Func<string[], int> _dispatcher;
 
     public RpcDispatcher(
-        RootRegistry registry,
+        GraphRegistry registry,
         IHostApplicationLifetime lifetime,
         Func<string[], int> dispatcher)
     {
@@ -67,10 +59,10 @@ internal sealed class RpcDispatcher
     }
 
     /// <summary>
-    /// Точка входа для <c>MapPost("/rpc", ...)</c>. Читает body, дёргает
-    /// <see cref="HandleMessageAsync"/>, пишет ответ как application/json.
+    /// Точка входа для <c>MapPost("/db/{graph}/rpc", ...)</c>. Читает body,
+    /// дёргает <see cref="HandleMessageAsync"/>, пишет ответ как application/json.
     /// </summary>
-    public async Task HandleAsync(HttpContext ctx)
+    public async Task HandleAsync(HttpContext ctx, string graphName)
     {
         string body;
         using (var reader = new StreamReader(ctx.Request.Body, Encoding.UTF8))
@@ -78,9 +70,8 @@ internal sealed class RpcDispatcher
             body = await reader.ReadToEndAsync(ctx.RequestAborted);
         }
 
-        var responseJson = await HandleMessageAsync(body, ctx.RequestAborted);
+        var responseJson = await HandleMessageAsync(body, graphName, ctx.RequestAborted);
 
-        // notification (responseJson==null) — HTTP 204 No Content; протокол не запрещает.
         if (responseJson is null)
         {
             ctx.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -93,10 +84,10 @@ internal sealed class RpcDispatcher
     }
 
     /// <summary>
-    /// Обрабатывает одно входящее JSON-RPC-сообщение. Возвращает строку-ответ или null
-    /// для notification (request без id).
+    /// Обрабатывает одно входящее JSON-RPC-сообщение. Возвращает строку-ответ
+    /// или null для notification (request без id).
     /// </summary>
-    public async Task<string?> HandleMessageAsync(string requestJson, CancellationToken ct)
+    public async Task<string?> HandleMessageAsync(string requestJson, string graphName, CancellationToken ct)
     {
         JsonRpcRequest? request;
         try
@@ -126,7 +117,7 @@ internal sealed class RpcDispatcher
         JsonRpcResponse response;
         try
         {
-            response = await DispatchAsync(request, ct);
+            response = await DispatchAsync(request, graphName, ct);
         }
         catch (Exception ex)
         {
@@ -138,15 +129,15 @@ internal sealed class RpcDispatcher
         return SerializeResponse(response);
     }
 
-    private async Task<JsonRpcResponse> DispatchAsync(JsonRpcRequest request, CancellationToken ct)
+    private async Task<JsonRpcResponse> DispatchAsync(JsonRpcRequest request, string graphName, CancellationToken ct)
     {
         return request.Method switch
         {
             "initialize" => HandleInitialize(request),
             "notifications/initialized" => EmptyOk(request.Id),
             "notifications/cancelled"   => EmptyOk(request.Id),
-            "tools/list" => HandleListTools(request),
-            "tools/call" => await HandleCallToolAsync(request, ct),
+            "tools/list" => HandleListTools(request, graphName),
+            "tools/call" => await HandleCallToolAsync(request, graphName, ct),
             "shutdown"   => HandleShutdown(request),
             _ => MakeError(request.Id, JsonRpcErrorCodes.MethodNotFound,
                 $"method not found: {request.Method}"),
@@ -165,18 +156,17 @@ internal sealed class RpcDispatcher
     }
 
     /// <summary>
-    /// <c>tools/list</c> — необязательный <c>params.root</c>: если указан, грузим
-    /// проектную Схему этого root'а для динамической inputSchema у <c>create-node</c>.
-    /// Без <c>root</c> — отдаём базовую schema (без oneOf-ветвей по типам). LLM-клиент
-    /// в реальности всегда знает root (через MCP-wrapper или CLI), так что отсутствие
-    /// root в <c>tools/list</c> — диагностический сценарий (curl).
+    /// <c>tools/list</c> — грузим Схему графа по имени из URL для динамической
+    /// inputSchema у <c>create-node</c>. Если граф неизвестен или Схемы нет —
+    /// отдаём базовую схему (без oneOf-веток по типам); это диагностический
+    /// сценарий, обычно MCP-клиент уже знает корректный URL.
     /// </summary>
-    private JsonRpcResponse HandleListTools(JsonRpcRequest request)
+    private JsonRpcResponse HandleListTools(JsonRpcRequest request, string graphName)
     {
         SchemaDocument? schema = null;
-        if (TryExtractRoot(request.Params, out var root, error: out _))
+        if (_registry.TryGet(graphName, out var entry))
         {
-            schema = TryLoadSchema(root);
+            schema = TryLoadSchema(entry.StoragePath);
         }
 
         var descriptors = CommandsToTools.Build(schema);
@@ -188,7 +178,7 @@ internal sealed class RpcDispatcher
         return MakeOk(request.Id, JsonSerializer.SerializeToElement(result, RelaxedCtx.ListToolsResult));
     }
 
-    private async Task<JsonRpcResponse> HandleCallToolAsync(JsonRpcRequest request, CancellationToken ct)
+    private async Task<JsonRpcResponse> HandleCallToolAsync(JsonRpcRequest request, string graphName, CancellationToken ct)
     {
         if (!request.Params.HasValue || request.Params.Value.ValueKind != JsonValueKind.Object)
         {
@@ -214,18 +204,16 @@ internal sealed class RpcDispatcher
                 "params.name is required");
         }
 
-        // Multi-root routing: arguments.root — обязателен. Без него мы не знаем,
-        // куда направить запрос (см. (#305) — ядро multi-root, routing per-call).
-        if (!TryExtractRoot(callParams.Arguments, out var root, out var rootError))
+        // Routing по имени графа из URL. Неизвестный граф → unknown_graph.
+        if (!_registry.TryGet(graphName, out var entry))
         {
-            return MakeError(request.Id, JsonRpcErrorCodes.InvalidParams, rootError ?? "root is required");
+            return MakeError(request.Id, JsonRpcErrorCodes.InvalidParams,
+                $"unknown_graph: '{graphName}' (kernel-config содержит только статически зарегистрированные графы)");
         }
 
-        // Schema для динамических tool'ов (create-node) грузим лениво на root,
-        // чтобы валидация JsonValueToCliString правильно различала array-of-object
-        // от IdList. Грузим лучше один раз, но в step-02 пока — на каждый вызов
-        // (handlers сами reload — sole-writer гарантирует консистентность).
-        var schema = TryLoadSchema(root);
+        // Schema для динамических tool'ов (create-node) грузим лениво на каждый
+        // вызов (handlers — sole-writer контракт, переключаются на reload).
+        var schema = TryLoadSchema(entry.StoragePath);
         var descriptors = CommandsToTools.Build(schema);
         var toolByName = descriptors.ToDictionary(d => d.Name, StringComparer.Ordinal);
         if (!toolByName.TryGetValue(callParams.Name, out var tool))
@@ -245,9 +233,13 @@ internal sealed class RpcDispatcher
             return MakeError(request.Id, JsonRpcErrorCodes.InvalidParams, ex.Message);
         }
 
-        var entry = _registry.GetOrAdd(root);
+        // Kernel инжектит --storage-path=<docs-folder> в argv. McpArgvBuilder
+        // фильтрует root/storage_path из user-input, так что коллизий нет.
+        var argvWithStorage = new string[argv.Length + 1];
+        Array.Copy(argv, argvWithStorage, argv.Length);
+        argvWithStorage[^1] = $"--storage-path={entry.StoragePath}";
 
-        var (exitCode, stdout, stderr) = await ExecuteWithCaptureAsync(entry, argv, ct);
+        var (exitCode, stdout, stderr) = await ExecuteWithCaptureAsync(entry, argvWithStorage, ct);
 
         var text = exitCode == 0
             ? (string.IsNullOrEmpty(stdout) ? string.Empty : stdout)
@@ -269,14 +261,15 @@ internal sealed class RpcDispatcher
     }
 
     private async Task<(int ExitCode, string Stdout, string Stderr)> ExecuteWithCaptureAsync(
-        RootEntry entry, string[] argv, CancellationToken ct)
+        GraphEntry entry, string[] argv, CancellationToken ct)
     {
-        // Двойная сериализация: per-root semaphore (заявленный инвариант) + global
+        // Двойная сериализация: per-graph semaphore (заявленный инвариант) + global
         // capture-lock (вынужденный костыль из-за process-global Console.SetOut).
         // global снимется в более позднем шаге, когда handlers начнут принимать TextWriter.
         await entry.Semaphore.WaitAsync(ct);
         try
         {
+            _registry.Touch(entry);
             await _globalCaptureLock.WaitAsync(ct);
             try
             {
@@ -319,49 +312,19 @@ internal sealed class RpcDispatcher
         }
     }
 
-    /// <summary>
-    /// Извлекает <c>root</c> из arguments-объекта. Принимаем оба варианта ключа: <c>root</c>
-    /// (CLI-стандарт) и <c>"root"</c> (явный override). Если arguments == null или поле
-    /// отсутствует — error.
-    /// </summary>
-    private static bool TryExtractRoot(JsonElement? arguments, out string root, out string? error)
+    private static SchemaDocument? TryLoadSchema(string storagePath)
     {
-        root = string.Empty;
-        if (!arguments.HasValue || arguments.Value.ValueKind != JsonValueKind.Object)
-        {
-            error = "arguments.root is required (kernel multi-root, no auto-detect)";
-            return false;
-        }
-        if (!arguments.Value.TryGetProperty("root", out var rootElem)
-            || rootElem.ValueKind != JsonValueKind.String)
-        {
-            error = "arguments.root is required (kernel multi-root, no auto-detect)";
-            return false;
-        }
-        var raw = rootElem.GetString();
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            error = "arguments.root must be non-empty string";
-            return false;
-        }
-        root = raw;
-        error = null;
-        return true;
-    }
-
-    private static SchemaDocument? TryLoadSchema(string root)
-    {
-        var schemaPath = Path.Combine(root, "docs", "Схема.yml");
+        var schemaPath = Path.Combine(storagePath, "Схема.yml");
         if (!File.Exists(schemaPath)) return null;
         try { return SchemaLoader.LoadSchema(schemaPath); }
         catch { return null; }
     }
 
     /// <summary>
-    /// Калька с <see cref="McpServer.BuildInputSchema"/> — JSON-Schema для inputSchema MCP-tool.
-    /// Скопировано (а не вынесено в общий helper), чтобы не плодить публичный API в Core
-    /// для одного потребителя на этой стадии. После step-04/05 при необходимости
-    /// пере-фактории — обоих перенесём в один helper.
+    /// Калька с <see cref="DocsWalker.Core.Mcp.McpServer.BuildInputSchema"/> —
+    /// JSON-Schema для inputSchema MCP-tool. Скопировано (а не вынесено в общий
+    /// helper), чтобы не плодить публичный API в Core для одного потребителя на
+    /// этой стадии.
     /// </summary>
     private static JsonObject BuildInputSchema(McpToolDescriptor tool)
     {

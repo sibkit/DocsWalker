@@ -1,68 +1,42 @@
-using System.Net.Http;
 using DocsWalker.Cli.Cli.Kernel;
 using DocsWalker.Cli.Cli.Repl;
 
 namespace DocsWalker.Cli.Cli.Handlers;
 
 /// <summary>
-/// Команда <c>repl</c> — интерактивный HTTP-клиент к ядру DocsWalker. На старте:
-/// resolve kernel exe → <see cref="KernelClient.EnsureRunningAsync"/> (auto-spawn
-/// при отсутствии). В цикле: <see cref="LineReader.ReadLine"/> → <see cref="ReplTokenizer.Tokenize"/>
-/// → <see cref="KernelHttpClient.SendCommandAsync"/> с фиксированным <c>--root=</c>.
-/// <para>
-/// Strategy.md «Принятые решения» #11; step-06.
-/// </para>
+/// Команда <c>repl</c> — интерактивный HTTP-клиент к ядру DocsWalker. На старте
+/// читает <see cref="ClientConfig"/> поиском <c>.dw/client.json</c> вверх от
+/// cwd. В цикле: <see cref="LineReader.ReadLine"/> → <see cref="ReplTokenizer.Tokenize"/>
+/// → <see cref="KernelHttpClient.SendCommandAsync"/> с фиксированным <c>config</c>.
+/// Никакого <c>--root=</c> или <c>--storage-path=</c> в argv не подмешиваем —
+/// kernel знает graph по имени из URL и инжектит storage-path сам.
 /// </summary>
 internal static class ReplHandler
 {
-    public static int Run(string root, IReadOnlyDictionary<string, string> args)
+    public static int Run(IReadOnlyDictionary<string, string> args)
     {
         var quiet = ParseBool(args, "quiet");
-        return RunImplAsync(root, quiet).GetAwaiter().GetResult();
+
+        ClientConfig cfg;
+        try { cfg = ClientConfig.Resolve(); }
+        catch (ClientConfigException ex)
+        {
+            Output.WriteError(ex.Code, path: null, ex.Message);
+            return 1;
+        }
+
+        return RunImplAsync(cfg, quiet).GetAwaiter().GetResult();
     }
 
-    private static async Task<int> RunImplAsync(string root, bool quiet)
+    private static async Task<int> RunImplAsync(ClientConfig cfg, bool quiet)
     {
-        var cliExe = Environment.ProcessPath
-                     ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
-        if (string.IsNullOrEmpty(cliExe))
-        {
-            Output.WriteError("cli_exe_not_found", path: null,
-                "Не удалось определить путь к собственному exe.");
-            return 1;
-        }
-        string kernelExe;
-        try { kernelExe = KernelSpawner.ResolveKernelExePath(cliExe); }
-        catch (KernelSpawnException ex)
-        {
-            Output.WriteError(ex.Code, path: null, ex.Message);
-            return 1;
-        }
-
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-        using var cts  = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
-
-        KernelEndpoint endpoint;
-        try
-        {
-            endpoint = await KernelClient.EnsureRunningAsync(kernelExe, http, cts.Token);
-        }
-        catch (KernelStartException ex)
-        {
-            Output.WriteError(ex.Code, path: null, ex.Message);
-            return 1;
-        }
-        catch (KernelSpawnException ex)
-        {
-            Output.WriteError(ex.Code, path: null, ex.Message);
-            return 1;
-        }
 
         if (!quiet)
         {
             Console.Error.WriteLine(
-                $"DocsWalker REPL: root={root}, kernel={endpoint.Url}");
+                $"DocsWalker REPL: graph={cfg.Graph}, kernel={cfg.KernelHost}:{cfg.KernelPort}");
             Console.Error.WriteLine(
                 "Команды — без префикса 'docswalker'. Выход: ':quit'/':exit'/Ctrl+D. Ctrl+C — отмена строки.");
         }
@@ -75,7 +49,7 @@ internal static class ReplHandler
             string? line;
             try { line = LineReader.ReadLine(cts.Token); }
             catch (OperationCanceledException) { break; }
-            if (line is null) break; // EOF
+            if (line is null) break;
 
             var trimmed = line.Trim();
             if (trimmed.Length == 0) continue;
@@ -84,14 +58,9 @@ internal static class ReplHandler
             var argv = ReplTokenizer.Tokenize(trimmed);
             if (argv.Length == 0) continue;
 
-            // Подмешиваем --root в argv — KernelHttpClient прочитает и положит в
-            // JSON-RPC arguments. Если пользователь явно задал свой --root в
-            // строке REPL, мы НЕ перезатираем (REPL-root — fallback, не lockdown).
-            var argvWithExtras = AppendIfMissing(argv, "--root=", root);
-
             try
             {
-                _ = await KernelHttpClient.SendCommandAsync(argvWithExtras, root, cts.Token);
+                _ = await KernelHttpClient.SendCommandAsync(argv, cfg, cts.Token);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
@@ -102,20 +71,6 @@ internal static class ReplHandler
 
         if (!quiet) Console.Error.WriteLine("DocsWalker REPL: bye");
         return 0;
-    }
-
-    /// <summary>
-    /// Добавляет <c>--key=value</c> в argv, если ни один токен не начинается с <c>--key=</c>.
-    /// Используется чтобы не перезатереть пользовательский --root в REPL-строке.
-    /// </summary>
-    private static string[] AppendIfMissing(string[] argv, string keyPrefix, string value)
-    {
-        foreach (var t in argv)
-            if (t.StartsWith(keyPrefix, StringComparison.Ordinal)) return argv;
-        var next = new string[argv.Length + 1];
-        Array.Copy(argv, next, argv.Length);
-        next[^1] = $"{keyPrefix}{value}";
-        return next;
     }
 
     private static bool ParseBool(IReadOnlyDictionary<string, string> args, string key)

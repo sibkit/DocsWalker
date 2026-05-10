@@ -144,29 +144,28 @@ internal static class Commands
                 },
                 Opt("command", ParamType.String, "Kebab-имя команды для targeted-выдачи. Без параметра — манифест всех команд.")),
 
-            // REPL поверх ядра (stg-0008 step-06) — интерактивный HTTP-клиент к
-            // DocsWalker.Kernel.exe. Каждая введённая команда уходит как tools/call с
-            // фиксированным root REPL'а.
+            // REPL поверх ядра — интерактивный HTTP-клиент к DocsWalker.Kernel.exe.
+            // Читает .dw/client.json (kernel host/port + graph) поиском вверх от cwd.
+            // Каждая введённая команда уходит как tools/call на /db/{graph}/rpc.
             Read("repl",
-                desc: "Интерактивный REPL-клиент DocsWalker. Каждая введённая команда (без префикса 'docswalker') уходит в kernel /rpc как tools/call. Ядро auto-spawn'ится при отсутствии.",
+                desc: "Интерактивный REPL-клиент DocsWalker. Читает .dw/client.json (host/port/graph kernel'а) поиском вверх от cwd. Каждая введённая команда (без префикса 'docswalker') уходит в kernel /db/{graph}/rpc как tools/call. Kernel должен быть запущен заранее (auto-spawn убран в stg-0010).",
                 examples: new[]
                 {
-                    "docswalker repl --root=.",
-                    "docswalker repl --root=. --quiet=true",
+                    "docswalker repl",
+                    "docswalker repl --quiet=true",
                 },
-                Req("root",  ParamType.String, "Корневой каталог проекта (содержит docs/)."),
                 Opt("quiet", ParamType.String, "Глушит баннер старта и приветствие в stderr (true/false). По умолчанию false.")),
 
-            // MCP-wrapper (stg-0008 step-05) — тонкий stdio↔HTTP bridge между Claude Code
-            // (JSON-RPC 2.0 поверх stdio) и DocsWalker.Kernel.exe (POST /rpc). Без бизнес-логики.
+            // MCP-wrapper — тонкий stdio↔HTTP bridge между Claude Code (JSON-RPC 2.0
+            // поверх stdio) и DocsWalker.Kernel.exe (POST /db/{graph}/rpc). Читает
+            // .dw/client.json для определения kernel host/port + graph.
             Read("mcp_server",
-                desc: "Тонкий stdio↔HTTP bridge между MCP-клиентом (Claude Code) и DocsWalker.Kernel.exe: читает JSON-RPC frames из stdin, подмешивает фиксированный root, форвардит в /rpc ядра. Ядро auto-spawn'ится при отсутствии. Команда вызывается клиентом через mcpServers-запись в конфиге, не вручную.",
+                desc: "Тонкий stdio↔HTTP bridge между MCP-клиентом (Claude Code) и DocsWalker.Kernel.exe: читает JSON-RPC frames из stdin, форвардит в /db/{graph}/rpc ядра. Конфигурация через .dw/client.json (поиск вверх от cwd). Kernel должен быть запущен заранее (auto-spawn убран в stg-0010). Команда вызывается клиентом через mcpServers-запись в конфиге, не вручную.",
                 examples: new[]
                 {
-                    "docswalker mcp-server --root=.",
-                    "docswalker mcp-server --root=. --quiet=true",
+                    "docswalker mcp-server",
+                    "docswalker mcp-server --quiet=true",
                 },
-                Req("root",  ParamType.String, "Корневой каталог проекта (содержит подкаталог docs/)."),
                 Opt("quiet", ParamType.String, "Глушит баннер старта в stderr (true/false). По умолчанию false.")),
 
             // Запись

@@ -13,9 +13,30 @@ namespace DocsWalker.Core.Mcp;
 /// Без <see cref="McpToolParam"/>-контекста массивы всегда собираются как CSV
 /// (backward-compat для unit-тестов).
 /// </para>
+/// <para>
+/// Filter <see cref="FilteredKeys"/>: <c>root</c> / <c>storage_path</c> в
+/// user-input игнорируются. Storage-path задаётся kernel'ом из
+/// kernel-config'а (по имени графа из URL <c>/db/&lt;name&gt;/rpc</c>) и
+/// инжектится в argv в <see cref="DocsWalker.Kernel.RpcDispatcher"/> уже
+/// после этого билдера. Без фильтра LLM-клиент мог бы передать
+/// <c>arguments.root=&quot;C:\\другая\\папка&quot;</c> и перенаправить kernel
+/// на чужой граф.
+/// </para>
 /// </summary>
 public static class McpArgvBuilder
 {
+    /// <summary>
+    /// Ключи, которые игнорируются при сборке argv. <c>root</c> остался для
+    /// обратной совместимости со старыми клиентами (они слали его в
+    /// arguments) — теперь это server-side контракт. <c>storage-path</c>
+    /// инжектится kernel'ом, в user-input не должен встречаться.
+    /// </summary>
+    private static readonly HashSet<string> FilteredKeys = new(StringComparer.Ordinal)
+    {
+        "root",
+        "storage-path",
+    };
+
     public static string[] BuildArgvFromArguments(
         string toolName,
         JsonElement? arguments,
@@ -32,6 +53,8 @@ public static class McpArgvBuilder
         foreach (var prop in args.EnumerateObject())
         {
             var key = prop.Name.Replace('_', '-');
+            if (FilteredKeys.Contains(key)) continue;
+
             McpToolParam? paramSpec = null;
             paramByName?.TryGetValue(key, out paramSpec);
             var value = JsonValueToCliString(prop.Value, paramSpec);

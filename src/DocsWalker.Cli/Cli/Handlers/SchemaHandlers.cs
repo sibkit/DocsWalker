@@ -7,9 +7,9 @@ namespace DocsWalker.Cli.Cli.Handlers;
 
 internal static class SchemaHandlers
 {
-    public static int GetMetaSchema(string root)
+    public static int GetMetaSchema(string storagePath)
     {
-        var path = Path.Combine(root, "docs", ".docswalker", "meta-schema.yml");
+        var path = Path.Combine(storagePath, ".docswalker", "meta-schema.yml");
         try
         {
             var ms = SchemaLoader.LoadMetaSchema(path);
@@ -23,9 +23,9 @@ internal static class SchemaHandlers
         }
     }
 
-    public static int GetSchema(string root)
+    public static int GetSchema(string storagePath)
     {
-        var path = Path.Combine(root, "docs", "Схема.yml");
+        var path = Path.Combine(storagePath, "Схема.yml");
         try
         {
             var schema = SchemaLoader.LoadSchema(path);
@@ -44,9 +44,9 @@ internal static class SchemaHandlers
     /// Граф для <c>describe-type</c> не нужен — операция чисто схемная; чтобы не
     /// платить токенами за <c>get-schema</c>, экономим LLM.
     /// </summary>
-    public static int DescribeType(string root, string name)
+    public static int DescribeType(string storagePath, string name)
     {
-        var path = Path.Combine(root, "docs", "Схема.yml");
+        var path = Path.Combine(storagePath, "Схема.yml");
         try
         {
             var schema = SchemaLoader.LoadSchema(path);
@@ -76,10 +76,9 @@ internal static class SchemaHandlers
     /// trees, snapshot) остаются. Невалидное имя — exit 1 с <c>unknown_command</c>.
     /// </para>
     /// </summary>
-    public static int GetUsageGuide(string root, string? commandFilter = null)
+    public static int GetUsageGuide(string storagePath, string? commandFilter = null)
     {
-        var docsRoot = Path.Combine(root, "docs");
-        var schemaPath = Path.Combine(docsRoot, "Схема.yml");
+        var schemaPath = Path.Combine(storagePath, "Схема.yml");
 
         SchemaDocument schema;
         try { schema = SchemaLoader.LoadSchema(schemaPath); }
@@ -90,7 +89,7 @@ internal static class SchemaHandlers
         }
 
         DocumentLoadResult loaded;
-        try { loaded = DocumentLoader.Load(docsRoot, schema); }
+        try { loaded = DocumentLoader.Load(storagePath, schema); }
         catch (GraphLoadException ex)
         {
             Output.WriteError(ex.Code, ex.FilePath, ex.Message);

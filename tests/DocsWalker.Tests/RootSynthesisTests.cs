@@ -94,7 +94,7 @@ public class RootSynthesisTests
     public void UpdateNode_RootId_ThrowsCannotModifyRoot()
     {
         using var env = new WriteTestEnvironment();
-        var api = new WriteApi(WriteContext.FromRoot(env.Root));
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
         var op = new UpdateNodeOp(Id: 0, NewTitle: "новый", NewText: null);
         var ex = Assert.Throws<WriteApiException>(() => api.ApplyOne(op));
         Assert.Equal("cannot_modify_root", ex.Code);
@@ -104,7 +104,7 @@ public class RootSynthesisTests
     public void DeleteNodes_IncludingRoot_ThrowsCannotModifyRoot()
     {
         using var env = new WriteTestEnvironment();
-        var api = new WriteApi(WriteContext.FromRoot(env.Root));
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
         var op = new DeleteNodesOp(new[] { 0 });
         var ex = Assert.Throws<WriteApiException>(() => api.ApplyOne(op));
         Assert.Equal("cannot_modify_root", ex.Code);
@@ -114,7 +114,7 @@ public class RootSynthesisTests
     public void MoveNode_RootId_ThrowsCannotModifyRoot()
     {
         using var env = new WriteTestEnvironment();
-        var api = new WriteApi(WriteContext.FromRoot(env.Root));
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
         var op = new MoveNodeOp(Id: 0, NewParentId: 1);
         var ex = Assert.Throws<WriteApiException>(() => api.ApplyOne(op));
         Assert.Equal("cannot_modify_root", ex.Code);
@@ -124,7 +124,7 @@ public class RootSynthesisTests
     public void CreateRef_FromRootId_ThrowsCannotModifyRoot()
     {
         using var env = new WriteTestEnvironment();
-        var api = new WriteApi(WriteContext.FromRoot(env.Root));
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
         var op = new CreateRefOp(FromId: 0, Name: "anything", ToId: 1);
         var ex = Assert.Throws<WriteApiException>(() => api.ApplyOne(op));
         Assert.Equal("cannot_modify_root", ex.Code);
@@ -134,7 +134,7 @@ public class RootSynthesisTests
     public void DeleteRef_FromRootId_ThrowsCannotModifyRoot()
     {
         using var env = new WriteTestEnvironment();
-        var api = new WriteApi(WriteContext.FromRoot(env.Root));
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
         var op = new DeleteRefOp(FromId: 0, Name: "anything", ToId: 1);
         var ex = Assert.Throws<WriteApiException>(() => api.ApplyOne(op));
         Assert.Equal("cannot_modify_root", ex.Code);

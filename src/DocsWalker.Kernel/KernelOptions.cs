@@ -1,45 +1,21 @@
-using System.Globalization;
-
 namespace DocsWalker.Kernel;
 
 /// <summary>
-/// Параметры запуска ядра <c>DocsWalker.Kernel.exe</c>.
-/// <para>
-/// <see cref="Bind"/> — IP-интерфейс прослушивания. По умолчанию <c>127.0.0.1</c>
-/// (local-only, см. (#306) docs/DocsWalker.yml).
-/// </para>
-/// <para>
-/// <see cref="Port"/> — TCP-порт. <c>0</c> = динамический (Kestrel выберет
-/// свободный, фактический порт публикуется в <c>kernel.json</c>).
-/// </para>
-/// <para>
-/// <see cref="RootIdleTimeout"/> — после этого периода без обращений к
-/// конкретному root его entry в <c>RootRegistry</c> выгружается
-/// (см. (#316) docs/DocsWalker.yml). Default 10 минут. Конфигурируется
-/// через <c>--root-idle-timeout=&lt;duration&gt;</c>.
-/// </para>
-/// <para>
-/// Format duration: <c>10m</c> | <c>30s</c> | <c>1h</c> | <c>500ms</c>.
-/// </para>
+/// Параметры командной строки <c>DocsWalker.Kernel.exe</c>. Сейчас единственный
+/// аргумент — путь к kernel-config'у (<c>--config=&lt;path&gt;</c>); все
+/// остальные параметры (bind/port/graphs/idle-timeout) живут внутри JSON-файла.
+/// См. <see cref="KernelConfig"/>.
 /// </summary>
-internal sealed record KernelOptions(
-    string Bind,
-    int Port,
-    TimeSpan RootIdleTimeout)
+internal sealed record KernelOptions(string ConfigPath)
 {
-    public static readonly TimeSpan DefaultRootIdleTimeout = TimeSpan.FromMinutes(10);
-    public const string DefaultBind = "127.0.0.1";
-    public const int DefaultPort = 0;
-
     /// <summary>
-    /// Парс argv вида <c>--bind=...</c>, <c>--port=...</c>, <c>--root-idle-timeout=...</c>.
-    /// Возвращает <see cref="KernelOptions"/> с дефолтами для отсутствующих ключей; при
-    /// невалидном значении выставляет <paramref name="error"/>.
+    /// Парсит argv, ищет токен вида <c>--config=&lt;path&gt;</c>. При
+    /// отсутствии или некорректной форме — выставляет <paramref name="error"/>.
     /// </summary>
     public static KernelOptions ParseArgv(string[] argv, out string? error)
     {
         error = null;
-        var args = new Dictionary<string, string>(StringComparer.Ordinal);
+        string? configPath = null;
         foreach (var token in argv)
         {
             if (!token.StartsWith("--", StringComparison.Ordinal)) continue;
@@ -47,95 +23,15 @@ internal sealed record KernelOptions(
             if (eq < 0) continue;
             var key = token.Substring(2, eq - 2).Replace('_', '-');
             var value = token[(eq + 1)..];
-            args[key] = value;
+            if (key == "config") configPath = value;
         }
-        return Parse(args, out error);
-    }
 
-    public static KernelOptions Parse(IReadOnlyDictionary<string, string> args, out string? error)
-    {
-        error = null;
-
-        var bind = args.TryGetValue("bind", out var b) && !string.IsNullOrWhiteSpace(b) ? b : DefaultBind;
-
-        int port = DefaultPort;
-        if (args.TryGetValue("port", out var rawPort))
+        if (string.IsNullOrWhiteSpace(configPath))
         {
-            if (!int.TryParse(rawPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out port)
-                || port < 0 || port > 65535)
-            {
-                error = $"--port: ожидается целое 0..65535, получено '{rawPort}'.";
-                return new KernelOptions(bind, DefaultPort, DefaultRootIdleTimeout);
-            }
+            error = "--config=<path> обязателен (путь к kernel-config JSON-файлу)";
+            return new KernelOptions(string.Empty);
         }
 
-        var rootIdle = DefaultRootIdleTimeout;
-        if (args.TryGetValue("root-idle-timeout", out var rawIdle))
-        {
-            if (!TryParseDuration(rawIdle, out rootIdle))
-            {
-                error = $"--root-idle-timeout: ожидается duration (Ns/Nm/Nh/Nms), получено '{rawIdle}'.";
-                return new KernelOptions(bind, port, DefaultRootIdleTimeout);
-            }
-        }
-
-        return new KernelOptions(bind, port, rootIdle);
-    }
-
-    internal static bool TryParseDuration(string raw, out TimeSpan value)
-    {
-        value = default;
-        if (string.IsNullOrEmpty(raw)) return false;
-
-        string suffix;
-        long multiplierTicks;
-        if (raw.EndsWith("ms", StringComparison.OrdinalIgnoreCase))
-        {
-            suffix = raw[..^2];
-            multiplierTicks = TimeSpan.TicksPerMillisecond;
-        }
-        else if (raw.EndsWith('s') || raw.EndsWith('S'))
-        {
-            suffix = raw[..^1];
-            multiplierTicks = TimeSpan.TicksPerSecond;
-        }
-        else if (raw.EndsWith('m') || raw.EndsWith('M'))
-        {
-            suffix = raw[..^1];
-            multiplierTicks = TimeSpan.TicksPerMinute;
-        }
-        else if (raw.EndsWith('h') || raw.EndsWith('H'))
-        {
-            suffix = raw[..^1];
-            multiplierTicks = TimeSpan.TicksPerHour;
-        }
-        else
-        {
-            return false;
-        }
-
-        if (!long.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) || n < 0)
-            return false;
-
-        try
-        {
-            value = TimeSpan.FromTicks(checked(n * multiplierTicks));
-            return true;
-        }
-        catch (OverflowException)
-        {
-            return false;
-        }
-    }
-
-    public string Format() =>
-        $"bind={Bind}, port={(Port == 0 ? "dynamic" : Port.ToString(CultureInfo.InvariantCulture))}, root_idle_timeout={FormatDuration(RootIdleTimeout)}";
-
-    internal static string FormatDuration(TimeSpan ts)
-    {
-        if (ts.TotalMilliseconds < 1000) return $"{(long)ts.TotalMilliseconds}ms";
-        if (ts.TotalSeconds < 60) return $"{(long)ts.TotalSeconds}s";
-        if (ts.TotalMinutes < 60) return $"{(long)ts.TotalMinutes}m";
-        return $"{(long)ts.TotalHours}h";
+        return new KernelOptions(configPath!);
     }
 }

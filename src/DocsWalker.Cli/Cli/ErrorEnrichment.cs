@@ -21,25 +21,29 @@ namespace DocsWalker.Cli.Cli;
 internal static class ErrorEnrichment
 {
     /// <summary>
-    /// Пытается вернуть JSON-описание типа из Схемы проекта <paramref name="root"/>.
-    /// При заданном <paramref name="focusRefName"/> массив <c>out_refs</c> отфильтрован
-    /// до записей с этим именем (одна, если связь объявлена в типе; пустой массив, если
-    /// LLM передала несуществующее имя — это и сигнал «такой связи у типа нет»). Шапка
-    /// типа (<c>name</c>, <c>description</c>, <c>text_required</c>) сохраняется. Trim
-    /// нужен ref-локализованным ошибкам (<c>missing_required_ref</c>, <c>invalid_ref_value</c>
-    /// и аналоги): LLM получает контракт ровно проблемной связи без шума остальных.
+    /// Пытается вернуть JSON-описание типа из Схемы графа по пути
+    /// <paramref name="storagePath"/> (папка <c>docs/</c>). При заданном
+    /// <paramref name="focusRefName"/> массив <c>out_refs</c> отфильтрован
+    /// до записей с этим именем (одна, если связь объявлена в типе; пустой
+    /// массив, если LLM передала несуществующее имя — это и сигнал «такой
+    /// связи у типа нет»). Шапка типа (<c>name</c>, <c>description</c>,
+    /// <c>text_required</c>) сохраняется. Trim нужен ref-локализованным
+    /// ошибкам (<c>missing_required_ref</c>, <c>invalid_ref_value</c>
+    /// и аналоги): LLM получает контракт ровно проблемной связи без шума
+    /// остальных.
     /// </summary>
-    /// <param name="root">Каталог проекта (то, что после <see cref="Dispatcher"/>'а
-    /// разрешилось через <c>--root</c>).</param>
-    /// <param name="typeName">Имя типа (как передал пользователь в <c>--type=</c>).
-    /// Может быть null/пустым — тогда возвращаем null.</param>
-    /// <param name="focusRefName">Имя проблемной связи; null — полный describe_type.</param>
-    public static JsonNode? TryDescribeType(string root, string? typeName, string? focusRefName = null)
+    /// <param name="storagePath">Папка <c>docs/</c> графа (то, что
+    /// kernel инжектит в <c>--storage-path=</c>).</param>
+    /// <param name="typeName">Имя типа (как передал пользователь в
+    /// <c>--type=</c>). Может быть null/пустым — тогда возвращаем null.</param>
+    /// <param name="focusRefName">Имя проблемной связи; null — полный
+    /// describe_type.</param>
+    public static JsonNode? TryDescribeType(string storagePath, string? typeName, string? focusRefName = null)
     {
         if (string.IsNullOrEmpty(typeName)) return null;
         try
         {
-            var schemaPath = System.IO.Path.Combine(root, "docs", "Схема.yml");
+            var schemaPath = System.IO.Path.Combine(storagePath, "Схема.yml");
             var schema = SchemaLoader.LoadSchema(schemaPath);
             var dto = ReadApi.DescribeType(schema, typeName);
             var json = ReadApiJson.TypeDescriptionToJson(dto);
