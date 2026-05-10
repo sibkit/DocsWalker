@@ -253,7 +253,7 @@ fs-путь к корню проекта (`--root`) и tree-путь по гра
   оставшаяся auto-spawn логика в `KernelHttpClient` — удалить. В
   этом же шаге удалить тесты, прямо ссылающиеся на эти типы
   (по тому же принципу атомарности). `dotnet build/test` зелёные.
-- [ ] (05) error-case-tests — добавить тесты на новые error-coды
+- [+] (05) error-case-tests — добавить тесты на новые error-coды
   (`client_config_not_found`, `client_config_invalid`,
   `kernel_unreachable`); добавить edge-cases для addressable-trees,
   если в шаге 02 что-то не покрыто (move-node между parent'ами с
