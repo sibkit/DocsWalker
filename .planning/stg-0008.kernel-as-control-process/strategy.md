@@ -127,7 +127,7 @@ YAML загрузчики/сериализаторы не трогаем. Пер
 
 - [+] (01) docs-rewrite
 - [+] (02) kernel-host
-- [*] (03) discovery-and-spawn
+- [+] (03) discovery-and-spawn
 - [*] (04) cli-to-http-client
 - [*] (05) mcp-wrapper
 - [*] (06) repl-command

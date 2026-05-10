@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using DocsWalker.Cli.Cli.Kernel;
+using DocsWalker.Core.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +43,22 @@ internal static class KernelHandler
 
     private static int RunImpl(KernelOptions options)
     {
+        // Discovery: проверяем, не запущено ли уже ядро на этого пользователя.
+        // Если kernel.json есть и pid жив — error и exit. Stale-файл (pid мёртв) —
+        // молча перезатираем после успешного startup. Race между двумя одновременными
+        // прямыми запусками `docswalker kernel` от пользователя — редкий случай;
+        // mitigation на уровне клиентского spawn-race через kernel.lock (см. KernelClient).
+        var existing = KernelInfoFile.TryRead();
+        if (existing is not null && StalePidDetector.IsAlive(existing.Pid, exePath: null))
+        {
+            Output.WriteError(
+                "kernel_already_running",
+                path: null,
+                $"DocsWalker kernel уже запущен (pid={existing.Pid}, port={existing.Port}).",
+                hint: $"Подключайтесь к http://127.0.0.1:{existing.Port} или завершите процесс {existing.Pid} перед повторным запуском.");
+            return 1;
+        }
+
         // CreateSlimBuilder — AOT-friendly minimal preset: без MVC, без статики, без
         // авторизации; только Kestrel + minimal API + JSON. Нам этого достаточно.
         var builder = WebApplication.CreateSlimBuilder();
@@ -101,6 +118,27 @@ internal static class KernelHandler
         // app.Urls наполняется фактическими адресами после Start (для Port=0
         // там реальный выбранный порт).
         var urls = string.Join(", ", app.Urls);
+        var actualPort = ExtractPort(app.Urls) ?? options.Port;
+
+        // Discovery: записываем kernel.json — клиенты прочитают и подключатся.
+        // Best-effort: если запись не удалась, продолжаем работу (ядро функционирует),
+        // но клиенты не смогут найти. Лог ошибки — в stderr.
+        try
+        {
+            KernelInfoFile.Write(new KernelInfo(
+                Pid: pid,
+                Port: actualPort,
+                Version: KernelVersion,
+                StartedAt: startedAt,
+                AuthToken: null));
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"DocsWalker kernel: не удалось записать kernel.json: {ex.Message}. " +
+                $"Клиенты не смогут авто-обнаружить ядро.");
+        }
+
         Console.Error.WriteLine(
             $"DocsWalker kernel started: pid={pid.ToString(CultureInfo.InvariantCulture)}, " +
             $"url={urls}, {options.Format()}");
@@ -115,7 +153,23 @@ internal static class KernelHandler
         catch (OperationCanceledException) { /* normal на graceful */ }
 
         registry.Dispose();
+        KernelInfoFile.DeleteIfExists();
         Console.Error.WriteLine($"DocsWalker kernel stopped: pid={pid.ToString(CultureInfo.InvariantCulture)}");
         return 0;
+    }
+
+    /// <summary>
+    /// Извлекает фактический port из <c>app.Urls</c> (после <c>StartAsync</c>). Для
+    /// dynamic-port (--port=0) Kestrel выбирает свободный, и URL приходит вида
+    /// <c>http://127.0.0.1:51234</c> — парсим port-сегмент.
+    /// </summary>
+    private static int? ExtractPort(ICollection<string> urls)
+    {
+        foreach (var u in urls)
+        {
+            if (Uri.TryCreate(u, UriKind.Absolute, out var uri) && uri.Port > 0)
+                return uri.Port;
+        }
+        return null;
     }
 }
