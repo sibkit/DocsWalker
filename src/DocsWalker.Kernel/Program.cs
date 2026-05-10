@@ -96,6 +96,8 @@ static int RunKernel(KernelOptions options)
     var urls = string.Join(", ", app.Urls);
     var actualPort = ExtractPort(app.Urls) ?? options.Port;
 
+    var kernelInfoPath = KernelDiscovery.GetKernelInfoPath();
+    SafeWriteStderr($"DocsWalker kernel: kernel_info_path={kernelInfoPath}");
     try
     {
         KernelInfoFile.Write(new KernelInfo(
@@ -104,6 +106,7 @@ static int RunKernel(KernelOptions options)
             Version: KernelVersion,
             StartedAt: startedAt,
             AuthToken: null));
+        SafeWriteStderr($"DocsWalker kernel: kernel_info_written exists={File.Exists(kernelInfoPath)}");
     }
     catch (Exception ex)
     {

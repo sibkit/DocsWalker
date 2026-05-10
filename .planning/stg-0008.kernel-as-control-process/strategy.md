@@ -137,7 +137,7 @@ CLI-бинарь `DocsWalker.Cli` остаётся `OutputType=Exe` (console sub
 - [+] (06) repl-command
 - [+] (07) cleanup-old-ipc
 - [+] (08) docs-tooling-fixes
-- [*] (09) smoke
+- [+] (09) smoke
 
 ## Итоговый порядок выполнения
 

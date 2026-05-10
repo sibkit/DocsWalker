@@ -23,6 +23,16 @@ internal static class LineReader
 {
     public static string? ReadLine(CancellationToken ct)
     {
+        // Non-TTY (pipe/file/redirect): TTY-only API (TreatControlCAsInput,
+        // KeyAvailable, ReadKey) бросают IOException на closed-handle. Делегируем
+        // чтение в Console.In.ReadLine — блокирующее, ct не учитывается, но в
+        // headless-сценарии (CI / mcp-pipe / smoke) этого достаточно. EOF —
+        // ReadLine возвращает null, REPL корректно выходит.
+        if (Console.IsInputRedirected)
+        {
+            return Console.In.ReadLine();
+        }
+
         var sb = new StringBuilder();
         var prevTreatCtrlC = Console.TreatControlCAsInput;
         Console.TreatControlCAsInput = true;
