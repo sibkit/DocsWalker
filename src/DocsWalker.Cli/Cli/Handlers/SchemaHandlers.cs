@@ -2,7 +2,6 @@ using DocsWalker.Cli.UsageGuide;
 using DocsWalker.Core.Api;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
-using DocsWalker.Core.Server;
 
 namespace DocsWalker.Cli.Cli.Handlers;
 
@@ -96,18 +95,6 @@ internal static class SchemaHandlers
         {
             Output.WriteError(ex.Code, ex.FilePath, ex.Message);
             return 1;
-        }
-
-        // (#348) Reset на guide. Любой вызов get-usage-guide в session_id —
-        // маркер начала логической сессии: чистим seen-set, дальше LLM получает
-        // узлы в полной форме. Идемпотентно: повторный guide-вызов без чтений
-        // между ними просто заново обнуляет уже пустой set.
-        var ctx = RequestContext.Current;
-        if (ctx?.Sessions is { } sessions
-            && !string.IsNullOrEmpty(ctx.SessionId)
-            && Guid.TryParse(ctx.SessionId, out var sid))
-        {
-            sessions.ResetSeen(sid, DateTime.UtcNow);
         }
 
         var dto = ReadApi.GetUsageGuide(new CliUsageGuideSource(), schema, loaded.Graph);

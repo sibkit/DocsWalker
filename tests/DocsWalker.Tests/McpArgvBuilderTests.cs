@@ -40,10 +40,10 @@ public class McpArgvBuilderTests
     [Fact]
     public void BuildArgv_BooleanValue_TrueFalse()
     {
-        using var doc = JsonDocument.Parse(@"{""dry-run"":true,""no-seen"":false}");
+        using var doc = JsonDocument.Parse(@"{""dry-run"":true,""quiet"":false}");
         var argv = McpArgvBuilder.BuildArgvFromArguments("create-node", doc.RootElement);
         Assert.Contains("--dry-run=true", argv);
-        Assert.Contains("--no-seen=false", argv);
+        Assert.Contains("--quiet=false", argv);
     }
 
     [Fact]

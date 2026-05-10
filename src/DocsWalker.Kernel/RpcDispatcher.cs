@@ -5,7 +5,6 @@ using System.Text.Json.Nodes;
 using DocsWalker.Cli.Mcp;
 using DocsWalker.Core.Mcp;
 using DocsWalker.Core.Schema;
-using DocsWalker.Core.Server;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 
@@ -222,11 +221,6 @@ internal sealed class RpcDispatcher
             return MakeError(request.Id, JsonRpcErrorCodes.InvalidParams, rootError ?? "root is required");
         }
 
-        // session_id — опциональный, из arguments.session_id (МCP-wrapper / REPL
-        // подставляют свой). Без него — генерируем per-call: seen-фильтрация просто
-        // не накапливает state между вызовами.
-        var sessionId = TryExtractSessionId(callParams.Arguments) ?? Guid.NewGuid().ToString();
-
         // Schema для динамических tool'ов (create-node) грузим лениво на root,
         // чтобы валидация JsonValueToCliString правильно различала array-of-object
         // от IdList. Грузим лучше один раз, но в step-02 пока — на каждый вызов
@@ -253,7 +247,7 @@ internal sealed class RpcDispatcher
 
         var entry = _registry.GetOrAdd(root);
 
-        var (exitCode, stdout, stderr) = await ExecuteWithCaptureAsync(entry, argv, sessionId, ct);
+        var (exitCode, stdout, stderr) = await ExecuteWithCaptureAsync(entry, argv, ct);
 
         var text = exitCode == 0
             ? (string.IsNullOrEmpty(stdout) ? string.Empty : stdout)
@@ -275,7 +269,7 @@ internal sealed class RpcDispatcher
     }
 
     private async Task<(int ExitCode, string Stdout, string Stderr)> ExecuteWithCaptureAsync(
-        RootEntry entry, string[] argv, string sessionId, CancellationToken ct)
+        RootEntry entry, string[] argv, CancellationToken ct)
     {
         // Двойная сериализация: per-root semaphore (заявленный инвариант) + global
         // capture-lock (вынужденный костыль из-за process-global Console.SetOut).
@@ -293,7 +287,6 @@ internal sealed class RpcDispatcher
                 Console.SetOut(stdoutWriter);
                 Console.SetError(stderrWriter);
                 int exitCode;
-                using var _ = RequestContext.Push(sessionId, sessions: null);
                 try
                 {
                     exitCode = _dispatcher(argv);
@@ -354,15 +347,6 @@ internal sealed class RpcDispatcher
         root = raw;
         error = null;
         return true;
-    }
-
-    private static string? TryExtractSessionId(JsonElement? arguments)
-    {
-        if (!arguments.HasValue || arguments.Value.ValueKind != JsonValueKind.Object) return null;
-        if (!arguments.Value.TryGetProperty("session_id", out var elem)
-            && !arguments.Value.TryGetProperty("session-id", out elem))
-            return null;
-        return elem.ValueKind == JsonValueKind.String ? elem.GetString() : null;
     }
 
     private static SchemaDocument? TryLoadSchema(string root)

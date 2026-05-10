@@ -18,7 +18,7 @@ namespace DocsWalker.Cli.Cli.Kernel;
 ///   <item><see cref="ArgParser.Parse"/> — argv → command + params dict.</item>
 ///   <item><see cref="KernelClient.EnsureRunningAsync"/> — discovery + spawn.</item>
 ///   <item>Сборка JSON-RPC <c>tools/call</c>: <c>name</c> = command, <c>arguments</c> =
-///   <c>{root, session_id?, ...params}</c>.</item>
+///   <c>{root, ...params}</c>.</item>
 ///   <item>POST на <c>/rpc</c>; разбор <see cref="JsonRpcResponse"/>.</item>
 ///   <item>Печать <c>content[0].text</c> в stdout (или stderr при <c>isError</c>) +
 ///   exit-code 0/1.</item>
@@ -78,15 +78,11 @@ internal static class KernelHttpClient
             return 1;
         }
 
-        var sessionId = SessionId.Resolve(argv);
-
-        // Собираем arguments: все params из argv (как строки) + явный root + опц. session_id.
-        // session-id в argv — пропускаем (мы уже извлекли в session_id), чтобы не дублировать.
+        // Собираем arguments: все params из argv (как строки) + явный root.
         var arguments = new JsonObject { ["root"] = rootPath };
-        if (sessionId is not null) arguments["session_id"] = sessionId;
         foreach (var (k, v) in parsed.Params)
         {
-            if (k == "session-id" || k == "root") continue;
+            if (k == "root") continue;
             // Все значения — как строки. Server'овский McpServer.JsonValueToCliString
             // (вызывается RpcDispatcher) принимает string и кладёт в --key=value as-is.
             arguments[k.Replace('-', '_')] = v;

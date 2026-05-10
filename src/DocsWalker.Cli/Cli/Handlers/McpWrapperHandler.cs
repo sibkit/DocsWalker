@@ -20,8 +20,7 @@ namespace DocsWalker.Cli.Cli.Handlers;
 ///   <item>Auto-spawn ядра через <see cref="KernelClient.EnsureRunningAsync"/>, если оно не запущено.</item>
 ///   <item>Read frame из stdin → парс JSON-RPC envelope.</item>
 ///   <item>Если <c>tools/call</c> или <c>tools/list</c> — подмешиваем фиксированный
-///   <c>root</c> (из <c>--root=</c> wrapper'а) и фиксированный <c>session_id</c>
-///   (генерится один раз на запуск wrapper'а).</item>
+///   <c>root</c> (из <c>--root=</c> wrapper'а).</item>
 ///   <item>POST на <c>/rpc</c> ядра — пишем ответ в stdout как-есть.</item>
 /// </list>
 /// <para>
@@ -82,11 +81,6 @@ internal static class McpWrapperHandler
             return 1;
         }
 
-        // Один session_id на весь lifetime wrapper'а — соответствует «один MCP-канал =
-        // одна сессия» (#370 docs/DocsWalker.yml). Если LLM ребетится через initialize
-        // повторно, мы пере-генерим (см. inline ниже).
-        var sessionId = Guid.NewGuid().ToString();
-
         if (!quiet)
         {
             Console.Error.WriteLine(
@@ -112,8 +106,7 @@ internal static class McpWrapperHandler
             string? responseJson;
             try
             {
-                responseJson = await ForwardOneAsync(line, rootPath, sessionId, http, rpcUrl, cts.Token,
-                                                    onInitialize: () => sessionId = Guid.NewGuid().ToString());
+                responseJson = await ForwardOneAsync(line, rootPath, http, rpcUrl, cts.Token);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
@@ -133,18 +126,15 @@ internal static class McpWrapperHandler
 
     /// <summary>
     /// Форвардит один входящий JSON-RPC запрос на <paramref name="rpcUrl"/>, подмешивая
-    /// <paramref name="root"/> и <paramref name="sessionId"/> в <c>tools/call.arguments</c>
-    /// и <c>tools/list.params</c>. Возвращает строку ответа или null для notification
-    /// (без id или id=null).
+    /// <paramref name="root"/> в <c>tools/call.arguments</c> и <c>tools/list.params</c>.
+    /// Возвращает строку ответа или null для notification (без id или id=null).
     /// </summary>
     private static async Task<string?> ForwardOneAsync(
         string requestJson,
         string root,
-        string sessionId,
         HttpClient http,
         string rpcUrl,
-        CancellationToken ct,
-        Action onInitialize)
+        CancellationToken ct)
     {
         // Разбираем входящий JSON в JsonNode — нужна mutable модификация.
         JsonNode? requestNode;
@@ -178,12 +168,9 @@ internal static class McpWrapperHandler
             return ok.ToJsonString();
         }
 
-        // Подмешиваем root/session_id для нужных методов.
+        // Подмешиваем root для нужных методов.
         switch (method)
         {
-            case "initialize":
-                onInitialize(); // ребет sessionId на каждый initialize
-                break;
             case "tools/list":
                 {
                     var p = req["params"] as JsonObject ?? new JsonObject();
@@ -208,12 +195,9 @@ internal static class McpWrapperHandler
                     // Перезатираем root явным wrapper'овым (single-root invariant
                     // MCP-сессии — #11 strategy.md).
                     argsNode["root"] = root;
-                    // session_id подмешиваем только если LLM не задал свой.
-                    if (argsNode["session_id"] is null && argsNode["session-id"] is null)
-                        argsNode["session_id"] = sessionId;
                     break;
                 }
-            // Остальные методы (notifications/initialized, shutdown, ...) — без модификаций.
+            // Остальные методы (initialize, notifications/initialized, shutdown, ...) — без модификаций.
         }
 
         var modifiedJson = req.ToJsonString();

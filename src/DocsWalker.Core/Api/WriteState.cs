@@ -22,7 +22,6 @@ internal sealed class WriteState
 {
     private readonly Dictionary<int, Node> _nodes;
     private readonly HashSet<int> _affectedDocs = new();
-    private readonly HashSet<int> _touchedIds = new();
     private readonly List<FsOperation> _fsOperations = new();
     private bool _foldersDirty;
 
@@ -32,14 +31,6 @@ internal sealed class WriteState
     public int IdsConsumed { get; private set; }
 
     public IReadOnlyCollection<int> AffectedDocumentIds => _affectedDocs;
-
-    /// <summary>
-    /// Все id узлов, изменённых, созданных или удалённых в рамках транзакции.
-    /// Заполняется автоматически в <see cref="Add"/>/<see cref="Replace"/>/<see cref="Remove"/>.
-    /// Используется write-invalidation'ом (#358): после успешного commit'а сервер
-    /// чистит эти id из seen-set всех активных sessions.
-    /// </summary>
-    public IReadOnlyCollection<int> TouchedIds => _touchedIds;
 
     public IReadOnlyList<FsOperation> FsOperations => _fsOperations;
 
@@ -81,7 +72,6 @@ internal sealed class WriteState
                 "duplicate_id",
                 $"Узел id={node.Id} уже существует.");
         _nodes[node.Id] = node;
-        _touchedIds.Add(node.Id);
     }
 
     public void Replace(Node node)
@@ -91,7 +81,6 @@ internal sealed class WriteState
                 "node_not_found",
                 $"Узел id={node.Id} не найден для замены.");
         _nodes[node.Id] = node;
-        _touchedIds.Add(node.Id);
     }
 
     public void Remove(int id)
@@ -100,7 +89,6 @@ internal sealed class WriteState
             throw new WriteApiException(
                 "node_not_found",
                 $"Узел id={id} не найден для удаления.");
-        _touchedIds.Add(id);
     }
 
     /// <summary>

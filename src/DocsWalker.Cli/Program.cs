@@ -121,7 +121,7 @@ internal static class Dispatcher
                                     rootPath,
                                     parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null),
             "get_map"         => ReadHandlers.GetMap(rootPath),
-            "get_nodes"       => DispatchGetNodes(rootPath, parsed.Params),
+            "get_nodes"       => ReadHandlers.GetNodes(rootPath, parsed.Params["ids"]),
             "get_by_path"     => ReadHandlers.GetByPath(rootPath, parsed.Params["path"]),
             "get_subtree"     => DispatchGetSubtree(rootPath, parsed.Params),
             "get_ancestors"   => ReadHandlers.GetAncestors(
@@ -159,55 +159,14 @@ internal static class Dispatcher
         return 1;
     }
 
-    /// <summary>
-    /// Разбирает <c>--no-seen=true|false</c> для <c>get-nodes</c> и вызывает
-    /// <see cref="ReadHandlers.GetNodes"/>. См. <see cref="TryParseNoSeen"/> для
-    /// контракта значений. Без параметра — false (фильтрация включена, #350).
-    /// </summary>
-    private static int DispatchGetNodes(string root, IReadOnlyDictionary<string, string> args)
-    {
-        if (!TryParseNoSeen(args, out var noSeen)) return 1;
-        return ReadHandlers.GetNodes(root, args["ids"], noSeen);
-    }
-
-    /// <summary>
-    /// Разбирает <c>--no-seen=true|false</c> для <c>get-subtree</c> и вызывает
-    /// <see cref="ReadHandlers.GetSubtree"/>. С <c>noSeen=true</c> транзитивные
-    /// дети не превращаются в placeholder'ы (#350); seen-set всё равно
-    /// обновляется. Без параметра — false.
-    /// </summary>
     private static int DispatchGetSubtree(string root, IReadOnlyDictionary<string, string> args)
     {
-        if (!TryParseNoSeen(args, out var noSeen)) return 1;
         var id = int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture);
         var tree = args.TryGetValue("tree", out var ts) ? ts : null;
         int? depth = args.TryGetValue("depth", out var ds)
             ? int.Parse(ds, System.Globalization.CultureInfo.InvariantCulture)
             : (int?)null;
-        return ReadHandlers.GetSubtree(root, id, tree, depth, ParseFields(args), noSeen);
-    }
-
-    /// <summary>
-    /// Парсит <c>--no-seen=</c> из argv-словаря: true/1 → true, false/0 → false,
-    /// отсутствует → false. Любое другое значение — печатает <c>invalid_parameter</c>
-    /// и возвращает false (caller возвращает exit 1). Регистр не важен.
-    /// </summary>
-    private static bool TryParseNoSeen(IReadOnlyDictionary<string, string> args, out bool noSeen)
-    {
-        noSeen = false;
-        if (!args.TryGetValue("no-seen", out var raw)) return true;
-        if (string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || raw == "1")
-        {
-            noSeen = true;
-            return true;
-        }
-        if (string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || raw == "0")
-            return true;
-        Output.WriteError(
-            "invalid_parameter",
-            path: null,
-            $"Параметр '--no-seen': ожидается 'true' или 'false', получено '{raw}'.");
-        return false;
+        return ReadHandlers.GetSubtree(root, id, tree, depth, ParseFields(args));
     }
 
     private static ParamValidationError? TryValidateParams(
@@ -226,11 +185,8 @@ internal static class Dispatcher
             foreach (var key in provided.Keys)
             {
                 // Универсальные общие параметры — обрабатываются вне CommandSpec:
-                // --root → TryResolveRoot, --dry-run → TryResolveDryRun,
-                // --session-id → KernelHttpClient/REPL читают и кладут в JSON-RPC
-                // arguments; диспетчер получает argv as-is и должен игнорировать
-                // ключ при валидации параметров команды (docs/DocsWalker.yml #342).
-                if (key == "root" || key == "dry-run" || key == "session-id")
+                // --root → TryResolveRoot, --dry-run → TryResolveDryRun.
+                if (key == "root" || key == "dry-run")
                     continue;
                 if (!HasParam(spec, key))
                 {

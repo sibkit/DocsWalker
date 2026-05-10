@@ -21,7 +21,7 @@ internal static class UsageGuideText
 
         Связи объявлены в Схеме у типа узла-источника (имя, target_types, cardinality, required). Часть связей объединена в named-tree (tree-scope) — например, дерево 'path' (физическое размещение в FS, единственное материализованное) или доменное 'strategic'. Tree-связи всегда cardinality=one + required=true.
 
-        Auto-include: связь с tree=null + required=true считается концептуально неотъемлемой — read-команды (get-nodes, get-subtree, get-by-path) транзитивно подтягивают цели таких связей в результат и помещают их в поле auto_includes (в плоский массив у get-nodes). Подтянутые цели проходят через тот же seen-фильтр, что и children: повторное транзитивное появление в той же session_id заменяется placeholder'ом {id, seen:true}. На текущей Схеме auto-include активен только для rule.examples — единственная non-tree required связь.
+        Auto-include: связь с tree=null + required=true считается концептуально неотъемлемой — read-команды (get-nodes, get-subtree, get-by-path) транзитивно подтягивают цели таких связей в результат и помещают их в поле auto_includes (в плоский массив у get-nodes). Все узлы — полные, повторы между запросами и внутри одного ответа не фильтруются. Для дешёвого обзора без auto-include — fields=[title] + depth/tree в read-командах. На текущей Схеме auto-include активен только для rule.examples — единственная non-tree required связь.
 
         Корень — синглтон id=0, type=root. Любой обход начинается отсюда: get-subtree --id=0 --tree=path даёт всё дерево хранилища.
 

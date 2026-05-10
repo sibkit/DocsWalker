@@ -4,7 +4,6 @@ using System.Text.Json.Nodes;
 using DocsWalker.Core.Api;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
-using DocsWalker.Core.Server;
 using DocsWalker.Core.Store;
 using DocsWalker.Core.Validation;
 
@@ -280,16 +279,6 @@ internal static class WriteHandlers
             var ctx = WriteContext.FromRoot(root);
             var api = new WriteApi(ctx);
             var result = api.Apply(ops, dryRun);
-
-            // (#358) Write-invalidation: после реального применения чистим touched id из
-            // seen-set всех активных sessions, иначе LLM продолжит видеть placeholder
-            // вместо изменённого узла. Dry-run не инвалидирует — на FS ничего не было.
-            if (result.Applied && result.TouchedIds.Count > 0)
-            {
-                var requestCtx = RequestContext.Current;
-                if (requestCtx?.Sessions is { } sessions)
-                    sessions.RemoveFromAll(result.TouchedIds);
-            }
 
             if (transaction)
             {

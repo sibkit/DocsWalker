@@ -37,7 +37,7 @@
 ## Шаги
 
 - [+] (01) spec-rewrite
-- [ ] (02) code-removal
+- [+] (02) code-removal
 - [ ] (03) tests-cleanup
 - [ ] (04) smoke
 

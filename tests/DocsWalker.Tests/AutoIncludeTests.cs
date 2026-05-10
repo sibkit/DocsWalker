@@ -2,7 +2,6 @@ using System.Text.Json.Nodes;
 using DocsWalker.Core.Api;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
-using DocsWalker.Core.Sessions;
 
 namespace DocsWalker.Tests;
 
@@ -92,15 +91,14 @@ public class AutoIncludeTests
 
         var nodes = api.GetNodes(new[] { rule.Id });
         var autoIncludes = api.CollectAutoIncludes(nodes);
-        var json = ReadApiJson.NodesToJson(nodes, scope: null, autoIncludes, noSeen: false);
+        var json = ReadApiJson.NodesToJson(nodes, autoIncludes);
 
         // Прямой id — первый, полный.
         var first = (JsonObject)json[0]!;
         Assert.Equal(rule.Id, (int)first["id"]!);
         Assert.NotNull(first["title"]);
-        Assert.Null(first["seen"]);
 
-        // После — auto-include-цели, тоже полные (seen-set пуст).
+        // После — auto-include-цели, тоже полные.
         var rest = json.Skip(1).Cast<JsonObject>().ToList();
         Assert.NotEmpty(rest);
         foreach (var t in rest)
@@ -108,58 +106,6 @@ public class AutoIncludeTests
             Assert.Contains((int)t["id"]!, expectedAutoIds);
             Assert.NotNull(t["title"]);
         }
-    }
-
-    [Fact]
-    public void NodesToJson_GetNodes_AutoIncludeAlreadySeen_BecomesPlaceholder()
-    {
-        var (api, graph, _) = Build();
-        var rule = FindFirstRuleWithExamples(graph);
-        var firstAutoId = rule.OutRefs["examples"][0];
-
-        var sessions = new SessionState();
-        var sid = Guid.NewGuid();
-        sessions.MarkSeen(sid, new[] { firstAutoId }, DateTime.UtcNow);
-
-        var nodes = api.GetNodes(new[] { rule.Id });
-        var autoIncludes = api.CollectAutoIncludes(nodes);
-        var scope = SeenScope.Create(sessions, sid);
-        var json = ReadApiJson.NodesToJson(nodes, scope, autoIncludes, noSeen: false);
-
-        // Прямой id — полный, не placeholder.
-        var direct = (JsonObject)json[0]!;
-        Assert.Equal(rule.Id, (int)direct["id"]!);
-        Assert.Null(direct["seen"]);
-
-        // Auto-include-цель в seen — placeholder {id, seen:true}.
-        var placeholder = json.Skip(1).Cast<JsonObject>()
-            .Single(o => (int)o["id"]! == firstAutoId);
-        Assert.Equal(2, placeholder.Count);
-        Assert.True((bool)placeholder["seen"]!);
-        Assert.Null(placeholder["title"]);
-    }
-
-    [Fact]
-    public void NodesToJson_GetNodes_NoSeenTrue_BypassesFilterForAutoIncludes()
-    {
-        var (api, graph, _) = Build();
-        var rule = FindFirstRuleWithExamples(graph);
-        var firstAutoId = rule.OutRefs["examples"][0];
-
-        var sessions = new SessionState();
-        var sid = Guid.NewGuid();
-        sessions.MarkSeen(sid, new[] { firstAutoId }, DateTime.UtcNow);
-
-        var nodes = api.GetNodes(new[] { rule.Id });
-        var autoIncludes = api.CollectAutoIncludes(nodes);
-        var scope = SeenScope.Create(sessions, sid);
-        var json = ReadApiJson.NodesToJson(nodes, scope, autoIncludes, noSeen: true);
-
-        // С --no-seen=true auto-include-цель в seen всё равно полная.
-        var target = json.Skip(1).Cast<JsonObject>()
-            .Single(o => (int)o["id"]! == firstAutoId);
-        Assert.NotNull(target["title"]);
-        Assert.Null(target["seen"]);
     }
 
     [Fact]
@@ -175,7 +121,7 @@ public class AutoIncludeTests
         var subtree = api.GetSubtree(rule.Id, Node.PathRefName, depth: 0);
         var autoIncludes = api.CollectAutoIncludes(subtree);
         var json = ReadApiJson.SubtreeToJsonWithAutoIncludes(
-            subtree, fields: null, scope: null, autoIncludes);
+            subtree, fields: null, autoIncludes);
 
         Assert.Equal(rule.Id, (int)json["id"]!);
         var arr = (JsonArray)json["auto_includes"]!;
@@ -193,7 +139,7 @@ public class AutoIncludeTests
         var subtree = api.GetSubtree(rule.Id, Node.PathRefName, depth: 0);
         var autoIncludes = api.CollectAutoIncludes(subtree);
         var json = ReadApiJson.SubtreeToJson(
-            subtree, Node.PathRefName, fields: null, scope: null, autoIncludes);
+            subtree, Node.PathRefName, fields: null, autoIncludes);
 
         Assert.Equal(Node.PathRefName, (string)json["tree"]!);
         Assert.NotNull(json["root"]);
@@ -215,7 +161,7 @@ public class AutoIncludeTests
         Assert.Empty(autoIncludes);
 
         var withField = ReadApiJson.SubtreeToJsonWithAutoIncludes(
-            subtree, fields: null, scope: null, autoIncludes);
+            subtree, fields: null, autoIncludes);
         var withoutField = ReadApiJson.SubtreeToJson(subtree);
         Assert.Equal(withoutField.ToJsonString(), withField.ToJsonString());
     }

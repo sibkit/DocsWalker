@@ -53,89 +53,20 @@ public static class ReadApiJson
     }
 
     public static JsonArray NodesToJson(IReadOnlyList<Node> nodes) =>
-        NodesToJson(nodes, scope: null);
+        NodesToJson(nodes, autoIncludes: null);
 
     /// <summary>
-    /// Сериализация get-nodes. Все элементы — прямо запрошенные id (#346),
-    /// никогда не фильтруются по seen между запросами; результирующий payload
-    /// идентичен старому. <paramref name="scope"/> используется только для
-    /// учёта (Mark) — на следующих чтениях эти id попадут в seen.
+    /// Сериализация get-nodes. Прямо запрошенные id идут первыми; auto-include-цели
+    /// (#340) дописываются после них в порядке BFS-открытия. Все узлы — полные.
     /// </summary>
-    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes, SeenScope? scope) =>
-        NodesToJson(nodes, scope, autoIncludes: null, noSeen: false);
-
-    /// <summary>
-    /// Сериализация get-nodes с auto-include-целями (#340). Прямо запрошенные id
-    /// идут первыми и всегда полные; auto-include-узлы дописываются после них в
-    /// порядке BFS-открытия. К auto-include-узлам применяется seen-фильтр (#346):
-    /// если узел уже в seen-set этой сессии или эмитнут выше в этом ответе —
-    /// он становится placeholder <c>{id, seen:true}</c>. <paramref name="noSeen"/>=true
-    /// (только get-nodes, #350) отключает этот фильтр для auto-include-целей —
-    /// они всегда полные; seen-set всё равно пополняется через Mark.
-    /// </summary>
-    public static JsonArray NodesToJson(
-        IReadOnlyList<Node> nodes,
-        SeenScope? scope,
-        IReadOnlyList<Node>? autoIncludes,
-        bool noSeen)
+    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes, IReadOnlyList<Node>? autoIncludes)
     {
         var arr = new JsonArray();
-        foreach (var n in nodes)
-        {
-            arr.Add((JsonNode?)NodeToJson(n));
-            scope?.Mark(n.Id);
-        }
+        foreach (var n in nodes) arr.Add((JsonNode?)NodeToJson(n));
         if (autoIncludes is null) return arr;
         foreach (var n in autoIncludes)
-        {
-            arr.Add((JsonNode?)AutoIncludeNodeToJson(n, fields: null, scope, noSeen));
-        }
+            arr.Add((JsonNode?)NodeToJson(n));
         return arr;
-    }
-
-    /// <summary>
-    /// Сериализация одной auto-include-цели. Цель относится к транзитивно подтянутым
-    /// узлам (#346): без <paramref name="noSeen"/> применяется seen-фильтр — узел в seen
-    /// заменяется placeholder'ом. С <paramref name="noSeen"/>=true (#350) узел всегда
-    /// полный. Mark вызывается всегда — auto-include-цель попадает в seen-set этой сессии.
-    /// </summary>
-    private static JsonObject AutoIncludeNodeToJson(
-        Node node,
-        IReadOnlyCollection<string>? fields,
-        SeenScope? scope,
-        bool noSeen)
-    {
-        if (!noSeen && scope is not null && scope.ShouldHideTransitive(node.Id))
-        {
-            scope.Mark(node.Id);
-            return PlaceholderJson(node.Id);
-        }
-        var obj = NodeToJson(node, fields);
-        scope?.Mark(node.Id);
-        return obj;
-    }
-
-    /// <summary>
-    /// Добавляет в <paramref name="obj"/> поле <c>auto_includes</c> со списком
-    /// auto-include-целей, если он не пуст. Применяется в get-subtree / get-by-path
-    /// как top-level sibling к <c>root</c>/полям subtree. Каждая цель проходит через
-    /// <see cref="AutoIncludeNodeToJson"/>: при попадании в seen становится placeholder.
-    /// <paramref name="noSeen"/>=true (#350, get-nodes / get-subtree) — отключает
-    /// placeholder для auto-include'ов; полные узлы, seen-set пополняется.
-    /// Default false — текущее поведение get-by-path.
-    /// </summary>
-    private static void AddAutoIncludesField(
-        JsonObject obj,
-        IReadOnlyList<Node>? autoIncludes,
-        IReadOnlyCollection<string>? fields,
-        SeenScope? scope,
-        bool noSeen = false)
-    {
-        if (autoIncludes is null || autoIncludes.Count == 0) return;
-        var arr = new JsonArray();
-        foreach (var n in autoIncludes)
-            arr.Add((JsonNode?)AutoIncludeNodeToJson(n, fields, scope, noSeen));
-        obj["auto_includes"] = arr;
     }
 
     /// <summary>
@@ -178,32 +109,18 @@ public static class ReadApiJson
     }
 
     public static JsonObject SubtreeToJson(NodeSubtree subtree) =>
-        SubtreeToJson(subtree, fields: null, scope: null);
-
-    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields) =>
-        SubtreeToJson(subtree, fields, scope: null);
+        SubtreeToJson(subtree, fields: null);
 
     /// <summary>
     /// Сериализация get-by-path и аналогов с whitelist'ом полей. <paramref name="fields"/>=null
     /// → все поля включая <c>tokens</c>/<c>subtree_tokens</c>; иначе — только перечисленные
     /// (<c>id</c> всегда). <c>subtree_tokens</c> учитывает ровно те узлы, что фактически
-    /// попали в результат (с учётом <c>depth</c> на стороне Core).
-    /// Не делегирует <see cref="NodeToJson(Node,IReadOnlyCollection{string}?)"/>, чтобы
-    /// переиспользовать уже посчитанный <see cref="NodeSubtree.Tokens"/> и не считать
-    /// токены второй раз для каждого узла.
-    /// <para>
-    /// Корень subtree трактуется как «прямо запрошенный» (#346) — никогда не фильтруется
-    /// по seen-set; <paramref name="scope"/> применяется только к транзитивно подтянутым
-    /// дочерним узлам через <see cref="SubtreeChildToJson"/>.
-    /// </para>
-    /// <para>
-    /// <paramref name="noSeen"/>=true (#350, get-subtree) — отключает превращение уже
-    /// виденных транзитивных детей в placeholder; узлы выдаются полностью, seen-set
-    /// всё равно обновляется через <c>scope.Mark</c>. Default false — существующий
-    /// контракт get-by-path и других потребителей.
-    /// </para>
+    /// попали в результат (с учётом <c>depth</c> на стороне Core). Не делегирует
+    /// <see cref="NodeToJson(Node,IReadOnlyCollection{string}?)"/>, чтобы переиспользовать
+    /// уже посчитанный <see cref="NodeSubtree.Tokens"/> и не считать токены второй раз
+    /// для каждого узла.
     /// </summary>
-    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields, SeenScope? scope, bool noSeen = false)
+    public static JsonObject SubtreeToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields)
     {
         var n = subtree.Node;
         var obj = new JsonObject { ["id"] = n.Id };
@@ -217,67 +134,15 @@ public static class ReadApiJson
         // подставляет subtree_tokens = tokens по отсутствию поля.
         if (Include(fields, "subtree_tokens") && subtree.SubtreeTokens != subtree.Tokens)
             obj["subtree_tokens"] = subtree.SubtreeTokens;
-        scope?.Mark(n.Id);
         // children опускается у листа.
         if (subtree.Children.Count > 0)
         {
             var children = new JsonArray();
-            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeChildToJson(c, fields, scope, noSeen));
+            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeToJson(c, fields));
             obj["children"] = children;
         }
         return obj;
     }
-
-    /// <summary>
-    /// Сериализация одного транзитивно подтянутого узла поддерева. Если
-    /// <paramref name="scope"/> не null, <paramref name="noSeen"/>=false и узел
-    /// уже в seen (предыдущий запрос или этот же ответ выше) — узел заменяется
-    /// на placeholder <c>{id, seen:true}</c> без других полей и без рекурсии в
-    /// его children (#344). В placeholder'е возрастает риск, что LLM не дойдёт
-    /// до глубины, но альтернатива — повторная выдача узла — стоит токенов и
-    /// нарушает контракт «новое в этом запросе». Иначе узел эмитится полным,
-    /// вместе с детьми (рекурсивно через эту же функцию).
-    /// <paramref name="noSeen"/>=true (#350, get-subtree) — отключает placeholder:
-    /// все узлы выдаются полностью, seen-set всё равно пополняется.
-    /// </summary>
-    private static JsonObject SubtreeChildToJson(NodeSubtree subtree, IReadOnlyCollection<string>? fields, SeenScope? scope, bool noSeen)
-    {
-        var n = subtree.Node;
-        if (!noSeen && scope is not null && scope.ShouldHideTransitive(n.Id))
-        {
-            scope.Mark(n.Id);
-            return PlaceholderJson(n.Id);
-        }
-
-        var obj = new JsonObject { ["id"] = n.Id };
-        if (Include(fields, "type"))           obj["type"] = n.TypeName;
-        if (Include(fields, "title"))          obj["title"] = n.Title;
-        if (Include(fields, "text"))           obj["text"] = n.Text;
-        if (Include(fields, "out_refs"))       obj["out_refs"] = OutRefsToJson(n.OutRefs);
-        if (Include(fields, "tokens"))         obj["tokens"] = subtree.Tokens;
-        if (Include(fields, "subtree_tokens") && subtree.SubtreeTokens != subtree.Tokens)
-            obj["subtree_tokens"] = subtree.SubtreeTokens;
-        scope?.Mark(n.Id);
-        if (subtree.Children.Count > 0)
-        {
-            var children = new JsonArray();
-            foreach (var c in subtree.Children) children.Add((JsonNode?)SubtreeChildToJson(c, fields, scope, noSeen));
-            obj["children"] = children;
-        }
-        return obj;
-    }
-
-    /// <summary>
-    /// Placeholder-форма уже выданного транзитивного узла (#362). Никаких
-    /// других полей кроме id и флага seen — задача placeholder'а: подсказать
-    /// LLM, что узел уже видела, и при необходимости запросить его явно через
-    /// get-nodes (опционально с --no-seen=true, см. (#350)).
-    /// </summary>
-    private static JsonObject PlaceholderJson(int id) => new()
-    {
-        ["id"] = id,
-        ["seen"] = true,
-    };
 
     /// <summary>
     /// Сериализация get-subtree с указанием scope: оборачивает поддерево в объект
@@ -285,56 +150,63 @@ public static class ReadApiJson
     /// дереву прошёл обход.
     /// </summary>
     public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree) =>
-        SubtreeToJson(subtree, tree, fields: null, scope: null);
+        SubtreeToJson(subtree, tree, fields: null, autoIncludes: null);
 
     public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields) =>
-        SubtreeToJson(subtree, tree, fields, scope: null);
-
-    public static JsonObject SubtreeToJson(NodeSubtree subtree, string tree, IReadOnlyCollection<string>? fields, SeenScope? scope) =>
-        SubtreeToJson(subtree, tree, fields, scope, autoIncludes: null);
+        SubtreeToJson(subtree, tree, fields, autoIncludes: null);
 
     /// <summary>
     /// Сериализация get-subtree с auto-include-целями (#340). К объекту
     /// <c>{tree, root}</c> добавляется поле <c>auto_includes: [...]</c>, если
-    /// <paramref name="autoIncludes"/> непуст. Каждая цель проходит через seen-фильтр
-    /// (#346): уже-выданный узел становится placeholder'ом. Поле опускается, когда
-    /// auto-include на текущей Схеме не сработал.
-    /// <paramref name="noSeen"/>=true (#350, get-subtree) — отключает seen-фильтр
-    /// и для транзитивных детей корня, и для auto-includes (полные узлы вместо
-    /// placeholder'ов); seen-set всё равно пополняется.
+    /// <paramref name="autoIncludes"/> непуст. Поле опускается, когда auto-include
+    /// на текущей Схеме не сработал. Все узлы — полные.
     /// </summary>
     public static JsonObject SubtreeToJson(
         NodeSubtree subtree,
         string tree,
         IReadOnlyCollection<string>? fields,
-        SeenScope? scope,
-        IReadOnlyList<Node>? autoIncludes,
-        bool noSeen = false)
+        IReadOnlyList<Node>? autoIncludes)
     {
         var obj = new JsonObject
         {
             ["tree"] = tree,
-            ["root"] = SubtreeToJson(subtree, fields, scope, noSeen),
+            ["root"] = SubtreeToJson(subtree, fields),
         };
-        AddAutoIncludesField(obj, autoIncludes, fields, scope, noSeen);
+        AddAutoIncludesField(obj, autoIncludes, fields);
         return obj;
     }
 
     /// <summary>
     /// Сериализация get-by-path с auto-include-целями (#340). К плоскому subtree-объекту
     /// добавляется top-level поле <c>auto_includes: [...]</c>, если оно непусто. Шейп
-    /// без auto-includes идентичен <see cref="SubtreeToJson(NodeSubtree,IReadOnlyCollection{string}?,SeenScope?)"/>
+    /// без auto-includes идентичен <see cref="SubtreeToJson(NodeSubtree,IReadOnlyCollection{string}?)"/>
     /// — поле появляется только при ненулевом auto-include.
     /// </summary>
     public static JsonObject SubtreeToJsonWithAutoIncludes(
         NodeSubtree subtree,
         IReadOnlyCollection<string>? fields,
-        SeenScope? scope,
         IReadOnlyList<Node>? autoIncludes)
     {
-        var obj = SubtreeToJson(subtree, fields, scope);
-        AddAutoIncludesField(obj, autoIncludes, fields, scope);
+        var obj = SubtreeToJson(subtree, fields);
+        AddAutoIncludesField(obj, autoIncludes, fields);
         return obj;
+    }
+
+    /// <summary>
+    /// Добавляет в <paramref name="obj"/> поле <c>auto_includes</c> со списком
+    /// auto-include-целей, если он не пуст. Все узлы — полные (форма
+    /// <see cref="NodeToJson(Node,IReadOnlyCollection{string}?)"/> с тем же whitelist'ом
+    /// полей).
+    /// </summary>
+    private static void AddAutoIncludesField(
+        JsonObject obj,
+        IReadOnlyList<Node>? autoIncludes,
+        IReadOnlyCollection<string>? fields)
+    {
+        if (autoIncludes is null || autoIncludes.Count == 0) return;
+        var arr = new JsonArray();
+        foreach (var n in autoIncludes) arr.Add((JsonNode?)NodeToJson(n, fields));
+        obj["auto_includes"] = arr;
     }
 
     /// <summary>

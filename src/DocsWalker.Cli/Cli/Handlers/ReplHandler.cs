@@ -8,14 +8,9 @@ namespace DocsWalker.Cli.Cli.Handlers;
 /// Команда <c>repl</c> — интерактивный HTTP-клиент к ядру DocsWalker. На старте:
 /// resolve kernel exe → <see cref="KernelClient.EnsureRunningAsync"/> (auto-spawn
 /// при отсутствии). В цикле: <see cref="LineReader.ReadLine"/> → <see cref="ReplTokenizer.Tokenize"/>
-/// → <see cref="KernelHttpClient.SendCommandAsync"/> с фиксированным <c>--root=</c>
-/// и фиксированным <c>session_id</c> на всю REPL-сессию.
+/// → <see cref="KernelHttpClient.SendCommandAsync"/> с фиксированным <c>--root=</c>.
 /// <para>
 /// Strategy.md «Принятые решения» #11; step-06.
-/// </para>
-/// <para>
-/// Старая команда <c>run</c> остаётся параллельно (server-mode + lock + IPC) до
-/// step-07 cleanup-old-ipc.
 /// </para>
 /// </summary>
 internal static class ReplHandler
@@ -64,20 +59,14 @@ internal static class ReplHandler
             return 1;
         }
 
-        var sessionId = Guid.NewGuid().ToString();
-
         if (!quiet)
         {
             Console.Error.WriteLine(
-                $"DocsWalker REPL: root={root}, kernel={endpoint.Url}, session={sessionId}");
+                $"DocsWalker REPL: root={root}, kernel={endpoint.Url}");
             Console.Error.WriteLine(
                 "Команды — без префикса 'docswalker'. Выход: ':quit'/':exit'/Ctrl+D. Ctrl+C — отмена строки.");
         }
 
-        // Каждая команда уходит как отдельный CLI-вызов через KernelHttpClient,
-        // но с подмешанной --session-id (чтобы все команды одной REPL-сессии
-        // делили seen-set когда ядро интегрирует SessionState — сейчас sessions=null
-        // на kernel-стороне, эффект no-op до отдельного шага).
         while (!cts.Token.IsCancellationRequested)
         {
             Console.Out.Write("dw> ");
@@ -95,12 +84,10 @@ internal static class ReplHandler
             var argv = ReplTokenizer.Tokenize(trimmed);
             if (argv.Length == 0) continue;
 
-            // Подмешиваем --session-id и --root в argv — KernelHttpClient прочитает
-            // и положит в JSON-RPC arguments. Если пользователь явно задал свой
-            // --root в строке REPL, мы НЕ перезатираем (REPL-root — fallback,
-            // не lockdown).
-            var argvWithExtras = AppendIfMissing(argv, "--session-id=", sessionId);
-            argvWithExtras = AppendIfMissing(argvWithExtras, "--root=", root);
+            // Подмешиваем --root в argv — KernelHttpClient прочитает и положит в
+            // JSON-RPC arguments. Если пользователь явно задал свой --root в
+            // строке REPL, мы НЕ перезатираем (REPL-root — fallback, не lockdown).
+            var argvWithExtras = AppendIfMissing(argv, "--root=", root);
 
             try
             {

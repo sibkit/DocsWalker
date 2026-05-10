@@ -58,7 +58,7 @@ public class RedirectRefsTests
             });
         var createResult = api.ApplyOne(createOp);
         Assert.True(createResult.Applied);
-        var newId = createResult.TouchedIds.First(i => i > 100);
+        var newId = createResult.OpResults[0].Data["id"]!.GetValue<int>();
 
         // На свежесозданный узел нет cross-refs (только parent.<refname>: [newId]
         // через path-child автоматизм). redirect-refs от него попадёт в ту же
