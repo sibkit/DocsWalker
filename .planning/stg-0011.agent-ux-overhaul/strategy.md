@@ -25,7 +25,7 @@
 - [+] docs-classifiers-model
 - [-] docs-meta-schema-classifiers
 - [*] docs-schema-classifier-trees
-- [*] code-classifier-validator
+- [+] code-classifier-validator
 - [*] code-find-command
 - [*] code-search-classifier-filter
 - [*] migrate-classifiers-data

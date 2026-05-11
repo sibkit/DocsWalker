@@ -18,6 +18,10 @@ internal static class SchemaCheck
         var byName = new Dictionary<string, TypeDefinition>(StringComparer.Ordinal);
         foreach (var t in schema.Types) byName[t.Name] = t;
 
+        // Индекс категорий первого уровня по каждому classifier-tree (любому tree != path).
+        // Используется для hint при missing_classifier.
+        var classifierRootsByTree = BuildClassifierRootsIndex(schema, graph);
+
         foreach (var node in graph.ById.Values)
         {
             if (node.Id == Node.RootId)
@@ -33,7 +37,7 @@ internal static class SchemaCheck
                 continue;
             }
 
-            CheckNode(node, typeDef, byName, graph, errors);
+            CheckNode(node, typeDef, byName, graph, errors, classifierRootsByTree);
         }
     }
 
@@ -42,7 +46,8 @@ internal static class SchemaCheck
         TypeDefinition type,
         Dictionary<string, TypeDefinition> byName,
         GraphModel graph,
-        List<ValidationError> errors)
+        List<ValidationError> errors,
+        Dictionary<string, List<string>> classifierRootsByTree)
     {
         // title непустой — обязательно для refs-модели (см. «Title как path-сегмент»).
         if (string.IsNullOrEmpty(node.Title))
@@ -142,19 +147,95 @@ internal static class SchemaCheck
         }
 
         // Required-связи: должны быть заполнены. path обрабатывается отдельной веткой выше.
+        // Tree-refs (classifier-trees) дают специализированную ошибку missing_classifier
+        // с hint — перечислением категорий первого уровня в дереве; обычные required-cross-refs
+        // дают missing_required_ref.
         foreach (var rd in type.OutRefs)
         {
             if (string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal)) continue;
             if (!rd.Required) continue;
             if (!node.OutRefs.TryGetValue(rd.Name, out var targets) || targets.Count == 0)
             {
-                errors.Add(new ValidationError(
-                    "missing_required_ref",
-                    $"Узел id={node.Id} типа '{type.Name}': обязательная связь '{rd.Name}' не заполнена.",
-                    node.SourceFile, node.Id,
-                    Hint: $"Передай значение связи '{rd.Name}' при create-node либо добавь через create-ref.",
-                    RefName: rd.Name));
+                if (rd.Tree is null)
+                {
+                    errors.Add(new ValidationError(
+                        "missing_required_ref",
+                        $"Узел id={node.Id} типа '{type.Name}': обязательная связь '{rd.Name}' не заполнена.",
+                        node.SourceFile, node.Id,
+                        Hint: $"Передай значение связи '{rd.Name}' при create-node либо добавь через create-ref.",
+                        RefName: rd.Name));
+                }
+                else
+                {
+                    var categories = classifierRootsByTree.TryGetValue(rd.Tree, out var list)
+                        ? list
+                        : new List<string>();
+                    var hint = categories.Count > 0
+                        ? $"Категория классификатора '{rd.Tree}' не указана. Доступные категории первого уровня: {string.Join(", ", categories)}. Используй узел 'none', если классификация по этой оси неприменима."
+                        : $"Категория классификатора '{rd.Tree}' не указана. Дерево '{rd.Tree}' пусто — добавь категории через create-node + move-node --tree={rd.Tree}, включая обязательный узел 'none'.";
+                    errors.Add(new ValidationError(
+                        "missing_classifier",
+                        $"Узел id={node.Id} типа '{type.Name}': обязательный классификатор '{rd.Name}' (tree='{rd.Tree}') не указан.",
+                        node.SourceFile, node.Id,
+                        Hint: hint,
+                        RefName: rd.Name));
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Индекс категорий первого уровня для каждого classifier-tree.
+    /// Classifier-tree — это любое именованное дерево кроме <see cref="Node.PathRefName"/>;
+    /// "первый уровень" — узлы, чья tree-ссылка указывает на корневой синглтон (id=0).
+    /// Используется для построения подсказки при <c>missing_classifier</c>.
+    /// </summary>
+    private static Dictionary<string, List<string>> BuildClassifierRootsIndex(
+        SchemaDocument schema, GraphModel graph)
+    {
+        // 1) Собираем имена всех classifier-trees (объявлены через tree-ref в любом типе, кроме path).
+        var classifierTrees = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var t in schema.Types)
+        {
+            foreach (var rd in t.OutRefs)
+            {
+                if (rd.Tree is null) continue;
+                if (string.Equals(rd.Tree, Node.PathRefName, StringComparison.Ordinal)) continue;
+                classifierTrees.Add(rd.Tree);
+            }
+        }
+
+        // 2) Для каждого classifier-tree: тип → имя ref'а, который выступает parent-связью в этом дереве.
+        var parentRefByTypePerTree = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        foreach (var tree in classifierTrees)
+        {
+            var perType = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var t in schema.Types)
+            {
+                foreach (var rd in t.OutRefs)
+                {
+                    if (!string.Equals(rd.Tree, tree, StringComparison.Ordinal)) continue;
+                    perType[t.Name] = rd.Name;
+                    break;
+                }
+            }
+            parentRefByTypePerTree[tree] = perType;
+        }
+
+        // 3) Прогон по графу: узлы, чья tree-ref в данном дереве указывает на root, — категории первого уровня.
+        var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var tree in classifierTrees) result[tree] = new List<string>();
+        foreach (var n in graph.ById.Values)
+        {
+            if (n.Id == Node.RootId) continue;
+            foreach (var tree in classifierTrees)
+            {
+                if (!parentRefByTypePerTree[tree].TryGetValue(n.TypeName, out var parentRefName)) continue;
+                if (!n.OutRefs.TryGetValue(parentRefName, out var parents) || parents.Count == 0) continue;
+                if (parents[0] == Node.RootId) result[tree].Add(n.Title);
+            }
+        }
+        foreach (var kv in result) kv.Value.Sort(StringComparer.OrdinalIgnoreCase);
+        return result;
     }
 }
