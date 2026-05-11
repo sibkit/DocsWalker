@@ -22,8 +22,8 @@
 - [+] (10) code-mcp-tools-update
 - [+] (11) code-api-v2-tests
 - [+] docs-cli-deprecate
-- [*] docs-classifiers-model
-- [*] docs-meta-schema-classifiers
+- [+] docs-classifiers-model
+- [-] docs-meta-schema-classifiers
 - [*] docs-schema-classifier-trees
 - [*] code-classifier-validator
 - [*] code-find-command
