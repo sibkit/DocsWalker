@@ -39,7 +39,7 @@ public class ReadApiTests
     public void GetByPath_ResolvesDocumentTitle()
     {
         var api = BuildApi();
-        var subtree = api.GetByPath("DocsWalker");
+        var subtree = api.GetByPath("DocsWalker", tree: Node.PathRefName);
         Assert.Equal(1, subtree.Node.Id);
         Assert.Equal("document", subtree.Node.TypeName);
         Assert.NotEmpty(subtree.Children);
@@ -49,7 +49,7 @@ public class ReadApiTests
     public void GetByPath_ResolvesNestedSection()
     {
         var api = BuildApi();
-        var subtree = api.GetByPath("DocsWalker/Стек реализации");
+        var subtree = api.GetByPath("DocsWalker/Стек реализации", tree: Node.PathRefName);
         Assert.Equal(45, subtree.Node.Id);
         Assert.Equal("section", subtree.Node.TypeName);
     }
@@ -58,7 +58,7 @@ public class ReadApiTests
     public void GetByPath_UnknownPath_Throws()
     {
         var api = BuildApi();
-        var ex = Assert.Throws<ReadApiException>(() => api.GetByPath("DocsWalker/НетТакогоРаздела"));
+        var ex = Assert.Throws<ReadApiException>(() => api.GetByPath("DocsWalker/НетТакогоРаздела", tree: Node.PathRefName));
         Assert.Equal("path_not_found", ex.Code);
     }
 

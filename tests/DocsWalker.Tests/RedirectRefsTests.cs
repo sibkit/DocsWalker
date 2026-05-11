@@ -48,6 +48,9 @@ public class RedirectRefsTests
         // in-ref, ветка path-child даст специализированный хинт. Это уже
         // покрыто в первом тесте. Здесь же — путь, когда нет вообще никаких
         // связей: создаём свежий узел и сразу пробуем redirect-refs от него.
+        // Все 4 classifier-tree-ref'а обязательны для атом-типов в новой Схеме
+        // (stg-0011 classifier-trees): id none-категорий зафиксированы migration'ом:
+        // subject=425, subsystem=433, audience=436, csharp_structure=437.
         var createOp = new CreateNodeOp(
             TypeName: "definition",
             Title: "tmp-test-leaf",
@@ -55,6 +58,10 @@ public class RedirectRefsTests
             Refs: new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal)
             {
                 ["path"] = new[] { 2 }, // вкладываем в section «Модель данных»
+                ["subject"] = new[] { 425 },
+                ["subsystem"] = new[] { 433 },
+                ["audience"] = new[] { 436 },
+                ["csharp_structure"] = new[] { 437 },
             });
         var createResult = api.ApplyOne(createOp);
         Assert.True(createResult.Applied);

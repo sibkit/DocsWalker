@@ -44,4 +44,5 @@ docs/.docswalker/sessions/
 kernel-config.json
 .dw/
 kernel.log
+kernel.stdout.log
 kernel.pid

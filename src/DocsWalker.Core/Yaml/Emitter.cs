@@ -181,6 +181,10 @@ public sealed class Emitter
     /// </summary>
     private bool IsPathChildRef(string sourceType, RefDef rd)
     {
+        // Любая tree-ref (включая classifier-tree-refs типа subject_parent) — не path-child:
+        // на self-referencing типах (subject_category и т.п.) tree-ref имеет target=self и
+        // совпадает с path-self-target по типу, что путает простой target_types-тест.
+        if (rd.Tree is not null) return false;
         foreach (var targetTypeName in rd.TargetTypes)
         {
             if (!_typeByName.TryGetValue(targetTypeName, out var targetType)) continue;

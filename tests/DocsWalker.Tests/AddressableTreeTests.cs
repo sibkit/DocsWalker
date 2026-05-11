@@ -200,11 +200,13 @@ public class AddressableTreeTests
     [Fact]
     public void GetByPath_PathTreeStillWorksAsBefore_OnRealSchema()
     {
-        // Регрессия: реальный docs/ DocsWalker, default-резолвинг → path (единственный addressable).
+        // Регрессия: реальный docs/ DocsWalker, явный tree=path резолвит документ
+        // (default-резолвинг здесь даст tree_required, т.к. в реальной Схеме теперь
+        // несколько addressable trees — path и classifier-trees).
         var schema = SchemaLoader.LoadSchema(TestPaths.SchemaPath);
         var docs = DocumentLoader.Load(TestPaths.DocsRoot, schema);
         var api = new ReadApi(docs.Graph, schema);
-        var subtree = api.GetByPath("DocsWalker");
+        var subtree = api.GetByPath("DocsWalker", tree: Node.PathRefName);
         Assert.Equal("document", subtree.Node.TypeName);
     }
 }

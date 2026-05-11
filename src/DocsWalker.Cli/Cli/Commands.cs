@@ -247,17 +247,20 @@ internal static class Commands
                 Opt("name",         ParamType.String,  "Фильтр по имени связи."),
                 Opt("unlink",       ParamType.String,  "true → разрыв вместо переноса.")),
             Write("update_schema",
-                desc: "Atomic-замена docs/Схема.yml. yaml_text — полный YAML новой Схемы. Сервер парсит, валидирует под meta-schema и прогоняет текущий граф под новой Схемой через Validator (ловит несовместимые правки, ломающие существующие узлы). Применяет атомарно при успехе.",
+                desc: "Atomic-замена docs/Схема.yml. yaml_text — полный YAML новой Схемы. Сервер парсит, валидирует под meta-schema и прогоняет текущий граф под новой Схемой через Validator (ловит несовместимые правки, ломающие существующие узлы). Применяет атомарно при успехе. force=true пропускает Validator (admin-knob для миграций, где следующая операция чинит граф); meta-schema всегда проверяется.",
                 examples: new[]
                 {
                     "docswalker update-schema --yaml-text='description: ...\\ntrees:\\n  - name: path\\n  - name: subject\\ntypes: [...]'",
                     "docswalker update-schema --yaml-text='...' --dry-run=true",
+                    "docswalker update-schema --yaml-text='...' --force=true",
                 },
-                Req("yaml_text", ParamType.String, "Полный YAML-текст новой Схемы (заменяет содержимое файла целиком).")),
+                Req("yaml_text", ParamType.String, "Полный YAML-текст новой Схемы (заменяет содержимое файла целиком)."),
+                Opt("force", ParamType.String, "true → пропустить Validator на текущем графе (admin-knob для миграций). По умолчанию false; meta-schema всегда валидируется.")),
             Write("transaction",
-                desc: "Атомарная пачка write-операций. Применяется целиком; результат — массив элементов {op, ...поля}.",
+                desc: "Атомарная пачка write-операций. Применяется целиком; результат — массив элементов {op, ...поля}. force=true пропускает финальный Validator на новом графе (admin-knob для миграций); per-op проверки в ApplyOp выполняются всегда.",
                 examples: new[] { "docswalker transaction --operations='[{\"op\":\"create-node\",...},{\"op\":\"create-ref\",...}]'" },
-                Req("operations", ParamType.JsonArray, "JSON-массив операций (см. формат в TransactionParser). Принимается через MCP arguments напрямую (array of object) — серверный конвертер передаст raw JSON со скобками в CLI.")),
+                Req("operations", ParamType.JsonArray, "JSON-массив операций (см. формат в TransactionParser). Принимается через MCP arguments напрямую (array of object) — серверный конвертер передаст raw JSON со скобками в CLI."),
+                Opt("force", ParamType.String, "true → пропустить финальный Validator (admin-knob для миграций). По умолчанию false.")),
         };
     }
 

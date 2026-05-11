@@ -107,10 +107,20 @@ public class CreateNodeSchemaTests
         var description = (string?)schema["description"];
         Assert.NotNull(description);
 
-        // rule: text_required=true + required out_ref examples (cardinality=many).
-        Assert.Contains("rule: [type, title, text, path, examples]", description!);
-        // section: text_required=false, нет required out_refs кроме path.
-        Assert.Contains("section: [type, title, path]", description!);
+        // rule: text_required=true + required out_ref examples (cardinality=many)
+        // + classifier-tree-refs (subject/subsystem/audience/csharp_structure, все required).
+        var ruleLine = ExtractRequiredLine(description!, "rule");
+        Assert.Contains("type", ruleLine);
+        Assert.Contains("title", ruleLine);
+        Assert.Contains("text", ruleLine);
+        Assert.Contains("path", ruleLine);
+        Assert.Contains("examples", ruleLine);
+
+        // section: text_required=false, обязательны type+title+path.
+        var sectionLine = ExtractRequiredLine(description!, "section");
+        Assert.Contains("type", sectionLine);
+        Assert.Contains("title", sectionLine);
+        Assert.Contains("path", sectionLine);
     }
 
     [Fact]
@@ -123,8 +133,32 @@ public class CreateNodeSchemaTests
         var description = (string?)typeProp["description"];
         Assert.NotNull(description);
 
-        Assert.Contains("rule: [type, title, text, path, examples]", description!);
-        Assert.Contains("section: [type, title, path]", description!);
+        var ruleLine = ExtractRequiredLine(description!, "rule");
+        Assert.Contains("type", ruleLine);
+        Assert.Contains("title", ruleLine);
+        Assert.Contains("text", ruleLine);
+        Assert.Contains("path", ruleLine);
+        Assert.Contains("examples", ruleLine);
+
+        var sectionLine = ExtractRequiredLine(description!, "section");
+        Assert.Contains("type", sectionLine);
+        Assert.Contains("title", sectionLine);
+        Assert.Contains("path", sectionLine);
+    }
+
+    /// <summary>
+    /// Извлекает из текстовой таблицы required-полей строку для конкретного типа,
+    /// например "<c>rule: [type, title, ...]</c>". Тест устойчив к расширению
+    /// required-набора (например, при добавлении новых tree-refs в Схему).
+    /// </summary>
+    private static string ExtractRequiredLine(string description, string typeName)
+    {
+        var prefix = typeName + ": [";
+        var idx = description.IndexOf(prefix, StringComparison.Ordinal);
+        Assert.True(idx >= 0, $"В description не найдена строка для типа '{typeName}'.");
+        var endIdx = description.IndexOf(']', idx);
+        Assert.True(endIdx > idx, $"В description строка для '{typeName}' не закрыта ']'.");
+        return description.Substring(idx, endIdx - idx + 1);
     }
 
     [Fact]

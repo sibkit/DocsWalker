@@ -261,17 +261,21 @@ internal static class WriteHandlers
             return 1;
         }
 
-        return RunMany(storagePath, ops, dryRun);
+        var force = args.TryGetValue("force", out var rawForce)
+            && string.Equals(rawForce, "true", StringComparison.OrdinalIgnoreCase);
+        return RunMany(storagePath, ops, dryRun, force);
     }
 
     public static int UpdateSchema(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var yamlText = args["yaml-text"];
+        var force = args.TryGetValue("force", out var rawForce)
+            && string.Equals(rawForce, "true", StringComparison.OrdinalIgnoreCase);
         try
         {
             var ctx = WriteContext.FromStoragePath(storagePath);
             var api = new WriteApi(ctx);
-            var result = api.UpdateSchema(yamlText, dryRun);
+            var result = api.UpdateSchema(yamlText, dryRun, force);
             var json = new JsonObject
             {
                 ["types_count"] = result.TypesCount,
@@ -307,18 +311,18 @@ internal static class WriteHandlers
     }
 
     private static int Run(string storagePath, WriteOp op, bool dryRun) =>
-        RunCore(storagePath, new[] { op }, transaction: false, dryRun);
+        RunCore(storagePath, new[] { op }, transaction: false, dryRun, force: false);
 
-    private static int RunMany(string storagePath, IReadOnlyList<WriteOp> ops, bool dryRun) =>
-        RunCore(storagePath, ops, transaction: true, dryRun);
+    private static int RunMany(string storagePath, IReadOnlyList<WriteOp> ops, bool dryRun, bool force = false) =>
+        RunCore(storagePath, ops, transaction: true, dryRun, force);
 
-    private static int RunCore(string storagePath, IReadOnlyList<WriteOp> ops, bool transaction, bool dryRun)
+    private static int RunCore(string storagePath, IReadOnlyList<WriteOp> ops, bool transaction, bool dryRun, bool force)
     {
         try
         {
             var ctx = WriteContext.FromStoragePath(storagePath);
             var api = new WriteApi(ctx);
-            var result = api.Apply(ops, dryRun);
+            var result = api.Apply(ops, dryRun, force);
 
             if (transaction)
             {

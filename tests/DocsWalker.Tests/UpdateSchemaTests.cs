@@ -40,12 +40,10 @@ public class UpdateSchemaTests
         var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
 
         var originalYaml = File.ReadAllText(env.SchemaPath);
-        // YAML отличается от оригинала маркером в description — dry-run не должен его записать.
+        // YAML отличается от оригинала маркером (в виде trailing YAML-комментария,
+        // безопасного для любой структуры Схемы) — dry-run не должен его записать.
         const string marker = "##DRY-RUN-CHECK-MARKER##";
-        var modifiedYaml = originalYaml.Replace(
-            "description:",
-            "description: " + marker + " ",
-            StringComparison.Ordinal);
+        var modifiedYaml = originalYaml + "\n# " + marker + "\n";
 
         var result = api.UpdateSchema(modifiedYaml, dryRun: true);
 
@@ -149,6 +147,80 @@ public class UpdateSchemaTests
 
         Assert.Throws<WriteValidationException>(() => api.UpdateSchema(graphBreakingSchema, dryRun: true));
 
+        Assert.Equal(originalYaml, File.ReadAllText(env.SchemaPath));
+    }
+
+    [Fact]
+    public void UpdateSchema_ForceWithGraphBreakingSchema_AppliedDespiteBrokenGraph()
+    {
+        // force=true — admin-knob для миграций: пропускает Validator (но не meta-schema).
+        // Та же ломающая схема, что и в UpdateSchema_SchemaBreaksGraph_*, под force должна
+        // успешно записаться. Граф после этого невалиден, но это ответственность вызывающего —
+        // следующая операция чинит граф (см. stg-0011/migrate-classifiers-data).
+        using var env = new WriteTestEnvironment();
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
+
+        const string graphBreakingSchema =
+            "description: Minimal schema for test\n" +
+            "trees:\n" +
+            "  - name: path\n" +
+            "types:\n" +
+            "  - name: root\n" +
+            "    title_source: filename\n" +
+            "    text_required: false\n";
+
+        var result = api.UpdateSchema(graphBreakingSchema, dryRun: false, force: true);
+
+        Assert.True(result.Applied);
+        Assert.Equal(1, result.TypesCount);
+        Assert.Equal(1, result.TreesCount);
+
+        // Файл перезаписан: новый текст на диске.
+        Assert.Equal(graphBreakingSchema, File.ReadAllText(env.SchemaPath));
+    }
+
+    [Fact]
+    public void UpdateSchema_ForceDoesNotBypassMetaSchema()
+    {
+        // force обходит только Validator на графе. Meta-schema проверяется всегда:
+        // YAML без обязательного поля description должен упасть даже с force=true.
+        using var env = new WriteTestEnvironment();
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
+        var originalYaml = File.ReadAllText(env.SchemaPath);
+
+        const string missingDescription =
+            "trees:\n" +
+            "  - name: path\n" +
+            "types: []\n";
+
+        var ex = Assert.Throws<WriteApiException>(
+            () => api.UpdateSchema(missingDescription, dryRun: false, force: true));
+        Assert.False(string.IsNullOrEmpty(ex.Code));
+
+        // Файл не изменился — meta-schema check сработал до записи.
+        Assert.Equal(originalYaml, File.ReadAllText(env.SchemaPath));
+    }
+
+    [Fact]
+    public void UpdateSchema_ForceWithDryRun_NotAppliedAndFileUnchanged()
+    {
+        // force + dryRun: валидатор пропущен, но FS-фаза тоже пропущена — файл не меняется.
+        using var env = new WriteTestEnvironment();
+        var api = new WriteApi(WriteContext.FromStoragePath(env.DocsRoot));
+        var originalYaml = File.ReadAllText(env.SchemaPath);
+
+        const string graphBreakingSchema =
+            "description: Minimal schema for test\n" +
+            "trees:\n" +
+            "  - name: path\n" +
+            "types:\n" +
+            "  - name: root\n" +
+            "    title_source: filename\n" +
+            "    text_required: false\n";
+
+        var result = api.UpdateSchema(graphBreakingSchema, dryRun: true, force: true);
+
+        Assert.False(result.Applied);
         Assert.Equal(originalYaml, File.ReadAllText(env.SchemaPath));
     }
 }

@@ -3,483 +3,1682 @@ text: Утилита управления docs/. Единственная точ
 sections:
   - "(#2) Назначение":
     - statements:
-      - "(#123) Программа на C#": DocsWalker — программа на C#, единственное средство чтения и записи docs/ для LLM и инструментов проекта.
-      - "(#124) Без прямого YAML": LLM не работает с YAML-файлами docs/ напрямую. Все операции — через API DocsWalker.
+      - "(#123) Программа на C#":
+        - text: DocsWalker — программа на C#, единственное средство чтения и записи docs/ для LLM и инструментов проекта.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#124) Без прямого YAML":
+        - text: LLM не работает с YAML-файлами docs/ напрямую. Все операции — через API DocsWalker.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#125) Запись через API":
         - text: Любая запись в docs/ выполняется через DocsWalker. Прямая правка YAML-файлов LLM-ом запрещена.
         - examples: [188]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#126) Невалидное недостижимо":
         - text: 'Невалидное состояние docs/ недостижимо: запись применяется только если результат проходит полный набор проверок.'
         - examples: [189]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#188) CLI": 'Создание section через create-node {"type": "section", "title": "..."}, не правкой YAML вручную.'
-      - "(#189) Откат": Попытка create-ref с несуществующим to_id отвергается; docs/ остаётся валидным.
+      - "(#188) CLI":
+        - text: 'Создание section через create-node {"type": "section", "title": "..."}, не правкой YAML вручную.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#189) Откат":
+        - text: Попытка create-ref с несуществующим to_id отвергается; docs/ остаётся валидным.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#3) Архитектура":
     - statements:
-      - "(#127) Ядро на C#": 'Ядро DocsWalker — библиотека на C#: парсер YAML, валидатор, API чтения и записи, сериализатор YAML.'
-      - "(#128) Транспорты поверх": Поверх ядра — транспорты, отдающие API наружу.
+      - "(#127) Ядро на C#":
+        - text: 'Ядро DocsWalker — библиотека на C#: парсер YAML, валидатор, API чтения и записи, сериализатор YAML.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#128) Транспорты поверх":
+        - text: Поверх ядра — транспорты, отдающие API наружу.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#129) MCP первый канал":
         - text: Основной транспорт для LLM-агентов — MCP (stdio JSON-RPC), отдельный exe `DocsWalker.Mcp.exe`. Все новые операции и параметры появляются в MCP.
         - examples: [190]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#130) CLI deprecated":
         - text: 'CLI-интерфейс зафризен: новые команды и поведение в CLI не добавляются. CLI используется только REPL''ом (dev-utility) и для поддержки старых инструментов; запланирован выпил exe DocsWalker.Cli.'
         - examples: [191]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#190) Подкоманды": 'Команды одинаковы во всех транспортах — MCP-tools (основной канал) и CLI-подкоманды (deprecated): get-nodes, create-node, move-node.'
-      - "(#191) MCP-tool": Каждая API-операция доступна как MCP-tool в `DocsWalker.Mcp.exe` (stdio↔HTTP-bridge к kernel'у).
+      - "(#190) Подкоманды":
+        - text: 'Команды одинаковы во всех транспортах — MCP-tools (основной канал) и CLI-подкоманды (deprecated): get-nodes, create-node, move-node.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#191) MCP-tool":
+        - text: Каждая API-операция доступна как MCP-tool в `DocsWalker.Mcp.exe` (stdio↔HTTP-bridge к kernel'у).
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#4) Уровни схемы":
     - rules:
       - "(#131) Двухуровневая валидация":
         - text: Иерархия валидации двухуровневая — мета-схема валидирует схему; схема валидирует все остальные документы docs/.
         - examples: [192]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#132) Универсальный default":
         - text: Мета-схема создаётся в проекте универсальной (значение по умолчанию). При первом запуске DocsWalker в проекте без docs/.docswalker/meta-schema.yml файл создаётся со стандартным содержимым.
         - examples: [193]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#133) Проектная правка":
         - text: Проект может править docs/.docswalker/meta-schema.yml — DocsWalker использует именно проектную версию.
         - examples: [194]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#134) Только в служебной папке":
         - text: Мета-схема не размещается вне docs/.docswalker/. Папка docs/.docswalker/ зарезервирована за служебными файлами DocsWalker.
         - examples: [195]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#5) мета-схема": Описание формы schema-файла. Источник правды для валидатора schema-файла. Хранится в docs/.docswalker/meta-schema.yml (текущая версия — v4).
-      - "(#6) схема": Описание типов узлов проекта и контрактов их out_refs. Источник правды для валидатора обычных документов docs/. Хранится в docs/Схема.yml. Сама валидируется по мета-схеме.
+      - "(#5) мета-схема":
+        - text: Описание формы schema-файла. Источник правды для валидатора schema-файла. Хранится в docs/.docswalker/meta-schema.yml (текущая версия — v4).
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#6) схема":
+        - text: Описание типов узлов проекта и контрактов их out_refs. Источник правды для валидатора обычных документов docs/. Хранится в docs/Схема.yml. Сама валидируется по мета-схеме.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#192) Цепочка": meta-schema.yml валидирует Схема.yml, а Схема.yml валидирует все docs/*.yml.
-      - "(#193) Auto-create": При первом запуске check-integrity без meta-schema.yml файл создаётся со стандартным содержимым.
-      - "(#194) Кастомный type": Добавление нового type_definition в meta-schema.yml — DocsWalker использует именно проектную версию.
-      - "(#195) Только в .docswalker": meta-schema.yml в docs/conf/meta-schema.yml не загружается; путь жёстко привязан к docs/.docswalker/.
+      - "(#192) Цепочка":
+        - text: meta-schema.yml валидирует Схема.yml, а Схема.yml валидирует все docs/*.yml.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#193) Auto-create":
+        - text: При первом запуске check-integrity без meta-schema.yml файл создаётся со стандартным содержимым.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#194) Кастомный type":
+        - text: Добавление нового type_definition в meta-schema.yml — DocsWalker использует именно проектную версию.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#195) Только в .docswalker":
+        - text: meta-schema.yml в docs/conf/meta-schema.yml не загружается; путь жёстко привязан к docs/.docswalker/.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#7) Модель данных":
     - rules:
       - "(#135) Связи объявлены в типе":
         - text: Все связи кроме path объявлены в типе узла-источника как out_refs (с именем, target_types, cardinality, required). Создание связи нового имени требует правки Схемы — добавления out_ref в type_definition.
         - examples: [196]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#136) id из sequence":
         - text: У каждого узла есть глобально уникальный целочисленный id, выдаваемый DocsWalker из sequence-счётчика, хранящегося в docs/.docswalker/sequence.txt.
         - examples: [197]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#137) id не вручную":
         - text: LLM не задаёт id вручную. id выдаётся DocsWalker.
         - examples: [198]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#138) path производна":
         - text: 'Связь path производна от структурной операции: создаётся при create_node, переписывается при move_node, удаляется при delete_node. В out_refs хранится явно как значение для имени path, без отдельного концепта ref_type.'
         - examples: [199]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#139) text — длина и допустимые символы":
         - text: text узла — строка длиной не более 2000 символов. Перевод строки \n разрешён (текст может быть многоабзацным внутри одной YAML-цитированной строки), табуляция \t запрещена. Многострочные YAML-литералы "|" и ">" не используются — \n кодируется внутри обычной двойной строки.
         - examples: [200]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#376) Root как точка входа":
         - text: Любая ссылка на id=0 в out_refs.path указывает на root. LLM, увидев id=0 впервые, может зафетчить его через get-nodes ids=[0] — узел отдаёт pointer на get-usage-guide; список top-level документов и folders доступен через get-in-refs --id=0 --name=path.
         - examples: [375]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#8) узел": 'Атомарная единица в DocsWalker. Имеет ровно 5 полей: id (sequence-id, выдаёт ядро), type (имя типа из Схемы), title (1–2-словный path-сегмент), text (единица смысла, всегда одна строка), out_refs (исходящие связи как Map<имя, list<id>>).'
-      - "(#9) связь (ref)": Направленная пара (имя_связи, id_цели), хранится в out_refs узла-источника. Имя связи — либо встроенное path, либо имя, объявленное в типе узла-источника как out_refs[name] в Схеме.
-      - "(#83) out_refs": Поле узла, содержащее все его исходящие связи. Map<имя, list<id>>. Связь path присутствует у каждого узла кроме root (cardinality=one). Прочие связи объявляются типом узла-источника.
-      - "(#84) in_refs": Вычисляемое представление «кто на меня ссылается». Получается обратным проходом по графу. В YAML-файлах не хранится, доступно через API.
-      - "(#85) path": Встроенная связь ядра. У каждого узла кроме root — обязательная, cardinality=one. Цель — родитель в иерархии. В out_refs хранится явно как out_refs[path] = [parent_id]. Управляется ядром через структурные операции create_node / delete_node / move_node; через create_ref / delete_ref не правится.
-      - "(#86) root": 'Синглтон ядра с id=0 — корень дерева path. С мета-схемы v6 объявлен как тип root в Схеме, с особенностью: нет path-ref (root не имеет родителя). Не персистится в YAML — синтезируется ядром на лету (title=имя FS-папки docs/, text=pointer на get-usage-guide, out_refs пуст). Точка входа для LLM: get-nodes ids=[0] возвращает узел; get-in-refs --id=0 --name=path даёт список top-level documents и folders.'
-      - "(#184) folder": Структурный тип. Узел физически = каталог в docs/. Title_source=dirname (имя каталога). Идентификация через docs/.docswalker/folders.yml — там записывается id, parent_id и title для каждого folder-узла. Документы внутри подкаталога имеют path-связь на соответствующий folder, а не на root.
-      - "(#185) folders.yml": 'Служебный файл docs/.docswalker/folders.yml — primary-источник folder-узлов. Формат — плоский YAML-список из mapping-записей с полями id, path (id родителя), title. Отсутствие или пустой файл = проект без подкаталогов. FS-каталоги в docs/ производны: расхождение «есть запись, нет каталога» / «есть каталог, нет записи» диагностируется как структурированная ошибка graph-load (folder_dir_missing / folder_record_missing) и не чинится автоматически.'
+      - "(#8) узел":
+        - text: 'Атомарная единица в DocsWalker. Имеет ровно 5 полей: id (sequence-id, выдаёт ядро), type (имя типа из Схемы), title (1–2-словный path-сегмент), text (единица смысла, всегда одна строка), out_refs (исходящие связи как Map<имя, list<id>>).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#9) связь (ref)":
+        - text: Направленная пара (имя_связи, id_цели), хранится в out_refs узла-источника. Имя связи — либо встроенное path, либо имя, объявленное в типе узла-источника как out_refs[name] в Схеме.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#83) out_refs":
+        - text: Поле узла, содержащее все его исходящие связи. Map<имя, list<id>>. Связь path присутствует у каждого узла кроме root (cardinality=one). Прочие связи объявляются типом узла-источника.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#84) in_refs":
+        - text: Вычисляемое представление «кто на меня ссылается». Получается обратным проходом по графу. В YAML-файлах не хранится, доступно через API.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#85) path":
+        - text: Встроенная связь ядра. У каждого узла кроме root — обязательная, cardinality=one. Цель — родитель в иерархии. В out_refs хранится явно как out_refs[path] = [parent_id]. Управляется ядром через структурные операции create_node / delete_node / move_node; через create_ref / delete_ref не правится.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#86) root":
+        - text: 'Синглтон ядра с id=0 — корень дерева path. С мета-схемы v6 объявлен как тип root в Схеме, с особенностью: нет path-ref (root не имеет родителя). Не персистится в YAML — синтезируется ядром на лету (title=имя FS-папки docs/, text=pointer на get-usage-guide, out_refs пуст). Точка входа для LLM: get-nodes ids=[0] возвращает узел; get-in-refs --id=0 --name=path даёт список top-level documents и folders.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#184) folder":
+        - text: Структурный тип. Узел физически = каталог в docs/. Title_source=dirname (имя каталога). Идентификация через docs/.docswalker/folders.yml — там записывается id, parent_id и title для каждого folder-узла. Документы внутри подкаталога имеют path-связь на соответствующий folder, а не на root.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#185) folders.yml":
+        - text: 'Служебный файл docs/.docswalker/folders.yml — primary-источник folder-узлов. Формат — плоский YAML-список из mapping-записей с полями id, path (id родителя), title. Отсутствие или пустой файл = проект без подкаталогов. FS-каталоги в docs/ производны: расхождение «есть запись, нет каталога» / «есть каталог, нет записи» диагностируется как структурированная ошибка graph-load (folder_dir_missing / folder_record_missing) и не чинится автоматически.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#196) Декларация": Чтобы добавить связь `related` к section, нужно сначала описать её в out_refs типа section в Схема.yml.
-      - "(#197) Резервирование": После create-node sequence.txt инкрементируется на 1; новый id = новое значение sequence.txt.
-      - "(#198) Параметр id": У create-node нет параметра --id; id присваивается ядром.
-      - "(#199) После move-node": После move-node id=42 to=8 значение out_refs.path[0] становится 8.
-      - "(#200) Длина и таб": Текст длиной 2500 символов отвергается с кодом text_too_long; текст со встроенным символом \t отвергается с кодом invalid_text. Текст с \n принимается.
-      - "(#375) get-nodes id=0": Запрос get-nodes ids=[0] отдаёт {id:0, type:root, title:docs, text:Корень docs/. Briefing — get-usage-guide., out_refs:{}}.
+      - "(#196) Декларация":
+        - text: Чтобы добавить связь `related` к section, нужно сначала описать её в out_refs типа section в Схема.yml.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#197) Резервирование":
+        - text: После create-node sequence.txt инкрементируется на 1; новый id = новое значение sequence.txt.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#198) Параметр id":
+        - text: У create-node нет параметра --id; id присваивается ядром.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#199) После move-node":
+        - text: После move-node id=42 to=8 значение out_refs.path[0] становится 8.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#200) Длина и таб":
+        - text: Текст длиной 2500 символов отвергается с кодом text_too_long; текст со встроенным символом \t отвергается с кодом invalid_text. Текст с \n принимается.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#375) get-nodes id=0":
+        - text: Запрос get-nodes ids=[0] отдаёт {id:0, type:root, title:docs, text:Корень docs/. Briefing — get-usage-guide., out_refs:{}}.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#14) Идентификация и адресация":
     - statements:
-      - "(#140) id и title": Узел адресуется по id. Для пользователя DocsWalker отдаёт id и title отдельными полями. Смысловые узлы в YAML серилизуются как single_key_mapping вида "(#id) title".
-      - "(#141) Путь — цепочка path": Путь узла — цепочка path-связей до root. Доступна через API как массив id и как человекочитаемая строка title-сегментов; в YAML путь явно не хранится.
+      - "(#140) id и title":
+        - text: Узел адресуется по id. Для пользователя DocsWalker отдаёт id и title отдельными полями. Смысловые узлы в YAML серилизуются как single_key_mapping вида "(#id) title".
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#141) Путь — цепочка path":
+        - text: Путь узла — цепочка path-связей до root. Доступна через API как массив id и как человекочитаемая строка title-сегментов; в YAML путь явно не хранится.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#142) Ссылки по id":
         - text: Все ссылки между узлами — по id, без хранения пути в YAML.
         - examples: [201]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#143) Rename без правки ссылок":
         - text: При rename узла id остаётся тем же; ссылки на узел не правятся.
         - examples: [202]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#201) В YAML": 'В out_refs хранится `related: [42, 8]`, не `related: [DocsWalker/Section]`.'
-      - "(#202) Update title": После update-node id=42 --title=Новое все out_refs других узлов на 42 не правятся.
+      - "(#201) В YAML":
+        - text: 'В out_refs хранится `related: [42, 8]`, не `related: [DocsWalker/Section]`.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#202) Update title":
+        - text: После update-node id=42 --title=Новое все out_refs других узлов на 42 не правятся.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#15) Sequence-счётчик id":
     - statements:
-      - "(#144) Файл sequence.txt": Счётчик id хранится в файле docs/.docswalker/sequence.txt. Содержимое — одно целое десятичное число, текущее положение sequence. Никаких других полей и форматов в файле нет.
+      - "(#144) Файл sequence.txt":
+        - text: Счётчик id хранится в файле docs/.docswalker/sequence.txt. Содержимое — одно целое десятичное число, текущее положение sequence. Никаких других полей и форматов в файле нет.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#145) Старт с 0":
         - text: При первой инициализации DocsWalker создаёт sequence.txt со значением 0.
         - examples: [203]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#146) Инкремент при создании":
         - text: При создании узла DocsWalker увеличивает значение в sequence.txt на 1 и присваивает новое значение полю id создаваемого узла.
         - examples: [204]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#147) Монотонность":
         - text: При удалении узла id не возвращается обратно. Sequence монотонно растёт.
         - examples: [205]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#148) Без ручной правки":
         - text: Ручная правка sequence.txt запрещена.
         - examples: [206]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#203) Init": После первой инициализации DocsWalker файл sequence.txt содержит "0".
-      - "(#204) Шаг": Если sequence.txt = 187, после create-node новый узел получает id=188 и sequence.txt = 188.
-      - "(#205) После delete": После delete-nodes ids=42 значение sequence.txt не уменьшается; следующий id будет sequence.txt + 1.
-      - "(#206) Только ядро": Изменять sequence.txt можно только через write-операции DocsWalker.
+      - "(#203) Init":
+        - text: После первой инициализации DocsWalker файл sequence.txt содержит "0".
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#204) Шаг":
+        - text: Если sequence.txt = 187, после create-node новый узел получает id=188 и sequence.txt = 188.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#205) После delete":
+        - text: После delete-nodes ids=42 значение sequence.txt не уменьшается; следующий id будет sequence.txt + 1.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#206) Только ядро":
+        - text: Изменять sequence.txt можно только через write-операции DocsWalker.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#16) Контракт валидации":
     - rules:
       - "(#149) Полный набор проверок":
         - text: 'Каждая операция записи применяется только если результирующее состояние docs/ проходит все проверки: meta_schema (Схема.yml соответствует мета-схеме); schema (изменяемый документ соответствует Схеме — соблюдены path_targets и out_refs контракты типов, cardinality каждой связи, required-связи заполнены, text_required соблюдается); refs (имя каждой связи в out_refs узла объявлено в типе источника или равно path; цель связи существует; тип цели входит в target_types связи; цикл по path невозможен); unique (id узла глобально уникален; title уникален среди siblings одного типа в одном path-родителе); sequence (значение sequence-счётчика покрывает максимальный id графа); style (длина text ≤2000 символов, отсутствие \t в title и text — см. ниже).'
         - examples: [207]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#150) Валидация по графу":
         - text: 'Валидатор работает по in-memory графу узлов: все проверки строятся вокруг 5 свойств Node (id, type, title, text, out_refs). Сырой YAML-текст файлов валидатор не разбирает — структурные нарушения YAML отлавливаются парсером SharpYaml на этапе загрузки, валидация структуры файла поверх парсера не дублируется.'
         - examples: [208]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#151) Style-проверка":
         - text: 'Style-проверка: title узла соответствует title_format его типа (для смысловых типов — формат "(#id) title"); title не содержит \n, \r, \t (всегда одна строка); text не содержит \r и \t, длина text не превышает 2000 символов (\n в text допустим). Превышение длины — text_too_long; запрещённый символ — invalid_text.'
         - examples: [209]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#152) Атомарность записи":
         - text: 'Запись атомарна: либо применяется целиком, либо файлы остаются без изменений и операция возвращает ошибку с диагностикой.'
         - examples: [210]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#153) Структурированные ошибки":
         - text: 'Ошибки возвращаются структурированно: код ошибки, id узла или координаты места ошибки, человекочитаемое сообщение, опциональный hint — короткая подсказка LLM-агенту «как починить» (имя команды, рекомендуемый порядок вызовов). Поле hint появляется только когда у ошибки есть осмысленная подсказка.'
         - examples: [211]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#207) Цепочка проверок": meta_schema → schema → refs → unique → sequence → style; первая ошибка останавливает запись.
-      - "(#208) Не YAML": После загрузки docs/ валидатор работает с Node-объектами; сырой YAML повторно не парсится.
-      - "(#209) Запрет таба": Текст с символом табуляции отвергается с кодом invalid_text на этапе style-проверки.
-      - "(#210) Двух файлов": Если transaction правит два YAML-файла и второй упал — первый тоже не сохраняется.
-      - "(#211) Формат ошибки": '{"code": "missing_parameter", "message": "...", "hint": "...", "describe_type": {"name": "rule", "text_required": true, "out_refs": [...]}} в stderr; describe_type появляется только если из контекста выводится тип узла, и его out_refs обрезан до проблемной связи (одной записи), если ошибка локализована именно на ней.'
+      - "(#207) Цепочка проверок":
+        - text: meta_schema → schema → refs → unique → sequence → style; первая ошибка останавливает запись.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#208) Не YAML":
+        - text: После загрузки docs/ валидатор работает с Node-объектами; сырой YAML повторно не парсится.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#209) Запрет таба":
+        - text: Текст с символом табуляции отвергается с кодом invalid_text на этапе style-проверки.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#210) Двух файлов":
+        - text: Если transaction правит два YAML-файла и второй упал — первый тоже не сохраняется.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#211) Формат ошибки":
+        - text: '{"code": "missing_parameter", "message": "...", "hint": "...", "describe_type": {"name": "rule", "text_required": true, "out_refs": [...]}} в stderr; describe_type появляется только если из контекста выводится тип узла, и его out_refs обрезан до проблемной связи (одной записи), если ошибка локализована именно на ней.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#17) Операции чтения":
     - rules:
       - "(#406) Truncation-протокол":
         - text: 'Read-команды get-tree и get-nodes принимают max_tokens — бюджет токенов на ответ; default 50000. При превышении ответ обрезается BFS по depth: верхние уровни сериализуются целиком, нижние — пока влезают. Дополнительные top-level поля ответа: truncated (bool), stopped_at (массив {parent_id, remaining_children, next_offset} — точки обрыва BFS; для get-nodes — единственная запись с parent_id=0 как маркер плоского списка), tokens_used (int — фактически потраченный бюджет), tokens_budget (int — переданный max_tokens, явно эхо-возвращается). При truncated=false поля stopped_at, tokens_used, tokens_budget опускаются (правило #301). Для дочитывания недочитанной части — повторный вызов с id=parent_id и offset=next_offset (или иной механизм per-команды).'
         - examples: [405]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#18) list_documents": Список всех структурных узлов уровня документа в docs/. Возвращает массив элементов с полями id, type ∈ {folder, document}, title, path. Без параметров.
-      - "(#19) get_meta_schema": 'Полное описание мета-схемы в форме, пригодной для LLM. Используется как «инструкция по форме schema-файла» перед правкой Схема.yml. Возвращает все верхнеуровневые ключи docs/.docswalker/meta-schema.yml: типизированные шапки (meta_schema_version, name, description, primitive_types) и структурные секции (schema_root, tree_definition, type_definition, ref_def). Структурные секции отдаются generic-конвертацией yaml↔json: mapping → object, sequence → array, скаляры — bool/integer/string по форме (true/false → bool, целое → integer, иначе → string).'
-      - "(#20) get_schema": Полное описание схемы — типы узлов, их title_source, text_required, path_targets и out_refs контракты. Используется как «инструкция по типам docs/» перед правкой обычных документов.
-      - "(#22) get_nodes": 'Полные узлы по списку id. Параметры — ids (один или несколько id через запятую), fields (опц., whitelist через запятую из id, type, title, text, out_refs, tokens, subtree_tokens; default все, id всегда), compact (опц., bool — alias для fields=id,type,title; default false; явные fields имеют приоритет), max_tokens (опц., бюджет токенов на ответ; default 50000; см. truncation-протокол #406). Для каждого узла возвращает 5 концептуальных полей (id, type, title, text, out_refs Map<имя, list<id>> включая path) плюс метрики токенов tokens (только сам узел) и subtree_tokens (узел вместе с path-потомками). При превышении max_tokens — включаются узлы по порядку ids, пока влезает бюджет; stopped_at несёт {parent_id: 0, remaining_children, next_offset} (parent_id=0 — синтетический маркер плоского списка, next_offset — индекс первого невключённого id).'
-      - "(#23) get_by_path": Полное поддерево узла по человекочитаемому пути. Параметр — path (строка вида "Документ" или "Документ/Раздел/Подраздел", разделитель "/"). Если path указывает на документ — возвращает полное содержимое YAML-файла в структурированной форме. Иначе — поддерево узла со всеми вложенными узлами. Используется для глубокого анализа без множества вызовов get_nodes.
-      - "(#302) get_tree": 'Поддерево узла в указанном tree-scope с бюджетом токенов. Параметры — id (корень поддерева), tree (опц., tree-scope; default path), depth (опц., максимум глубины: 0 — только корень, 1 — корень и один уровень; без параметра — без ограничения), fields (опц., whitelist через запятую из id, type, title, text, out_refs, tokens, subtree_tokens; default все, id всегда), compact (опц., bool — alias для fields=id,type,title; default false; явные fields имеют приоритет), max_tokens (опц., бюджет токенов на ответ; default 50000; см. truncation-протокол #406). Возвращает {tree, root, truncated?, stopped_at?, tokens_used?, tokens_budget?}. root — узел с полями плюс children и метриками tokens / subtree_tokens (опускания дефолтов всегда применены — см. правило #301). При превышении max_tokens — частичный BFS-обход; truncated=true и stopped_at показывают точку обрыва.'
-      - "(#303) get_ancestors": Цепочка родителей узла в указанном tree-scope, от ближайшего родителя к корню дерева. Параметры — id (узел), tree (опц., имя tree-scope; по умолчанию "path"). Возвращает {tree, ancestors}, где ancestors — массив узлов (в формате get_nodes) в порядке от ближайшего родителя к корню. Если узел — корень scope (нет scope-ref для этого дерева), ancestors пуст. Для tree=path цепочка заканчивается над root (id=0); сам root в результат не включается. Единственный способ получить путь до корня одной командой — без него LLM пришлось бы итеративно дёргать get_nodes по out_refs[path].
-      - "(#24) get_refs": 'Все связи узла в обе стороны. Параметры — id, name (опц., фильтр по имени связи). Возвращает {in: Map<имя_связи, [target-ids]>, out: Map<имя_связи, [target-ids]>}. Та же форма, что у out_refs в get_nodes и describe_type — единый контракт по всей API. Параметр name оставляет в обеих map-ах только запись с этим именем; если связей с таким именем нет — обе map-ы пустые объекты. Порядок id внутри списка — по возрастанию.'
-      - "(#25) get_in_refs": Только входящие связи на узел. Параметры — id, name (опц., фильтр по имени связи). Возвращает Map<имя_связи, [source-ids]> непосредственно (без обёртки in/out, поскольку выводятся только входящие). Параметр name оставляет в map-е только запись с этим именем (или пустой объект, если связей нет). Порядок id — по возрастанию.
-      - "(#26) search": Полнотекстовый поиск с BM25-ранжированием по title и text узлов. Параметры — query (substring или regex согласно флагу regex), in (опц., title|text|both, default both), type (опц., фильтр по типу узла), tree (опц., tree-scope; default path), under (опц., id узла — поиск только в его поддереве в указанном tree), regex (опц., true → query трактуется как .NET-regex; default false, query — case-insensitive substring), limit (опц., максимум hit'ов; default 20), compact (опц., bool — alias для whitelist полей id, type, title, score, snippet; default false; функционально совпадает с текущей формой выдачи и зарезервирован под будущее расширение результата). Возвращает массив hit-объектов с полями id, type, title, score (BM25-метрика; больше — релевантнее), snippet (фрагмент text окном ±40 символов вокруг первого совпадения с эллипсисами по краям; ≤160 символов). Title-hit получает boost ×3 относительно text-hit. Сортировка hit'ов по убыванию score, при равенстве — по возрастанию id.
-      - "(#70) check_integrity": 'Полный прогон валидатора на текущем состоянии docs/ без записи. Без параметров. Возвращает структуру {ok: bool, errors: [{code, message, path?, node_id?, hint?}]}. Сама команда не падает на ошибках графа — exit code 0; нарушения целостности — данные ответа, не CLI-ошибка. Используется LLM-агентом как sanity check перед цепочкой правок и для аудита после ручной правки YAML или миграции.'
-      - "(#272) describe_type": 'Описание одного типа из Схемы в FS-агностичной форме. Параметр — name (имя типа). Возвращает {name, description?, text_required, out_refs:[{name, tree?, cardinality?, required?, target_types, description?}]}. Поля tree / cardinality / required в каждом ref выводятся условно: tree-refs получают только tree; non-tree-refs получают cardinality и required только когда они не равны дефолтам (cardinality=many, required=false), иначе поля опускаются. Поле title_source наружу не торчит — это контракт «движок ↔ docs/», LLM его не знает. Если тип не найден — type_not_found с hint списком доступных имён.'
-      - "(#298) get_usage_guide": 'Manifest для LLM в начале сессии: ментальная модель + перечень tree-scope''ов (из Схемы) + manifest всех команд (имя, kind=read|write, описание, параметры с типами и описаниями, примеры) + слепок графа (total_nodes, root_children — id/type/title детей root, schema_types_count). Без параметров. Зови один раз перед цепочкой задач.'
-      - "(#403) get_overview": 'Глобальный snapshot хранилища — экономный обзор перед глубоким чтением. Параметров нет. Возвращает: total_nodes (всего узлов в графе, без synthetic root), max_depth (максимальная глубина path-дерева), total_tokens (сумма tokens всех узлов), trees (массив {name, description?} — описание опускается при пустом), schema.types_count (число типов в Схеме), schema.top_types_by_count (массив {type, count} — топ-5 типов по числу узлов, без типа root), root_children (массив {id, type, title, subtree_tokens} верхнеуровневых узлов path-дерева), hot_spots.largest_nodes (топ-5 узлов с наибольшим tokens отдельного узла — кандидаты на разбиение; поле tokens), hot_spots.most_connected_nodes (топ-5 узлов с наибольшим суммарным числом cross-refs in+out, исключая tree-refs path и пр. tree-scopes из Схемы; поле refs_count). Use case — первый вызов в сессии, до get_usage_guide; даёт ориентиры по объёму, форме и центрам графа без загрузки самих узлов.'
+      - "(#18) list_documents":
+        - text: Список всех структурных узлов уровня документа в docs/. Возвращает массив элементов с полями id, type ∈ {folder, document}, title, path. Без параметров.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#19) get_meta_schema":
+        - text: 'Полное описание мета-схемы в форме, пригодной для LLM. Используется как «инструкция по форме schema-файла» перед правкой Схема.yml. Возвращает все верхнеуровневые ключи docs/.docswalker/meta-schema.yml: типизированные шапки (meta_schema_version, name, description, primitive_types) и структурные секции (schema_root, tree_definition, type_definition, ref_def). Структурные секции отдаются generic-конвертацией yaml↔json: mapping → object, sequence → array, скаляры — bool/integer/string по форме (true/false → bool, целое → integer, иначе → string).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#20) get_schema":
+        - text: Полное описание схемы — типы узлов, их title_source, text_required, path_targets и out_refs контракты. Используется как «инструкция по типам docs/» перед правкой обычных документов.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#22) get_nodes":
+        - text: 'Полные узлы по списку id. Параметры — ids (один или несколько id через запятую), fields (опц., whitelist через запятую из id, type, title, text, out_refs, tokens, subtree_tokens; default все, id всегда), compact (опц., bool — alias для fields=id,type,title; default false; явные fields имеют приоритет), max_tokens (опц., бюджет токенов на ответ; default 50000; см. truncation-протокол #406). Для каждого узла возвращает 5 концептуальных полей (id, type, title, text, out_refs Map<имя, list<id>> включая path) плюс метрики токенов tokens (только сам узел) и subtree_tokens (узел вместе с path-потомками). При превышении max_tokens — включаются узлы по порядку ids, пока влезает бюджет; stopped_at несёт {parent_id: 0, remaining_children, next_offset} (parent_id=0 — синтетический маркер плоского списка, next_offset — индекс первого невключённого id).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#23) get_by_path":
+        - text: Полное поддерево узла по человекочитаемому пути. Параметр — path (строка вида "Документ" или "Документ/Раздел/Подраздел", разделитель "/"). Если path указывает на документ — возвращает полное содержимое YAML-файла в структурированной форме. Иначе — поддерево узла со всеми вложенными узлами. Используется для глубокого анализа без множества вызовов get_nodes.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#302) get_tree":
+        - text: 'Поддерево узла в указанном tree-scope с бюджетом токенов. Параметры — id (корень поддерева), tree (опц., tree-scope; default path), depth (опц., максимум глубины: 0 — только корень, 1 — корень и один уровень; без параметра — без ограничения), fields (опц., whitelist через запятую из id, type, title, text, out_refs, tokens, subtree_tokens; default все, id всегда), compact (опц., bool — alias для fields=id,type,title; default false; явные fields имеют приоритет), max_tokens (опц., бюджет токенов на ответ; default 50000; см. truncation-протокол #406). Возвращает {tree, root, truncated?, stopped_at?, tokens_used?, tokens_budget?}. root — узел с полями плюс children и метриками tokens / subtree_tokens (опускания дефолтов всегда применены — см. правило #301). При превышении max_tokens — частичный BFS-обход; truncated=true и stopped_at показывают точку обрыва.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#303) get_ancestors":
+        - text: Цепочка родителей узла в указанном tree-scope, от ближайшего родителя к корню дерева. Параметры — id (узел), tree (опц., имя tree-scope; по умолчанию "path"). Возвращает {tree, ancestors}, где ancestors — массив узлов (в формате get_nodes) в порядке от ближайшего родителя к корню. Если узел — корень scope (нет scope-ref для этого дерева), ancestors пуст. Для tree=path цепочка заканчивается над root (id=0); сам root в результат не включается. Единственный способ получить путь до корня одной командой — без него LLM пришлось бы итеративно дёргать get_nodes по out_refs[path].
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#24) get_refs":
+        - text: 'Все связи узла в обе стороны. Параметры — id, name (опц., фильтр по имени связи). Возвращает {in: Map<имя_связи, [target-ids]>, out: Map<имя_связи, [target-ids]>}. Та же форма, что у out_refs в get_nodes и describe_type — единый контракт по всей API. Параметр name оставляет в обеих map-ах только запись с этим именем; если связей с таким именем нет — обе map-ы пустые объекты. Порядок id внутри списка — по возрастанию.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#25) get_in_refs":
+        - text: Только входящие связи на узел. Параметры — id, name (опц., фильтр по имени связи). Возвращает Map<имя_связи, [source-ids]> непосредственно (без обёртки in/out, поскольку выводятся только входящие). Параметр name оставляет в map-е только запись с этим именем (или пустой объект, если связей нет). Порядок id — по возрастанию.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#26) search":
+        - text: Полнотекстовый поиск с BM25-ранжированием по title и text узлов. Параметры — query (substring или regex согласно флагу regex), in (опц., title|text|both, default both), type (опц., фильтр по типу узла), tree (опц., tree-scope; default path), under (опц., id узла — поиск только в его поддереве в указанном tree), regex (опц., true → query трактуется как .NET-regex; default false, query — case-insensitive substring), limit (опц., максимум hit'ов; default 20), compact (опц., bool — alias для whitelist полей id, type, title, score, snippet; default false; функционально совпадает с текущей формой выдачи и зарезервирован под будущее расширение результата). Возвращает массив hit-объектов с полями id, type, title, score (BM25-метрика; больше — релевантнее), snippet (фрагмент text окном ±40 символов вокруг первого совпадения с эллипсисами по краям; ≤160 символов). Title-hit получает boost ×3 относительно text-hit. Сортировка hit'ов по убыванию score, при равенстве — по возрастанию id.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#70) check_integrity":
+        - text: 'Полный прогон валидатора на текущем состоянии docs/ без записи. Без параметров. Возвращает структуру {ok: bool, errors: [{code, message, path?, node_id?, hint?}]}. Сама команда не падает на ошибках графа — exit code 0; нарушения целостности — данные ответа, не CLI-ошибка. Используется LLM-агентом как sanity check перед цепочкой правок и для аудита после ручной правки YAML или миграции.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#272) describe_type":
+        - text: 'Описание одного типа из Схемы в FS-агностичной форме. Параметр — name (имя типа). Возвращает {name, description?, text_required, out_refs:[{name, tree?, cardinality?, required?, target_types, description?}]}. Поля tree / cardinality / required в каждом ref выводятся условно: tree-refs получают только tree; non-tree-refs получают cardinality и required только когда они не равны дефолтам (cardinality=many, required=false), иначе поля опускаются. Поле title_source наружу не торчит — это контракт «движок ↔ docs/», LLM его не знает. Если тип не найден — type_not_found с hint списком доступных имён.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#298) get_usage_guide":
+        - text: 'Manifest для LLM в начале сессии: ментальная модель + перечень tree-scope''ов (из Схемы) + manifest всех команд (имя, kind=read|write, описание, параметры с типами и описаниями, примеры) + слепок графа (total_nodes, root_children — id/type/title детей root, schema_types_count). Без параметров. Зови один раз перед цепочкой задач.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#403) get_overview":
+        - text: 'Глобальный snapshot хранилища — экономный обзор перед глубоким чтением. Параметров нет. Возвращает: total_nodes (всего узлов в графе, без synthetic root), max_depth (максимальная глубина path-дерева), total_tokens (сумма tokens всех узлов), trees (массив {name, description?} — описание опускается при пустом), schema.types_count (число типов в Схеме), schema.top_types_by_count (массив {type, count} — топ-5 типов по числу узлов, без типа root), root_children (массив {id, type, title, subtree_tokens} верхнеуровневых узлов path-дерева), hot_spots.largest_nodes (топ-5 узлов с наибольшим tokens отдельного узла — кандидаты на разбиение; поле tokens), hot_spots.most_connected_nodes (топ-5 узлов с наибольшим суммарным числом cross-refs in+out, исключая tree-refs path и пр. tree-scopes из Схемы; поле refs_count). Use case — первый вызов в сессии, до get_usage_guide; даёт ориентиры по объёму, форме и центрам графа без загрузки самих узлов.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#405) Усечённый ответ get-tree": "get-tree {\"id\": 0, \"max_tokens\": 200}\n\n→ ответ с обрывом по бюджету:\n{\n  \"tree\": \"path\",\n  \"root\": {\"id\": 0, \"type\": \"root\", \"children\": [\n    {\"id\": 1, \"type\": \"document\", \"title\": \"DocsWalker\", \"children\": [\n      {\"id\": 2, \"type\": \"section\", \"title\": \"Назначение\"}\n    ]},\n    {\"id\": 46, \"type\": \"document\", \"title\": \"Правила оформления\"}\n  ]},\n  \"truncated\": true,\n  \"stopped_at\": [{\"parent_id\": 1, \"remaining_children\": 4, \"next_offset\": 1}],\n  \"tokens_used\": 198,\n  \"tokens_budget\": 200\n}\n\nstopped_at — массив точек обрыва BFS-обхода: parent_id — узел, чьи children не дочитаны; remaining_children — сколько ещё; next_offset — индекс первого недочитанного child."
+      - "(#405) Усечённый ответ get-tree":
+        - text: "get-tree {\"id\": 0, \"max_tokens\": 200}\n\n→ ответ с обрывом по бюджету:\n{\n  \"tree\": \"path\",\n  \"root\": {\"id\": 0, \"type\": \"root\", \"children\": [\n    {\"id\": 1, \"type\": \"document\", \"title\": \"DocsWalker\", \"children\": [\n      {\"id\": 2, \"type\": \"section\", \"title\": \"Назначение\"}\n    ]},\n    {\"id\": 46, \"type\": \"document\", \"title\": \"Правила оформления\"}\n  ]},\n  \"truncated\": true,\n  \"stopped_at\": [{\"parent_id\": 1, \"remaining_children\": 4, \"next_offset\": 1}],\n  \"tokens_used\": 198,\n  \"tokens_budget\": 200\n}\n\nstopped_at — массив точек обрыва BFS-обхода: parent_id — узел, чьи children не дочитаны; remaining_children — сколько ещё; next_offset — индекс первого недочитанного child."
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#27) Операции записи":
     - rules:
       - "(#154) path как параметр create":
         - text: create_node принимает значение связи path как обязательный параметр для всех типов с непустым path_targets, кроме root. Прочие required-связи типа также обязательны и принимаются именованными параметрами.
         - examples: [212]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#155) Расширение Схемы вручную":
         - text: Введение нового имени связи (нового out_ref в типе) или нового типа узла делается прямой правкой docs/Схема.yml — отдельной API-команды нет. Изменение Схемы — отдельная транзакция, которую DocsWalker валидирует как обычный документ через мета-схему.
         - examples: [213]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#156) path только структурно":
         - text: Связь path управляется только структурными операциями create_node / delete_node / move_node. Через create_ref / delete_ref её менять нельзя.
         - examples: [214]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#186) folder write-операции":
         - text: create_node для folder создаёт каталог в docs/ и добавляет запись в folders.yml в одной транзакции; delete_node для folder допустим только для пустого каталога. update_node со сменой title переименовывает каталог в FS, правит запись в folders.yml и каскадно обновляет SourceFile у всех path-потомков; смена text у folder отвергается как invalid_field. move_node для folder перемещает каталог под нового parent (только folder или root), проверяет коллизию имени и цикл, каскадно правит SourceFile потомков.
         - examples: [215]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#28) create_node": Создать новый узел. Параметры — type (имя типа из Схемы), title (1–2-словный path-сегмент), text (если у типа text_required=true), плюс значения всех required связей контракта типа (включая path для всех типов с непустым path_targets — кроме root). Возвращает id созданного узла.
-      - "(#29) update_node": Обновить title и/или text узла. Параметры — id, новый title (опц.), новый text (опц.). Не меняет ни одну связь — для правки связей нужен create_ref, delete_ref или move_node.
-      - "(#30) delete_node": Удалить узел. Запрещено, если на него есть входящие связи (in_refs), кроме path-связей детей — они разрываются каскадно. Удаляет вместе с узлом все его исходящие связи. Параметр — id.
-      - "(#72) move_node": Перенести узел к новому родителю в указанном tree-scope. Параметры — id (переносимый узел), to (id нового родителя в указанном дереве), tree (опц., имя tree-scope; по умолчанию path). Для tree=path значение to должно входить в path_targets типа переносимого узла; при переносе между документами в дереве path SourceFile у переносимого узла и всех его потомков обновляется. Для остальных tree-scope'ов меняется соответствующий tree-ref без правки SourceFile. Вход в собственное поддерево запрещён.
-      - "(#31) create_ref": Создать связь. Параметры — from_id, name (имя связи, объявленной в out_refs типа узла-источника), to_id (тип цели должен входить в target_types этой связи). Связь path этой операцией не меняется — для path используется move_node.
-      - "(#32) delete_ref": Удалить связь. Параметры — from_id, name, to_id. Запрещено, если связь имеет required=true и это её единственная цель.
-      - "(#34) transaction": 'Атомарная пачка операций записи. Параметр — список операций любых из перечисленных выше (create_node, update_node, delete_node, move_node, create_ref, delete_ref). Применяется целиком или не применяется. Используется для составных изменений — переименование с одновременной правкой связанных узлов, перенос узла в одной транзакции с правкой полей, массовая правка. Контракт передачи operations: в CLI — JSON-строка одной --operations=[{...},{...}], в MCP — arguments.operations как array-of-object напрямую (inputSchema: type=array, items.type=object); серверный конвертер передаёт raw JSON-массив со скобками в CLI-вызов.'
+      - "(#28) create_node":
+        - text: Создать новый узел. Параметры — type (имя типа из Схемы), title (1–2-словный path-сегмент), text (если у типа text_required=true), плюс значения всех required связей контракта типа (включая path для всех типов с непустым path_targets — кроме root). Возвращает id созданного узла.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#29) update_node":
+        - text: Обновить title и/или text узла. Параметры — id, новый title (опц.), новый text (опц.). Не меняет ни одну связь — для правки связей нужен create_ref, delete_ref или move_node.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#30) delete_node":
+        - text: Удалить узел. Запрещено, если на него есть входящие связи (in_refs), кроме path-связей детей — они разрываются каскадно. Удаляет вместе с узлом все его исходящие связи. Параметр — id.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#72) move_node":
+        - text: Перенести узел к новому родителю в указанном tree-scope. Параметры — id (переносимый узел), to (id нового родителя в указанном дереве), tree (опц., имя tree-scope; по умолчанию path). Для tree=path значение to должно входить в path_targets типа переносимого узла; при переносе между документами в дереве path SourceFile у переносимого узла и всех его потомков обновляется. Для остальных tree-scope'ов меняется соответствующий tree-ref без правки SourceFile. Вход в собственное поддерево запрещён.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#31) create_ref":
+        - text: Создать связь. Параметры — from_id, name (имя связи, объявленной в out_refs типа узла-источника), to_id (тип цели должен входить в target_types этой связи). Связь path этой операцией не меняется — для path используется move_node.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#32) delete_ref":
+        - text: Удалить связь. Параметры — from_id, name, to_id. Запрещено, если связь имеет required=true и это её единственная цель.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#34) transaction":
+        - text: 'Атомарная пачка операций записи. Параметр — список операций любых из перечисленных выше (create_node, update_node, delete_node, move_node, create_ref, delete_ref). Применяется целиком или не применяется. Используется для составных изменений — переименование с одновременной правкой связанных узлов, перенос узла в одной транзакции с правкой полей, массовая правка. Контракт передачи operations: в CLI — JSON-строка одной --operations=[{...},{...}], в MCP — arguments.operations как array-of-object напрямую (inputSchema: type=array, items.type=object); серверный конвертер передаёт raw JSON-массив со скобками в CLI-вызов.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#212) --path=": 'create-node {"type": "section", "title": "Новая", "path": 1} — path=id родителя.'
-      - "(#213) Новый out_ref": Добавление out_refs[name=related, target_types=[section]] в type_definition section в Схема.yml.
-      - "(#214) move-node": 'Перенос узла под нового родителя — через move-node {"id": 42, "to": 8}, не через create-ref.'
-      - "(#215) Создание папки": 'create-node {"type": "folder", "title": "lang", "path": 0} создаёт каталог docs/lang/ и запись в folders.yml.'
+      - "(#212) --path=":
+        - text: 'create-node {"type": "section", "title": "Новая", "path": 1} — path=id родителя.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#213) Новый out_ref":
+        - text: Добавление out_refs[name=related, target_types=[section]] в type_definition section в Схема.yml.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#214) move-node":
+        - text: 'Перенос узла под нового родителя — через move-node {"id": 42, "to": 8}, не через create-ref.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#215) Создание папки":
+        - text: 'create-node {"type": "folder", "title": "lang", "path": 0} создаёт каталог docs/lang/ и запись в folders.yml.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#35) CLI-интерфейс":
     - statements:
-      - "(#157) Команды повторяют API": 'CLI-команды повторяют API один-в-один: имя команды — имя операции, аргументы — именованные ключи.'
-      - "(#407) CLI deprecated": CLI-интерфейс зафризен. Новые команды, флаги и поведение через CLI больше не добавляются — все новые операции выходят только в MCP. CLI остаётся как канал для REPL-сессий и поддержки старых tool-цепочек; после миграции потребителей запланирован полный выпил exe DocsWalker.Cli.
+      - "(#157) Команды повторяют API":
+        - text: 'CLI-команды повторяют API один-в-один: имя команды — имя операции, аргументы — именованные ключи.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#407) CLI deprecated":
+        - text: CLI-интерфейс зафризен. Новые команды, флаги и поведение через CLI больше не добавляются — все новые операции выходят только в MCP. CLI остаётся как канал для REPL-сессий и поддержки старых tool-цепочек; после миграции потребителей запланирован полный выпил exe DocsWalker.Cli.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#158) kebab-case команды":
         - text: Имена команд — kebab-case (преобразование snake_case → kebab).
         - examples: [216]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#159) --key=value":
         - text: Аргументы — в форме --key=value; имена ключей — kebab-case (например, --from-id, --to-id). Для create-node имена параметров required-связей берутся из контракта типа в Схеме (--path для встроенной связи path; --<имя_связи> для каждой required out_ref). Списочные параметры принимаются через запятую.
         - examples: [217]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#160) client-config через .dw/client.json":
         - text: 'Endpoint kernel-а (host:port) и graph-name клиент берёт из `.dw/client.json` в проектной папке: поиск вверх по родителям от cwd до filesystem-root (как `.git`). Первый найденный — используется. Параметра --root в командах нет — клиент ничего про FS не знает. Команды `--help` / `--version` не требуют client-config (не делают RPC). Ошибки: `client_config_not_found` (.dw/client.json не найден), `client_config_invalid` (JSON не парсится / отсутствуют обязательные поля), `kernel_unreachable` (TCP-соединение с kernel-ом не установилось).'
         - examples: [325]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#161) Успех в stdout":
         - text: 'Возврат успеха — exit code 0; в stdout — JSON-результат команды непосредственно (без обёртки {ok,result}). Шейп — специфика команды: read-команда возвращает объект или массив с данными ответа; одиночная write-команда — объект с полями результата операции и обязательным top-level-полем applied (true — изменения записаны на FS, false — это был dry-run). stderr при успехе пустой.'
         - examples: [219]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#162) transaction-result":
         - text: Команда transaction возвращает в stdout массив объектов в исходном порядке операций (без обёртки), по одному на каждую операцию входа. Каждый элемент имеет форму {op, ...поля результата операции, applied}. Поле op отличает шейп элемента от одиночного write-результата; applied повторяется в каждом элементе (значение одинаковое — transaction атомарна).
         - examples: [220]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#163) UTF-8 без BOM":
         - text: Кодировка stdout/stderr — UTF-8 без BOM. Кириллица и другие не-ASCII символы передаются как есть, без unicode-escape (без последовательностей вида backslash-u), чтобы экономить токены LLM-потребителя.
         - examples: [221]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#164) Ошибка в stderr":
         - text: 'Возврат ошибки — exit code ненулевой; в stderr — плоский JSON {code, message, path?, hint?, describe_type?} (без вложенного объекта error). Поля: code — машинный код ошибки; message — человекочитаемое сообщение; path — title документа без расширения и FS-префикса (только если ошибка локализована конкретным документом); hint — короткая подсказка LLM-агенту (только когда осмысленна); describe_type — описание типа из контекста (только когда из аргументов write-команды выводится тип узла, чьи правила нарушены). Если ошибка локализована на конкретной связи (missing_required_ref, invalid_ref_value и аналогичные), describe_type.out_refs содержит только проблемную связь — одну запись; шапка типа (name, description, text_required) присутствует всегда. Полный контракт типа LLM запрашивает отдельным describe-type --name=<X>. stdout при ошибке пустой.'
         - examples: [222]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#165) Коды CLI-ошибок":
         - text: На вход неизвестной команды CLI возвращает ошибку с кодом unknown_command, на отсутствующий обязательный параметр — missing_parameter, на лишний параметр — unknown_parameter, на нарушение формата значения — invalid_parameter.
         - examples: [223]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#269) dry-run":
         - text: Общий флаг --dry-run=true прогоняет write-команду до валидации включительно, но не пишет файлы и не обновляет sequence.txt. Возвращает обычный success-результат с полем applied=false на верхнем уровне (для transaction — applied=false в каждом элементе массива). На ошибку валидации — обычная ошибка validation_failed. Read-команды флаг не принимают (отвергают как unknown_parameter).
         - examples: [268]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#301) Опускаемые дефолты":
         - text: 'В JSON-выводе опускаются дефолты и пустоты, чтобы не тратить токены LLM на тривиальные значения. В RefDef (describe-type, get-schema): cardinality=many и required=false не сериализуются (отсутствие поля при чтении трактуется как дефолт). В get-tree: children=[] не сериализуется (отсутствие поля children ⇒ узел-лист в текущем поддереве); subtree_tokens, равный tokens, не сериализуется (отсутствие поля ⇒ subtree_tokens = tokens). В get-usage-guide: parameters=[] и examples=[] не сериализуются (отсутствие поля ⇒ команда без параметров либо без примеров).'
         - examples: [300]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - notes:
-      - "(#408) Roadmap выпила CLI": 'Стадии: (1) deprecation-маркер в docs/ (текущий шаг); (2) перенос REPL на прямой HTTP-клиент без shared CLI-кода; (3) удаление подкоманд CLI один-к-одному с API; (4) удаление exe DocsWalker.Cli полностью. MCP-канал (`DocsWalker.Mcp.exe`) — постоянный основной интерфейс LLM-агента.'
+      - "(#408) Roadmap выпила CLI":
+        - text: 'Стадии: (1) deprecation-маркер в docs/ (текущий шаг); (2) перенос REPL на прямой HTTP-клиент без shared CLI-кода; (3) удаление подкоманд CLI один-к-одному с API; (4) удаление exe DocsWalker.Cli полностью. MCP-канал (`DocsWalker.Mcp.exe`) — постоянный основной интерфейс LLM-агента.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#36) Чтение нескольких узлов сразу": 'get-nodes {"ids": [1, 8, 42]}'
-      - "(#38) Поддерево по пути": 'get-by-path {"path": "DocsWalker/Операции чтения"}'
-      - "(#39) Все связи узла": 'get-refs {"id": 42}'
-      - "(#40) Входящие связи на узел": 'get-in-refs {"id": 42}'
-      - "(#41) Создание section": 'create-node {"type": "section", "path": 1, "title": "Биекция текст ↔ граф"}'
-      - "(#43) Создание именованной связи": 'create-ref {"from_id": 42, "name": "related", "to_id": 8}'
-      - "(#71) Проверка целостности docs/ без записи": check-integrity {}
-      - "(#73) Перенос узла к новому родителю": 'move-node {"id": 42, "to": 8}'
-      - "(#216) Преобразование": Имя API create_node (snake_case) → команда CLI create-node (kebab-case).
-      - "(#217) Имена ключей": --from-id=42, --to=8 — kebab; не --from_id=42 и не -t 8.
-      - "(#219) Формат успеха": '{"id": 42, "title": "Новая", "applied": true} в stdout, exit 0.'
-      - "(#220) Массив transaction": '[{"op":"create-node","id":188,"title":"foo","applied":true},{"op":"create-ref","applied":true}] в stdout — порядок исходных операций; applied в каждом элементе.'
-      - "(#221) Кириллица в JSON": '{"title":"Назначение"}, не {"title":"\\u041d\\u0430\\u0437..."}.'
-      - "(#222) Формат ошибки err": '{"code": "node_not_found", "message": "..."} в stderr, exit ≠ 0.'
-      - "(#223) Коды CLI": Несуществующий tool/команда → unknown_tool или unknown_command; обязательный параметр пропущен → missing_parameter.
-      - "(#268) dry-run флаг": 'create-node {"type": "example", "path": 35, "title": "foo", "text": "bar", "dry_run": true} → {"id": <new_id>, "title": "foo", "applied": false}; файлы docs/ не изменяются.'
-      - "(#273) describe-type для одного типа": 'describe-type {"name": "section"} возвращает только этот тип в FS-агностичном виде; токенов меньше, чем у get-schema.'
-      - "(#299) get-usage-guide на старте сессии": 'get-usage-guide {} → один JSON со всем нужным: mental_model, trees[], commands[] (с примерами), graph_snapshot. После него LLM не нужны list-документов, get-schema или ручной разбор Commands.cs.'
-      - "(#300) Дефолты в JSON": 'Узел-лист в get-tree: {"id":42,"type":"rule","title":"foo","tokens":48} — без поля children (узел-лист), без subtree_tokens (subtree_tokens=tokens=48). RefDef в describe-type с дефолтами: {"name":"examples","target_types":["example"]} — без cardinality (=many), без required (=false).'
-      - "(#335) Запуск kernel-а": DocsWalker.Kernel.exe --config=/path/to/kernel-config.json → bind на host:port из config-а, lazy-load графов по запросам, баннер о готовности; процесс блокируется на сигнал. Auto-spawn клиентами нет — клиент просто шлёт запрос на endpoint из `.dw/client.json` и получает `kernel_unreachable`, если kernel не запущен. Запуск kernel — задача оператора (systemd, NSSM, manual).
-      - "(#398) search BM25 по умолчанию": "Поиск без фильтров — case-insensitive substring по title и text узлов, BM25-ранжирование, title-hit boost ×3. Пример — все упоминания термина «валидатор»:\n\nsearch {\"query\": \"валидатор\"}\n\nОтвет — массив hit-объектов {id, type, title, score, snippet}, отсортированный по убыванию score. Совпадения в title всплывают наверх благодаря boost'у."
-      - "(#399) search по title": "Сузить поиск до title-полей — экономит токены, когда text загромождает выдачу.\n\nsearch {\"query\": \"get-tree\", \"in\": \"title\"}\n\nВернёт только узлы, у которых query встречается в title; text-совпадения игнорируются. score считается BM25 по title без boost ×3 (сравнение однородное). Поле snippet берётся из title."
-      - "(#400) search по типу узла": "Фильтр по type — оставляет в выдаче только узлы заданного типа из Схемы. Удобно для поиска правил по доменному термину.\n\nsearch {\"query\": \"авто-каскад\", \"type\": \"rule\"}\n\nВ ответе только узлы type=rule с упоминанием query. Поля id, type, title, score, snippet — без изменений."
-      - "(#401) search в поддереве": "Ограничить поиск поддеревом узла в указанном tree-scope. Параметр under — id корня поддерева, tree — имя дерева (default path).\n\nsearch {\"query\": \"transaction\", \"tree\": \"path\", \"under\": 35}\n\nНайдёт упоминания «transaction» только в поддереве узла id=35 (section CLI-интерфейс) по path-дереву. Без under поиск глобальный по всему графу."
-      - "(#402) search regex": "Регулярное выражение вместо substring. query трактуется как .NET-regex.\n\nsearch {\"query\": \"get-(tree|nodes|by-path)\", \"regex\": true}\n\nНайдёт все упоминания одной из трёх команд. При невалидном паттерне — ошибка invalid_regex с hint позиции. Сочетается с фильтрами in, type, tree, under."
-      - "(#404) get-overview на старте сессии": "get-overview {}\n\nБез параметров. Ответ — компактный snapshot:\n\n{\n  \"total_nodes\": 337,\n  \"max_depth\": 5,\n  \"total_tokens\": 28450,\n  \"trees\": [{\"name\": \"path\", \"description\": \"Дерево хранилища.\"}],\n  \"schema\": {\"types_count\": 11, \"top_types_by_count\": [{\"type\": \"example\", \"count\": 95}, {\"type\": \"rule\", \"count\": 78}]},\n  \"root_children\": [{\"id\": 1, \"type\": \"document\", \"title\": \"DocsWalker\", \"subtree_tokens\": 18230}],\n  \"hot_spots\": {\n    \"largest_nodes\": [{\"id\": 200, \"title\": \"...\", \"tokens\": 420}],\n    \"most_connected_nodes\": [{\"id\": 35, \"title\": \"CLI-интерфейс\", \"refs_count\": 14}]\n  }\n}\n\nЦель — оценить размер хранилища, понять крупные/центральные узлы, прежде чем читать конкретные поддеревья."
+      - "(#36) Чтение нескольких узлов сразу":
+        - text: 'get-nodes {"ids": [1, 8, 42]}'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#38) Поддерево по пути":
+        - text: 'get-by-path {"path": "DocsWalker/Операции чтения"}'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#39) Все связи узла":
+        - text: 'get-refs {"id": 42}'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#40) Входящие связи на узел":
+        - text: 'get-in-refs {"id": 42}'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#41) Создание section":
+        - text: 'create-node {"type": "section", "path": 1, "title": "Биекция текст ↔ граф"}'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#43) Создание именованной связи":
+        - text: 'create-ref {"from_id": 42, "name": "related", "to_id": 8}'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#71) Проверка целостности docs/ без записи":
+        - text: check-integrity {}
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#73) Перенос узла к новому родителю":
+        - text: 'move-node {"id": 42, "to": 8}'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#216) Преобразование":
+        - text: Имя API create_node (snake_case) → команда CLI create-node (kebab-case).
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#217) Имена ключей":
+        - text: --from-id=42, --to=8 — kebab; не --from_id=42 и не -t 8.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#219) Формат успеха":
+        - text: '{"id": 42, "title": "Новая", "applied": true} в stdout, exit 0.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#220) Массив transaction":
+        - text: '[{"op":"create-node","id":188,"title":"foo","applied":true},{"op":"create-ref","applied":true}] в stdout — порядок исходных операций; applied в каждом элементе.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#221) Кириллица в JSON":
+        - text: '{"title":"Назначение"}, не {"title":"\\u041d\\u0430\\u0437..."}.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#222) Формат ошибки err":
+        - text: '{"code": "node_not_found", "message": "..."} в stderr, exit ≠ 0.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#223) Коды CLI":
+        - text: Несуществующий tool/команда → unknown_tool или unknown_command; обязательный параметр пропущен → missing_parameter.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#268) dry-run флаг":
+        - text: 'create-node {"type": "example", "path": 35, "title": "foo", "text": "bar", "dry_run": true} → {"id": <new_id>, "title": "foo", "applied": false}; файлы docs/ не изменяются.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#273) describe-type для одного типа":
+        - text: 'describe-type {"name": "section"} возвращает только этот тип в FS-агностичном виде; токенов меньше, чем у get-schema.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#299) get-usage-guide на старте сессии":
+        - text: 'get-usage-guide {} → один JSON со всем нужным: mental_model, trees[], commands[] (с примерами), graph_snapshot. После него LLM не нужны list-документов, get-schema или ручной разбор Commands.cs.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#300) Дефолты в JSON":
+        - text: 'Узел-лист в get-tree: {"id":42,"type":"rule","title":"foo","tokens":48} — без поля children (узел-лист), без subtree_tokens (subtree_tokens=tokens=48). RefDef в describe-type с дефолтами: {"name":"examples","target_types":["example"]} — без cardinality (=many), без required (=false).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#335) Запуск kernel-а":
+        - text: DocsWalker.Kernel.exe --config=/path/to/kernel-config.json → bind на host:port из config-а, lazy-load графов по запросам, баннер о готовности; процесс блокируется на сигнал. Auto-spawn клиентами нет — клиент просто шлёт запрос на endpoint из `.dw/client.json` и получает `kernel_unreachable`, если kernel не запущен. Запуск kernel — задача оператора (systemd, NSSM, manual).
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#398) search BM25 по умолчанию":
+        - text: "Поиск без фильтров — case-insensitive substring по title и text узлов, BM25-ранжирование, title-hit boost ×3. Пример — все упоминания термина «валидатор»:\n\nsearch {\"query\": \"валидатор\"}\n\nОтвет — массив hit-объектов {id, type, title, score, snippet}, отсортированный по убыванию score. Совпадения в title всплывают наверх благодаря boost'у."
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#399) search по title":
+        - text: "Сузить поиск до title-полей — экономит токены, когда text загромождает выдачу.\n\nsearch {\"query\": \"get-tree\", \"in\": \"title\"}\n\nВернёт только узлы, у которых query встречается в title; text-совпадения игнорируются. score считается BM25 по title без boost ×3 (сравнение однородное). Поле snippet берётся из title."
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#400) search по типу узла":
+        - text: "Фильтр по type — оставляет в выдаче только узлы заданного типа из Схемы. Удобно для поиска правил по доменному термину.\n\nsearch {\"query\": \"авто-каскад\", \"type\": \"rule\"}\n\nВ ответе только узлы type=rule с упоминанием query. Поля id, type, title, score, snippet — без изменений."
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#401) search в поддереве":
+        - text: "Ограничить поиск поддеревом узла в указанном tree-scope. Параметр under — id корня поддерева, tree — имя дерева (default path).\n\nsearch {\"query\": \"transaction\", \"tree\": \"path\", \"under\": 35}\n\nНайдёт упоминания «transaction» только в поддереве узла id=35 (section CLI-интерфейс) по path-дереву. Без under поиск глобальный по всему графу."
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#402) search regex":
+        - text: "Регулярное выражение вместо substring. query трактуется как .NET-regex.\n\nsearch {\"query\": \"get-(tree|nodes|by-path)\", \"regex\": true}\n\nНайдёт все упоминания одной из трёх команд. При невалидном паттерне — ошибка invalid_regex с hint позиции. Сочетается с фильтрами in, type, tree, under."
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#404) get-overview на старте сессии":
+        - text: "get-overview {}\n\nБез параметров. Ответ — компактный snapshot:\n\n{\n  \"total_nodes\": 337,\n  \"max_depth\": 5,\n  \"total_tokens\": 28450,\n  \"trees\": [{\"name\": \"path\", \"description\": \"Дерево хранилища.\"}],\n  \"schema\": {\"types_count\": 11, \"top_types_by_count\": [{\"type\": \"example\", \"count\": 95}, {\"type\": \"rule\", \"count\": 78}]},\n  \"root_children\": [{\"id\": 1, \"type\": \"document\", \"title\": \"DocsWalker\", \"subtree_tokens\": 18230}],\n  \"hot_spots\": {\n    \"largest_nodes\": [{\"id\": 200, \"title\": \"...\", \"tokens\": 420}],\n    \"most_connected_nodes\": [{\"id\": 35, \"title\": \"CLI-интерфейс\", \"refs_count\": 14}]\n  }\n}\n\nЦель — оценить размер хранилища, понять крупные/центральные узлы, прежде чем читать конкретные поддеревья."
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#44) MCP-интерфейс":
     - statements:
-      - "(#166) MCP-wrapper над kernel": 'MCP-сервер реализуется как тонкий stdio↔HTTP мост поверх kernel-а: принимает JSON-RPC tools/call по stdin от LLM-клиента, конвертирует в HTTP POST `/db/<graph>/rpc` к kernel-у, проксирует ответ в stdout. MCP-wrapper не парсит docs/ и не держит граф — вся семантика на kernel-е. Endpoint и graph-name берёт из `.dw/client.json` (см. (#160)).'
+      - "(#166) MCP-wrapper над kernel":
+        - text: 'MCP-сервер реализуется как тонкий stdio↔HTTP мост поверх kernel-а: принимает JSON-RPC tools/call по stdin от LLM-клиента, конвертирует в HTTP POST `/db/<graph>/rpc` к kernel-у, проксирует ответ в stdout. MCP-wrapper не парсит docs/ и не держит граф — вся семантика на kernel-е. Endpoint и graph-name берёт из `.dw/client.json` (см. (#160)).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#364) JSON-RPC stdio":
         - text: Транспорт MCP — newline-delimited JSON-RPC 2.0 над stdin/stdout. Команды API регистрируются как MCP-tools; имя tool = kebab-case CLI-команды; параметры — JSON-Schema, выводимая из контракта команды.
         - examples: [365]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#366) MCP-wrapper привязан к проекту через cwd":
         - text: MCP-wrapper — отдельный exe `DocsWalker.Mcp.exe` (stg-0011 вынес его из подкоманды `docswalker mcp-server`). Параметра root нет — wrapper использует cwd для resolve `.dw/client.json` (поиск вверх по родителям до filesystem-root). LLM-клиент вызывает MCP-tools без указания graph — wrapper подставляет graph-name из client-config в URL HTTP-запроса к kernel-у. Multi-graph в одном MCP-канале не нужен — Claude Code запускает MCP-сервер раздельно для каждой записи в .mcp.json (разные cwd → разные client-config → разные graphs).
         - examples: [369]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#377) inputSchema динамических tool":
         - text: "Для tool с динамическими параметрами (сейчас только create-node) inputSchema собирается из Схемы graph-а на старте mcp-server. Форма — JSON-Schema object без top-level oneOf/allOf/anyOf: Anthropic API их на верхнем уровне inputSchema запрещает, а if/then/else и dependentRequired не поддерживает — условный required по значению type машинно невыразим.\n\nproperties перечисляет все поля: type-enum (без root), title, text, имена связей всех типов как optional (integer для cardinality=one, array+items=integer для many), плюс dry-run. required на верхнем уровне — [type, title]. Per-type required (text при text_required=true, path-ref, прочие required out_refs) транслируется текстовой таблицей в description корневой схемы и поля type — модель читает её при выборе type.\n\nИсточник истины для required по типу — серверный валидатор ядра. root в enum не включается. Если Схему загрузить не удалось — tool отдаётся с базовой схемой, warning в stderr; mcp-server не падает."
         - examples: [378]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#372) MCP-wrapper": 'Короткоживущий процесс DocsWalker, запущенный командой `docswalker mcp-server`, обслуживающий один MCP-клиент (например, Claude Code). Транспорт со стороны клиента — JSON-RPC 2.0 над stdio. Внутри: HTTP-клиент к kernel-у (без auto-spawn — kernel запускается оператором отдельно), endpoint и graph-name берёт из `.dw/client.json` через cwd-resolution. Не держит данных, не парсит docs/, не имеет своего lock — всё это на kernel-е (#317).'
+      - "(#372) MCP-wrapper":
+        - text: 'Короткоживущий процесс DocsWalker, запущенный командой `docswalker mcp-server`, обслуживающий один MCP-клиент (например, Claude Code). Транспорт со стороны клиента — JSON-RPC 2.0 над stdio. Внутри: HTTP-клиент к kernel-у (без auto-spawn — kernel запускается оператором отдельно), endpoint и graph-name берёт из `.dw/client.json` через cwd-resolution. Не держит данных, не парсит docs/, не имеет своего lock — всё это на kernel-е (#317).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#365) tools/call": MCP-tool `get-nodes` принимает {"ids":[42]} через MCP tools/call → wrapper подставляет endpoint и graph-name из client-config, шлёт HTTP POST `/db/<graph>/rpc` с JSON-RPC `{name:"get-nodes",arguments:{ids:[42]}}` → ответ kernel-а маршалится в MCP-формат tools/call response (success-объект или MCP-error). Параметра root в MCP-tool нет.
-      - "(#369) Две базы знаний": '`.mcp.json` с двумя entries: `docs-base-a` (cwd=/path/A) и `docs-base-b` (cwd=/path/B). Каждый entry стартует отдельный mcp-server в своей cwd — wrapper находит соответствующий `.dw/client.json` со своим graph-name, шлёт запросы к нужному kernel-у. Оба entries могут указывать на один kernel (с двумя graphs в kernel-config) или на разные kernels. LLM видит tools как `docs-base-a__get_nodes` и `docs-base-b__get_nodes`.'
-      - "(#378) create-node — required-таблица по типу": "Required-таблица в description корневой схемы и поля type генерируется по проектной Схеме. Для type=rule: required=[type, title, text, path, examples] — text_required=true плюс required out_ref examples (cardinality=many → в properties объявлен как array+items=integer). Для type=section: required=[type, title, path] — text не обязателен, остальные out_refs (sections/rules/notes/...) остаются в properties как optional array+items=integer. Параметр root в schema отсутствует — graph диспетчеризуется через URL kernel-а.\n\nПоскольку top-level required содержит только [type, title], дополнительные required для конкретного типа фиксируются текстом в description, а проверяются серверным валидатором ядра при попытке create-node: при недостаче поля возвращается validation_failed с указанием, какое поле обязательно для этого type."
+      - "(#365) tools/call":
+        - text: MCP-tool `get-nodes` принимает {"ids":[42]} через MCP tools/call → wrapper подставляет endpoint и graph-name из client-config, шлёт HTTP POST `/db/<graph>/rpc` с JSON-RPC `{name:"get-nodes",arguments:{ids:[42]}}` → ответ kernel-а маршалится в MCP-формат tools/call response (success-объект или MCP-error). Параметра root в MCP-tool нет.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#369) Две базы знаний":
+        - text: '`.mcp.json` с двумя entries: `docs-base-a` (cwd=/path/A) и `docs-base-b` (cwd=/path/B). Каждый entry стартует отдельный mcp-server в своей cwd — wrapper находит соответствующий `.dw/client.json` со своим graph-name, шлёт запросы к нужному kernel-у. Оба entries могут указывать на один kernel (с двумя graphs в kernel-config) или на разные kernels. LLM видит tools как `docs-base-a__get_nodes` и `docs-base-b__get_nodes`.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#378) create-node — required-таблица по типу":
+        - text: "Required-таблица в description корневой схемы и поля type генерируется по проектной Схеме. Для type=rule: required=[type, title, text, path, examples] — text_required=true плюс required out_ref examples (cardinality=many → в properties объявлен как array+items=integer). Для type=section: required=[type, title, path] — text не обязателен, остальные out_refs (sections/rules/notes/...) остаются в properties как optional array+items=integer. Параметр root в schema отсутствует — graph диспетчеризуется через URL kernel-а.\n\nПоскольку top-level required содержит только [type, title], дополнительные required для конкретного типа фиксируются текстом в description, а проверяются серверным валидатором ядра при попытке create-node: при недостаче поля возвращается validation_failed с указанием, какое поле обязательно для этого type."
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#45) Стек реализации":
     - rules:
       - "(#168) C# на LTS .NET":
         - text: Язык реализации — C# на актуальной LTS-версии .NET (см. Стек/Версия .NET). Все исполняемые компоненты публикуются через Native AOT (см. Стек/Нативная компиляция).
         - examples: [224]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#169) SharpYaml event-stream":
         - text: 'YAML-парсинг — внешняя .NET-библиотека SharpYaml (xoofx/SharpYaml). Используется только низкоуровневый event-stream API (Parser / EventReader / YamlStream); reflection-based Serializer не применяется как несовместимый с Native AOT. Принимаемое подмножество YAML 1.2: блочные mapping и sequence, flow-стиль для всех конструкций ([a, b, c] и {k: v, ...}), скаляры без кавычек, в одинарных и двойных кавычках, целые числа, true/false, комментарии "#". Допустимая структура задаётся Схемой и проверяется валидатором отдельно от парсера.'
         - examples: [225]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#170) Запрещённый YAML":
         - text: 'Не поддерживается: многострочные литералы "|" и ">", якоря "&" и "*", теги "!", директивы "%". Отлов этих конструкций — на стороне парсера SharpYaml (он отвергает их при разборе файла). Валидатор по сырому YAML не проходит и эти конструкции не ищет: его проверки построены поверх in-memory графа узлов.'
         - examples: [226]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#171) Свой emitter":
         - text: Сериализация YAML — собственный emitter, поддерживающий стилевые правила docs/ и склейку id+title по формату "(#id) title". Внешняя YAML-библиотека для записи не используется.
         - examples: [227]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#172) Единый парсер":
         - text: Парсинг мета-схемы и схемы — единым YAML-парсером (SharpYaml на event-stream API), как и обычные docs/*.yml. Отдельная JSON-зависимость для мета-схемы не вводится.
         - examples: [228]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#173) JSON для всех транспортов":
         - text: JSON используется для CLI stdout/stderr и для wire-протокола kernel-а (HTTP /rpc — JSON-RPC 2.0 body). YAML — только storage docs/. Сериализация — System.Text.Json с source-генераторами (JsonSerializerContext) для AOT-совместимости.
         - examples: [229]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#174) Без новых зависимостей":
         - text: Сторонние библиотеки не подключаются без явного решения.
         - examples: [230]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#224) .NET 10": На момент старта проекта — .NET 10 LTS, TargetFramework=net10.0 во всех csproj, global.json фиксирует 10.0.201.
-      - "(#225) YAML-подмножество": Поддерживается block-mapping, flow-sequence, скаляры, true/false; не поддерживается |, якоря &, теги !.
-      - "(#226) Стоп на парсере": 'YAML-файл с текстом text: |\n  multi\n  line падает на парсере SharpYaml ещё до валидатора.'
-      - "(#227) Свой emitter": 'Emitter печатает смысловой узел как "(#42) Title": value — внешняя YAML-библиотека для записи не используется.'
-      - "(#228) Один путь": И meta-schema.yml, и Схема.yml, и DocsWalker.yml идут через тот же SharpYaml.Parser.
-      - "(#229) JSON только в CLI": Команды CLI отдают JSON в stdout; данные docs/ хранятся в YAML.
-      - "(#230) Текущие зависимости": На сейчас — SharpYaml и xUnit (для тестов); добавление новой требует обоснования.
+      - "(#224) .NET 10":
+        - text: На момент старта проекта — .NET 10 LTS, TargetFramework=net10.0 во всех csproj, global.json фиксирует 10.0.201.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#225) YAML-подмножество":
+        - text: Поддерживается block-mapping, flow-sequence, скаляры, true/false; не поддерживается |, якоря &, теги !.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#226) Стоп на парсере":
+        - text: 'YAML-файл с текстом text: |\n  multi\n  line падает на парсере SharpYaml ещё до валидатора.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#227) Свой emitter":
+        - text: 'Emitter печатает смысловой узел как "(#42) Title": value — внешняя YAML-библиотека для записи не используется.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#228) Один путь":
+        - text: И meta-schema.yml, и Схема.yml, и DocsWalker.yml идут через тот же SharpYaml.Parser.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#229) JSON только в CLI":
+        - text: Команды CLI отдают JSON в stdout; данные docs/ хранятся в YAML.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#230) Текущие зависимости":
+        - text: На сейчас — SharpYaml и xUnit (для тестов); добавление новой требует обоснования.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#304) Модель процесса":
     - statements:
-      - "(#305) Standalone HTTP-сервис": DocsWalker.Kernel.exe — standalone HTTP-сервер, запускаемый явно с указанием kernel-config (`--config=<path>`). Может быть локальным или удалённым, в контейнере, на отдельном хосте — никакой привязки к OS-пользователю. Несколько kernel-инстансов на одной машине нормально (разные ports, разные kernel-config-и). Cold-start per-call устранён; cross-graph state не делится.
-      - "(#306) CLI/REPL/MCP — клиенты kernel-а": Все команды (включая интерактивный REPL и MCP-tools) исполняются клиентами, делающими HTTP/JSON-RPC к kernel-у. CLI — короткоживущий клиент (один запрос → ответ → exit). REPL — длинная серия запросов в TTY. MCP-сервер — тонкий stdio↔HTTP мост (см. (#372)). Endpoint клиент берёт из `.dw/client.json` (см. (#160)) — поиск вверх по родителям от cwd до filesystem-root. Никакой клиент не парсит docs/ и не валидирует — вся семантика на kernel-е.
-      - "(#307) Sole-writer гарантия": 'Kernel — единственный writer в storage. Внешние правки YAML руками или сторонним процессом DocsWalker запрещены контрактом (#294); kernel не использует FS-watcher, не сверяет checksum, не подхватывает внешние изменения. Trust boundary: один storage-path обязан быть в одном kernel-config; защита от ошибки оператора (два kernel-а на одном storage) в рамках текущей модели не делается. Это упраздняет race-условия с IDE и file-lock на данные.'
+      - "(#305) Standalone HTTP-сервис":
+        - text: DocsWalker.Kernel.exe — standalone HTTP-сервер, запускаемый явно с указанием kernel-config (`--config=<path>`). Может быть локальным или удалённым, в контейнере, на отдельном хосте — никакой привязки к OS-пользователю. Несколько kernel-инстансов на одной машине нормально (разные ports, разные kernel-config-и). Cold-start per-call устранён; cross-graph state не делится.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#306) CLI/REPL/MCP — клиенты kernel-а":
+        - text: Все команды (включая интерактивный REPL и MCP-tools) исполняются клиентами, делающими HTTP/JSON-RPC к kernel-у. CLI — короткоживущий клиент (один запрос → ответ → exit). REPL — длинная серия запросов в TTY. MCP-сервер — тонкий stdio↔HTTP мост (см. (#372)). Endpoint клиент берёт из `.dw/client.json` (см. (#160)) — поиск вверх по родителям от cwd до filesystem-root. Никакой клиент не парсит docs/ и не валидирует — вся семантика на kernel-е.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#307) Sole-writer гарантия":
+        - text: 'Kernel — единственный writer в storage. Внешние правки YAML руками или сторонним процессом DocsWalker запрещены контрактом (#294); kernel не использует FS-watcher, не сверяет checksum, не подхватывает внешние изменения. Trust boundary: один storage-path обязан быть в одном kernel-config; защита от ошибки оператора (два kernel-а на одном storage) в рамках текущей модели не делается. Это упраздняет race-условия с IDE и file-lock на данные.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#308) Sole-writer — trust boundary":
         - text: 'На файлы storage kernel НЕ берёт file-lock. Sole-writer-инвариант (#307) обеспечивается архитектурно: один storage-path в одном kernel-config; внешние правки запрещены контрактом (#294); kernel — long-lived, поэтому окно для внешних правок отсутствует. Если оператор укажет один storage в двух kernel-config-ах одновременно — безопасности нет, это ошибка оператора. Явный file-lock — отдельная страт, если появится конкретная нужда.'
         - examples: [329]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#309) Multi-graph через named graphs":
         - text: 'Один kernel-процесс обслуживает N графов, объявленных в kernel-config как именованный словарь `graphs: { "<name>": "<storage-path>" }`. Клиент адресует граф по имени через URL `/db/<name>/rpc`. Lazy-load: первый запрос на новый graph триггерит загрузку графа в RAM. Несколько workspace-ов = N инстансов клиента из N проектных папок (каждая со своим `.dw/client.json` — см. (#160)).'
         - examples: [332]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#310) Bind: 127.0.0.1 default, --bind для удалённого":
         - text: 'Транспорт kernel-а — HTTP над TCP, bind на 127.0.0.1 (loopback only) по умолчанию. Параметр `bind` в kernel-config позволяет открыть на 0.0.0.0 для удалённого доступа — на ответственности оператора (kernel — trusted network only). Auth в этой страт не делается: bearer-token и encryption — отдельная страт после конкретного use-case.'
         - examples: [332]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#312) JSON-RPC 2.0 как контракт":
         - text: Wire-протокол kernel-а — JSON-RPC 2.0 над HTTP POST `/db/<graph-name>/rpc`. Имя графа диспетчеризуется по URL вместо поля в JSON-payload. Версионирование — поле jsonrpc:"2.0" + поле api_version в params. Mismatch версии client/kernel → JSON-RPC error response с code=version_mismatch; клиент печатает stderr и выходит ненулевым кодом. Бинари kernel-а и клиента деплоятся одним артефактом — рассинхрон возможен только при ручном вмешательстве.
         - examples: [330]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#313) Per-graph semaphore":
         - text: 'Kernel сериализует запросы на уровне ОДНОГО графа: per-graph SemaphoreSlim(1,1) держит порядок read/write по графу. Между разными графами параллелизм возможен — нагрузка на graph A не блокирует graph B. Read-параллелизм внутри одного графа при необходимости вводится без смены wire-протокола (деталь реализации, не контракта). Глобальной сериализации запросов больше нет.'
         - examples: [336]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#314) Per-graph idle eviction":
         - text: Если в течение `graph_idle_timeout` (default 10 минут, конфигурируемо в kernel-config) на конкретный graph не пришёл ни один запрос — kernel выгружает граф этого graph-а из RAM (Dispose, GC). Сам kernel-процесс продолжает работать и принимать запросы; следующий запрос на выгруженный graph — повторный lazy-load. Sole-writer (#307) гарантирует, что на диске уже актуальное состояние — синка не нужно.
         - examples: [331]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#315) REPL без persistent history":
         - text: REPL — отдельный процесс docswalker repl, длинноживущий HTTP-клиент к kernel-у. В пределах одной TTY-сессии доступен нативный line-edit платформы .NET 10. История между сессиями не сохраняется — для MVP не нужно, добавляется отдельной задачей при потребности.
         - examples: [337]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#316) Коды ошибок lifecycle":
         - text: 'Коды ошибок клиента: kernel_unreachable (TCP-соединение с kernel-ом не установилось — kernel offline или неверный endpoint в `.dw/client.json`), client_config_not_found (`.dw/client.json` не найден от cwd до filesystem-root), client_config_invalid (JSON не парсится / отсутствуют обязательные поля), version_mismatch (api_version в JSON-RPC ответе не совпадает с клиентским). Коды ошибок kernel-а: port_bind_failed (Kestrel не смог взять порт), graph_load_failed (storage недоступен или невалидный YAML — kernel шлёт JSON-RPC error на запрос с этим graph), graph_not_found (URL `/db/<name>/rpc` для graph, не объявленного в kernel-config). Все ошибки — exit ≠ 0 у клиента; форма stderr — стандартная плоская из (#164).'
         - examples: [379]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#383) Auto-spawn убран":
         - text: Клиент не запускает kernel сам. Если kernel offline или endpoint неверный — клиент даёт `kernel_unreachable` с подсказкой `запусти DocsWalker.Kernel.exe --config=<path> или поправь endpoint в .dw/client.json`. Запуск kernel — задача оператора (systemd, NSSM, manual). DocsWalker.Cli.exe не имеет CLI-обёртки `docswalker kernel` — единственный способ запустить kernel это `DocsWalker.Kernel.exe --config=<path>`.
         - examples: [380]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#317) kernel": Standalone HTTP-сервис DocsWalker.Kernel.exe, запускаемый командой `DocsWalker.Kernel.exe --config=<path>`. Слушает HTTP на bind:port из kernel-config; держит N графов в памяти (multi-graph через named); диспетчеризует JSON-RPC tools/call по graph-name из URL `/db/<name>/rpc`. Завершается по SIGINT/SIGTERM/Ctrl+C; графы выгружаются по per-graph idle eviction (#314). Не привязан к OS-пользователю — может быть локальным, удалённым, в контейнере. Несколько kernel-инстансов на машине допустимо.
-      - "(#318) клиент": 'Процесс DocsWalker, делающий HTTP/JSON-RPC к kernel-у. Виды: CLI (один запрос за вызов бинаря), REPL (TTY-сессия с серией запросов), MCP-wrapper (#372) — stdio↔HTTP мост для LLM-клиента. Алгоритм: читает `.dw/client.json` (поиск вверх от cwd до filesystem-root), берёт endpoint host:port и graph-name, шлёт JSON-RPC tools/call к URL `/db/<graph-name>/rpc`, читает ответ, проксирует в свой stdout/stderr. Если `.dw/client.json` не найден — `client_config_not_found`. Если kernel offline — `kernel_unreachable`. Auto-spawn-а kernel-а нет: запуск kernel — отдельная задача оператора. Никакого парсинга docs/ или валидации не делает.'
-      - "(#321) HTTP-эндпоинт kernel-а": 'Локальный HTTP-сервер kernel-а на Kestrel (ASP.NET Core minimal API). Эндпоинты: GET `/health` — liveness, kernel-level (без graph), возвращает {ok, api_version, uptime_s}; GET `/db` — список объявленных в kernel-config graphs (массив {name, loaded, last_access}, без storage path); POST `/db/<graph-name>/rpc` — JSON-RPC 2.0 main channel для конкретного graph-а. Bind на host:port из kernel-config. Один эндпоинт обслуживает все graphs и всех клиентов одновременно — диспетчеризация по graph-name в URL.'
-      - "(#322) JSON-RPC request": 'JSON-RPC 2.0 запрос к kernel-у: POST `/db/<graph-name>/rpc` с JSON-объектом {jsonrpc, id, method=tools/call, params}. Параметра graph-а в params нет — диспетчеризация по URL. Тело params содержит фактические аргументы команды (`name`, `arguments`); форма зависит от method. Content-Type — application/json. Поле `root` или эквивалент в params не передаётся — клиент про FS не знает.'
-      - "(#323) JSON-RPC response": 'Один ответ — JSON-RPC 2.0 объект: успех {"jsonrpc":"2.0","id":<int>,"result":{"payload":<тот же JSON, что текущий stdout успешного ответа CLI из (#161)>}}; ошибка {"jsonrpc":"2.0","id":<int>,"error":{"code":<int>,"message":"...","data":{"code":"<строковый-код>","message":"...","hint":"..."?}}}. Клиент проксирует payload в stdout (успех) или data в stderr (ошибка) и устанавливает exit code (0 / ≠0).'
-      - "(#384) kernel-config": 'JSON-файл, путь через `--config=<path>` argv kernel-а. Формат: {"bind":"127.0.0.1","port":8080,"graphs":{"<name>":"<storage-path>"},"graph_idle_timeout":"10m"}. Storage path = path к docs-folder напрямую (kernel ищет <storage>/Схема.yml, <storage>/.docswalker/...). Один storage-path должен быть только в одном kernel-config (sole-writer trust boundary, см. (#308)). Имя graph — alias, путь — внутренний storage path; клиент про путь не знает.'
-      - "(#385) client-config": 'JSON-файл `.dw/client.json` в проектной папке. Формат: {"kernel":{"host":"127.0.0.1","port":8080},"graph":"docswalker"}. Resolution: поиск вверх от cwd до filesystem-root (как git ищет .git/). Первый найденный — используется. Один client-config = один graph; override в запросе нет. Команды `--help` / `--version` не требуют client-config (не делают RPC).'
+      - "(#317) kernel":
+        - text: Standalone HTTP-сервис DocsWalker.Kernel.exe, запускаемый командой `DocsWalker.Kernel.exe --config=<path>`. Слушает HTTP на bind:port из kernel-config; держит N графов в памяти (multi-graph через named); диспетчеризует JSON-RPC tools/call по graph-name из URL `/db/<name>/rpc`. Завершается по SIGINT/SIGTERM/Ctrl+C; графы выгружаются по per-graph idle eviction (#314). Не привязан к OS-пользователю — может быть локальным, удалённым, в контейнере. Несколько kernel-инстансов на машине допустимо.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#318) клиент":
+        - text: 'Процесс DocsWalker, делающий HTTP/JSON-RPC к kernel-у. Виды: CLI (один запрос за вызов бинаря), REPL (TTY-сессия с серией запросов), MCP-wrapper (#372) — stdio↔HTTP мост для LLM-клиента. Алгоритм: читает `.dw/client.json` (поиск вверх от cwd до filesystem-root), берёт endpoint host:port и graph-name, шлёт JSON-RPC tools/call к URL `/db/<graph-name>/rpc`, читает ответ, проксирует в свой stdout/stderr. Если `.dw/client.json` не найден — `client_config_not_found`. Если kernel offline — `kernel_unreachable`. Auto-spawn-а kernel-а нет: запуск kernel — отдельная задача оператора. Никакого парсинга docs/ или валидации не делает.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#321) HTTP-эндпоинт kernel-а":
+        - text: 'Локальный HTTP-сервер kernel-а на Kestrel (ASP.NET Core minimal API). Эндпоинты: GET `/health` — liveness, kernel-level (без graph), возвращает {ok, api_version, uptime_s}; GET `/db` — список объявленных в kernel-config graphs (массив {name, loaded, last_access}, без storage path); POST `/db/<graph-name>/rpc` — JSON-RPC 2.0 main channel для конкретного graph-а. Bind на host:port из kernel-config. Один эндпоинт обслуживает все graphs и всех клиентов одновременно — диспетчеризация по graph-name в URL.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#322) JSON-RPC request":
+        - text: 'JSON-RPC 2.0 запрос к kernel-у: POST `/db/<graph-name>/rpc` с JSON-объектом {jsonrpc, id, method=tools/call, params}. Параметра graph-а в params нет — диспетчеризация по URL. Тело params содержит фактические аргументы команды (`name`, `arguments`); форма зависит от method. Content-Type — application/json. Поле `root` или эквивалент в params не передаётся — клиент про FS не знает.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#323) JSON-RPC response":
+        - text: 'Один ответ — JSON-RPC 2.0 объект: успех {"jsonrpc":"2.0","id":<int>,"result":{"payload":<тот же JSON, что текущий stdout успешного ответа CLI из (#161)>}}; ошибка {"jsonrpc":"2.0","id":<int>,"error":{"code":<int>,"message":"...","data":{"code":"<строковый-код>","message":"...","hint":"..."?}}}. Клиент проксирует payload в stdout (успех) или data в stderr (ошибка) и устанавливает exit code (0 / ≠0).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#384) kernel-config":
+        - text: 'JSON-файл, путь через `--config=<path>` argv kernel-а. Формат: {"bind":"127.0.0.1","port":8080,"graphs":{"<name>":"<storage-path>"},"graph_idle_timeout":"10m"}. Storage path = path к docs-folder напрямую (kernel ищет <storage>/Схема.yml, <storage>/.docswalker/...). Один storage-path должен быть только в одном kernel-config (sole-writer trust boundary, см. (#308)). Имя graph — alias, путь — внутренний storage path; клиент про путь не знает.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#385) client-config":
+        - text: 'JSON-файл `.dw/client.json` в проектной папке. Формат: {"kernel":{"host":"127.0.0.1","port":8080},"graph":"docswalker"}. Resolution: поиск вверх от cwd до filesystem-root (как git ищет .git/). Первый найденный — используется. Один client-config = один graph; override в запросе нет. Команды `--help` / `--version` не требуют client-config (не делают RPC).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#325) Запуск REPL": REPL — длинноживущий процесс, HTTP-клиент к kernel-у; читает `.dw/client.json` (поиск вверх от cwd); получает endpoint host:port + graph-name; проверяет /health kernel-а; открывает prompt `dw> ` с баннером `graph=<name>, kernel=<host>:<port>`; ввод argv-команды (без префикса) шлётся в kernel POST /db/<graph>/rpc → ответ печатается; ввод `:quit` / `:exit` или EOF (Ctrl+D / Ctrl+Z) — выход REPL (kernel остаётся работать); одиночный Ctrl+C — отмена текущей строки, prompt перерисовывается.
-      - "(#329) Внешняя правка YAML": Kernel запущен → правка docs/foo.yml в IDE = нарушение контракта (#294); kernel не подхватывает изменения (нет FS-watcher), а первый же write-запрос через kernel перезапишет файл текущим in-memory графом, потеряв ручную правку. Штатный путь — все правки через DocsWalker-команды (CLI/REPL/MCP). Если ручная правка всё-таки нужна (миграция, восстановление) — оператор гасит kernel (kill), правит YAML, запускает kernel заново.
-      - "(#330) Кадры запроса/ответа": 'Запрос: POST /db/docswalker/rpc HTTP/1.1; Host: 127.0.0.1:8080; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-nodes","arguments":{"ids":[42]}}}. Ответ: HTTP/1.1 200 OK; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"result":[{...}]}. Имя графа (`docswalker`) идёт в URL, не в JSON.'
-      - "(#331) Per-graph eviction после простоя": Клиент шлёт запрос на graph=A → kernel грузит граф в RAM, отвечает; 10 минут на graph=A нет запросов → kernel выгружает граф (Dispose); 11-я минута — клиент шлёт запрос на graph=A → kernel re-load, latency запроса = время на load (1-3 сек на средний docs/), дальше всё штатно. Клиент об eviction не знает — это деталь kernel-а.
-      - "(#332) Multi-graph в одном kernel": 'get-nodes {"ids": [1]} (вызов из проекта A с .dw/client.json указывающим на graph=docswalker) → kernel: lazy-load графа docswalker, отвечает. get-nodes {"ids": [1]} (параллельно или следом, из проекта B с .dw/client.json указывающим на graph=another) → kernel: lazy-load графа another, отвечает; графы docswalker и another живут в одном процессе, читаются независимо (per-graph semaphore #313), не конфликтуют. Cross-graph запрос невозможен — каждый graph — изолированный namespace id.'
-      - "(#336) Per-graph semaphore": 'Два клиента одновременно шлют write-команду в kernel: первый на graph=A, второй на graph=B → обрабатываются параллельно (per-graph semaphore не пересекается). Два клиента одновременно шлют write на graph=A → второй ждёт первого в очереди семафора graph=A. Read-команды на A и B параллельно — также независимы.'
-      - "(#337) REPL без истории сессий": Закрыли REPL (`:quit`), запустили его снова → стрелка вверх возвращает только команды текущей REPL-сессии; история предыдущей не сохраняется. Kernel при этом продолжает работать (отдельный процесс) — REPL-сессии независимы от kernel-процесса. Endpoint и graph берутся из `.dw/client.json`.
-      - "(#379) Error: kernel_unreachable": 'get-nodes {"ids": [1]} (kernel offline; .dw/client.json указывает на 127.0.0.1:8080) → ошибка {"code": "kernel_unreachable", "message": "Не удалось установить TCP-соединение с 127.0.0.1:8080", "hint": "Проверь, что kernel запущен (DocsWalker.Kernel.exe --config=...) и endpoint в .dw/client.json правильный"}.'
-      - "(#380) Auto-spawn попытка → kernel_unreachable": 'get-nodes {"ids": [1]} (kernel offline). Раньше клиент пытался бы auto-spawn-нуть kernel сам. В новой модели — клиент только шлёт TCP-запрос на endpoint из .dw/client.json, получает Connection refused → ошибка {"code": "kernel_unreachable", ...}. Auto-spawn-механизма нет; kernel запускается оператором отдельно командой DocsWalker.Kernel.exe --config=<path>.'
-      - "(#381) kernel-config — multi-graph": 'Минимальный kernel-config для двух баз знаний: {"bind":"127.0.0.1","port":8080,"graphs":{"docswalker":"/srv/projects/docswalker/docs","another":"/data/another/docs"},"graph_idle_timeout":"10m"}. Запуск: DocsWalker.Kernel.exe --config=/etc/docswalker/kernel-config.json. URL для запросов: http://127.0.0.1:8080/db/docswalker/rpc и http://127.0.0.1:8080/db/another/rpc. /health и /db — общие, без graph-name.'
-      - "(#382) client-config — поиск .dw/": 'Содержимое /path/to/project/.dw/client.json: {"kernel":{"host":"127.0.0.1","port":8080},"graph":"docswalker"}. Клиент, запущенный из /path/to/project/sub/dir, поднимается вверх (sub/dir → sub → project → ...) до первого .dw/client.json — находит наш файл. URL HTTP-запроса: http://127.0.0.1:8080/db/docswalker/rpc. Если поиск дошёл до filesystem-root и .dw/client.json не найден — `client_config_not_found` с подсказкой `создай .dw/client.json в корне проекта`.'
+      - "(#325) Запуск REPL":
+        - text: REPL — длинноживущий процесс, HTTP-клиент к kernel-у; читает `.dw/client.json` (поиск вверх от cwd); получает endpoint host:port + graph-name; проверяет /health kernel-а; открывает prompt `dw> ` с баннером `graph=<name>, kernel=<host>:<port>`; ввод argv-команды (без префикса) шлётся в kernel POST /db/<graph>/rpc → ответ печатается; ввод `:quit` / `:exit` или EOF (Ctrl+D / Ctrl+Z) — выход REPL (kernel остаётся работать); одиночный Ctrl+C — отмена текущей строки, prompt перерисовывается.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#329) Внешняя правка YAML":
+        - text: Kernel запущен → правка docs/foo.yml в IDE = нарушение контракта (#294); kernel не подхватывает изменения (нет FS-watcher), а первый же write-запрос через kernel перезапишет файл текущим in-memory графом, потеряв ручную правку. Штатный путь — все правки через DocsWalker-команды (CLI/REPL/MCP). Если ручная правка всё-таки нужна (миграция, восстановление) — оператор гасит kernel (kill), правит YAML, запускает kernel заново.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#330) Кадры запроса/ответа":
+        - text: 'Запрос: POST /db/docswalker/rpc HTTP/1.1; Host: 127.0.0.1:8080; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-nodes","arguments":{"ids":[42]}}}. Ответ: HTTP/1.1 200 OK; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"result":[{...}]}. Имя графа (`docswalker`) идёт в URL, не в JSON.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#331) Per-graph eviction после простоя":
+        - text: Клиент шлёт запрос на graph=A → kernel грузит граф в RAM, отвечает; 10 минут на graph=A нет запросов → kernel выгружает граф (Dispose); 11-я минута — клиент шлёт запрос на graph=A → kernel re-load, latency запроса = время на load (1-3 сек на средний docs/), дальше всё штатно. Клиент об eviction не знает — это деталь kernel-а.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#332) Multi-graph в одном kernel":
+        - text: 'get-nodes {"ids": [1]} (вызов из проекта A с .dw/client.json указывающим на graph=docswalker) → kernel: lazy-load графа docswalker, отвечает. get-nodes {"ids": [1]} (параллельно или следом, из проекта B с .dw/client.json указывающим на graph=another) → kernel: lazy-load графа another, отвечает; графы docswalker и another живут в одном процессе, читаются независимо (per-graph semaphore #313), не конфликтуют. Cross-graph запрос невозможен — каждый graph — изолированный namespace id.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#336) Per-graph semaphore":
+        - text: 'Два клиента одновременно шлют write-команду в kernel: первый на graph=A, второй на graph=B → обрабатываются параллельно (per-graph semaphore не пересекается). Два клиента одновременно шлют write на graph=A → второй ждёт первого в очереди семафора graph=A. Read-команды на A и B параллельно — также независимы.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#337) REPL без истории сессий":
+        - text: Закрыли REPL (`:quit`), запустили его снова → стрелка вверх возвращает только команды текущей REPL-сессии; история предыдущей не сохраняется. Kernel при этом продолжает работать (отдельный процесс) — REPL-сессии независимы от kernel-процесса. Endpoint и graph берутся из `.dw/client.json`.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#379) Error: kernel_unreachable":
+        - text: 'get-nodes {"ids": [1]} (kernel offline; .dw/client.json указывает на 127.0.0.1:8080) → ошибка {"code": "kernel_unreachable", "message": "Не удалось установить TCP-соединение с 127.0.0.1:8080", "hint": "Проверь, что kernel запущен (DocsWalker.Kernel.exe --config=...) и endpoint в .dw/client.json правильный"}.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#380) Auto-spawn попытка → kernel_unreachable":
+        - text: 'get-nodes {"ids": [1]} (kernel offline). Раньше клиент пытался бы auto-spawn-нуть kernel сам. В новой модели — клиент только шлёт TCP-запрос на endpoint из .dw/client.json, получает Connection refused → ошибка {"code": "kernel_unreachable", ...}. Auto-spawn-механизма нет; kernel запускается оператором отдельно командой DocsWalker.Kernel.exe --config=<path>.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#381) kernel-config — multi-graph":
+        - text: 'Минимальный kernel-config для двух баз знаний: {"bind":"127.0.0.1","port":8080,"graphs":{"docswalker":"/srv/projects/docswalker/docs","another":"/data/another/docs"},"graph_idle_timeout":"10m"}. Запуск: DocsWalker.Kernel.exe --config=/etc/docswalker/kernel-config.json. URL для запросов: http://127.0.0.1:8080/db/docswalker/rpc и http://127.0.0.1:8080/db/another/rpc. /health и /db — общие, без graph-name.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#382) client-config — поиск .dw/":
+        - text: 'Содержимое /path/to/project/.dw/client.json: {"kernel":{"host":"127.0.0.1","port":8080},"graph":"docswalker"}. Клиент, запущенный из /path/to/project/sub/dir, поднимается вверх (sub/dir → sub → project → ...) до первого .dw/client.json — находит наш файл. URL HTTP-запроса: http://127.0.0.1:8080/db/docswalker/rpc. Если поиск дошёл до filesystem-root и .dw/client.json не найден — `client_config_not_found` с подсказкой `создай .dw/client.json в корне проекта`.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - llm:
-      - "(#333) Старт работы": Перед любой командой клиент проверяет, что `.dw/client.json` доступен и kernel отвечает. Если client-config не найден — `client_config_not_found` (создай `.dw/client.json` в корне проекта). Если kernel offline — `kernel_unreachable` (запусти DocsWalker.Kernel.exe --config=<path> или поправь endpoint в client-config). Не пытайся управлять kernel-процессом из клиента — kernel запускается оператором отдельно. Если kernel завис — рестартуй kernel вручную, репортируй проблему.
+      - "(#333) Старт работы":
+        - text: Перед любой командой клиент проверяет, что `.dw/client.json` доступен и kernel отвечает. Если client-config не найден — `client_config_not_found` (создай `.dw/client.json` в корне проекта). Если kernel offline — `kernel_unreachable` (запусти DocsWalker.Kernel.exe --config=<path> или поправь endpoint в client-config). Не пытайся управлять kernel-процессом из клиента — kernel запускается оператором отдельно. Если kernel завис — рестартуй kernel вручную, репортируй проблему.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#338) Auto-include":
     - statements:
-      - "(#339) Цель раздела": Auto-include автоматически подтягивает концептуально-неотъемлемые связи (`tree==null && required==true`). Для дешёвого обзора без auto-include — `fields=[title]` + `depth`/`tree` в read-командах.
+      - "(#339) Цель раздела":
+        - text: Auto-include автоматически подтягивает концептуально-неотъемлемые связи (`tree==null && required==true`). Для дешёвого обзора без auto-include — `fields=[title]` + `depth`/`tree` в read-командах.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#340) Auto-include":
         - text: 'При любой read-команде сервер транзитивно подтягивает цели всех non-tree required cross-refs узлов-результата (auto-include = `tree == null && required == true`). Отдельного поля в Схеме нет — семантика выводится из существующих `tree` и `required`. На текущей Схеме auto-include активен только для связи `rule.examples`. Шейп ответа: get-nodes возвращает auto-include-цели в основном плоском массиве после прямых id; get-tree и get-by-path кладут их в top-level поле `auto_includes` (массив узлов). При нулевом auto-include поле опускается, шейп идентичен дофиче.'
         - examples: [341]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#363) auto-include": Свойство связи `tree == null && required == true`. Read-команды транзитивно подтягивают цели таких связей. Отдельного поля в Схеме нет — семантика выводится из существующих полей.
+      - "(#363) auto-include":
+        - text: Свойство связи `tree == null && required == true`. Read-команды транзитивно подтягивают цели таких связей. Отдельного поля в Схеме нет — семантика выводится из существующих полей.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#341) auto-include для rule.examples": На текущей Схеме auto-include активен только для связи rule.examples — единственная non-tree required связь. `get-nodes --ids=125` (rule «Запись через API») вернёт сам узел и узел (#188) — его пример.
+      - "(#341) auto-include для rule.examples":
+        - text: На текущей Схеме auto-include активен только для связи rule.examples — единственная non-tree required связь. `get-nodes --ids=125` (rule «Запись через API») вернёт сам узел и узел (#188) — его пример.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#78) Атомизация и формат YAML смысловых узлов":
     - statements:
-      - "(#179) Bullet → узел": Каждый бывший bullet-блок (statements, rules, may_rules, notes, llm) в section разворачивается в отдельный смысловой узел со своим id, type и title. text узла — формулировка, бывшая bare-string элементом списка. Это позволяет LLM фильтровать docs/ по одному правилу, одному определению или одному примеру, не подтягивая всю section.
-      - "(#180) Дихотомия типов": 'Дихотомия типов: структурные (root, folder, document) идентифицируются файловой системой; смысловые (section, definition, example, statement, rule, may_rule, note, llm_hint) — inline-ключом YAML.'
+      - "(#179) Bullet → узел":
+        - text: Каждый бывший bullet-блок (statements, rules, may_rules, notes, llm) в section разворачивается в отдельный смысловой узел со своим id, type и title. text узла — формулировка, бывшая bare-string элементом списка. Это позволяет LLM фильтровать docs/ по одному правилу, одному определению или одному примеру, не подтягивая всю section.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#180) Дихотомия типов":
+        - text: 'Дихотомия типов: структурные (root, folder, document) идентифицируются файловой системой; смысловые (section, definition, example, statement, rule, may_rule, note, llm_hint) — inline-ключом YAML.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#181) Расширение существующего формата":
         - text: 'Атомизация распространяет существующий формат definition/example на ex-bullets: до атомизации statements были голыми строками, после — single_key_mapping.'
         - examples: [233]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#182) inline_key для смысловых":
         - text: В Схеме каждый смысловой тип объявляет title_source=inline_key. Структурные типы используют filename или dirname.
         - examples: [234]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#183) id из sequence для атома":
         - text: id атома выдаётся sequence-счётчиком при создании, как для любого узла.
         - examples: [235]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#79) формат смыслового узла": 'Single_key_mapping вида "(#id) title": value. id и title склеиваются в ключ, value — содержимое узла. Форма value диктуется контрактом типа: если text_required=true и нет out_refs — value = строка с текстом; если есть out_refs — value = mapping с сериализованными исходящими связями.'
-      - "(#80) title как path-сегмент": title — 1–2-словное сжатие text узла, не display-name. Используется в path-навигации /Document/Section/Atom-title. Если для атома не находится естественного title — атом не нужен в graph (это шум, должен слиться с соседом или быть удалён).
+      - "(#79) формат смыслового узла":
+        - text: 'Single_key_mapping вида "(#id) title": value. id и title склеиваются в ключ, value — содержимое узла. Форма value диктуется контрактом типа: если text_required=true и нет out_refs — value = строка с текстом; если есть out_refs — value = mapping с сериализованными исходящими связями.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#80) title как path-сегмент":
+        - text: title — 1–2-словное сжатие text узла, не display-name. Используется в path-навигации /Document/Section/Atom-title. Если для атома не находится естественного title — атом не нужен в graph (это шум, должен слиться с соседом или быть удалён).
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#81) section с атомами": 'section "(#42) Биекция" имеет value=mapping с блоками statements, rules, …; внутри каждого блока — список single_key_mapping вида "(#100) Изоморфизм": Структура docs/ изоморфна графу узлов.'
-      - "(#82) leaf-атом": '"(#100) Изоморфизм": Структура docs/ изоморфна графу узлов. — узел типа statement, id=100, title="Изоморфизм", text="Структура docs/ изоморфна графу узлов."'
-      - "(#233) Было/стало": 'Было: statements: ["Структура изоморфна графу"]; стало: statements: ["(#100) Изоморфизм": "Структура изоморфна графу"].'
-      - "(#234) title_source": 'В Схеме type_definition для rule: title_source=inline_key; для document: title_source=filename.'
-      - "(#235) Создание атома": create-node --type=statement --title=Изоморфизм --text=... — id берётся из sequence.txt+1.
+      - "(#81) section с атомами":
+        - text: 'section "(#42) Биекция" имеет value=mapping с блоками statements, rules, …; внутри каждого блока — список single_key_mapping вида "(#100) Изоморфизм": Структура docs/ изоморфна графу узлов.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#82) leaf-атом":
+        - text: '"(#100) Изоморфизм": Структура docs/ изоморфна графу узлов. — узел типа statement, id=100, title="Изоморфизм", text="Структура docs/ изоморфна графу узлов."'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#233) Было/стало":
+        - text: 'Было: statements: ["Структура изоморфна графу"]; стало: statements: ["(#100) Изоморфизм": "Структура изоморфна графу"].'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#234) title_source":
+        - text: 'В Схеме type_definition для rule: title_source=inline_key; для document: title_source=filename.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#235) Создание атома":
+        - text: create-node --type=statement --title=Изоморфизм --text=... — id берётся из sequence.txt+1.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#274) Как LLM работает с DocsWalker":
     - statements:
-      - "(#275) Граф = узлы + связи": Программа DocsWalker представляет docs/ как граф. Узлы — единицы смысла; связи — направленные именованные out_refs с известными именами и target_types. Никаких других сущностей у LLM нет.
-      - "(#276) Только path в ФС": Дерево path — единственное физически материализованное (каталоги + файлы). Все остальные tree-scope'ы (например, strategic) — навигационные view'ы поверх графа, без отражения в ФС.
-      - "(#277) LLM не видит файлы": LLM-агент работает только с узлами и связями через API. Имена файлов и каталогов наружу не торчат — ни в успешном ответе (нет полей с путями файлов), ни в поле path ошибки (там — только title документа без расширения и FS-префикса), ни в hint-ах. LLM не должна знать о существовании YAML-файлов и не должна на них опираться при написании запросов.
+      - "(#275) Граф = узлы + связи":
+        - text: Программа DocsWalker представляет docs/ как граф. Узлы — единицы смысла; связи — направленные именованные out_refs с известными именами и target_types. Никаких других сущностей у LLM нет.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#276) Только path в ФС":
+        - text: Дерево path — единственное физически материализованное (каталоги + файлы). Все остальные tree-scope'ы (например, strategic) — навигационные view'ы поверх графа, без отражения в ФС.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#277) LLM не видит файлы":
+        - text: LLM-агент работает только с узлами и связями через API. Имена файлов и каталогов наружу не торчат — ни в успешном ответе (нет полей с путями файлов), ни в поле path ошибки (там — только title документа без расширения и FS-префикса), ни в hint-ах. LLM не должна знать о существовании YAML-файлов и не должна на них опираться при написании запросов.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - rules:
       - "(#280) Read → describe → write":
         - text: Перед любой write-операцией прочитай актуальное состояние интересующего поддерева (get-tree) и контракт типа (describe-type), и только затем вызывай write-команду. Стейл-данные → invalid_parent / unknown_ref-имя в ответ.
         - examples: [279]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#282) Незнакомая задача — dry-run":
         - text: При первом подходе к незнакомому write-сценарию передай --dry-run=true в команду. Ответ покажет applied=false и набор валидаций; убедись, что результат ожидаемый, и только тогда повтори без флага.
         - examples: [281]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#284) Старт сессии — check-integrity":
         - text: В начале сессии (или после ручной правки YAML, миграции, восстановления из бэкапа) вызови check-integrity и убедись, что ok=true. Без этого write-операция может удариться в накопленные нарушения целостности и упасть с непрозрачной ошибкой.
         - examples: [283]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#286) delete-nodes без авто-каскада":
         - text: 'Удаление — только delete-nodes с явным набором --ids. Авто-каскада нет: LLM сама собирает набор через get-tree (по любому tree-scope) и добавляет path-children каждого узла набора. Ошибки path_orphans_left и dangling_refs — обучающий сигнал, перечисляют недостающее.'
         - examples: [285]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#288) dangling_refs — redirect-refs или delete-ref":
         - text: Ошибка dangling_refs от delete-nodes означает, что на узлы из набора есть входящие cross-refs от узлов снаружи. Реши через redirect-refs (массово переподшить на другой узел) или серию delete-ref в transaction'е. Только после этого ретрай delete-nodes.
         - examples: [287]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#290) Tree-refs — только через move-node":
         - text: Tree-refs (path, strategic, любой объявленный scope) не редактируются через redirect-refs / create-ref / delete-ref. Для переподшивки в дереве используй move-node с явным --tree=<scope>; команда атомарно правит ровно один scope-ref у узла.
         - examples: [289]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#292) move-node default — path":
         - text: По умолчанию move-node работает в дереве path; без явного --tree=<scope> намерение переподшить узел в доменном дереве запустит реструктуризацию хранилища с каскадным переписыванием SourceFile. Указывай tree=<scope> явно, если двигаешь не в path.
         - examples: [291]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#294) Запрет ручной правки YAML и служебных файлов":
         - text: Правка любых файлов в docs/ (включая sequence.txt и folders.yml) в обход CLI запрещена — теряются sequence-инвариант, целостность графа, атомарность записи и path-child симметрия. Все правки — через DocsWalker.
         - examples: [293]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#296) Расширение Схемы — не задача LLM":
         - text: Объявить новый тип узла или новое имя связи в Схема.yml — структурная эволюция языка проекта, не runtime-операция. У LLM нет API-команды для этого; такую правку делает человек, и Схема перепроверяется валидатором как обычный YAML.
         - examples: [295]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#278) root": 'Корень всего графа — синглтон с id=0, type=root. Любой обход начинается отсюда: get-tree --id=0 даёт всё дерево path, get-refs --id=0 — все исходящие связи root. У root нет path-родителя.'
+      - "(#278) root":
+        - text: 'Корень всего графа — синглтон с id=0, type=root. Любой обход начинается отсюда: get-tree --id=0 даёт всё дерево path, get-refs --id=0 — все исходящие связи root. У root нет path-родителя.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#279) Цепочка перед записью": get-tree --id=42 → describe-type --name=section → create-node --type=section --path=42 ...
-      - "(#281) dry-run перед боевой записью": 'create-node {"type": "rule", "title": "foo", "text": "...", "path": 42, "examples": [99], "dry_run": true} → applied=false; ответ покажет, что вернётся при реальном вызове.'
-      - "(#283) check-integrity на старте": 'check-integrity {} → {"ok": true, "errors": []} перед цепочкой правок; ok=false → разбираться с errors до начала записи.'
-      - "(#285) Удаление поддерева вручную": 'Удалить project и все его tasks по дереву strategic: get-tree --id=PROJECT --tree=strategic → собрать все id''ы поддерева → добавить path-children каждого через get-tree --tree=path → передать всё списком в delete-nodes --ids=.'
-      - "(#287) redirect-refs перед удалением": 'Перед delete-nodes на узел id=42, на который смотрят сторонние cross-refs: redirect-refs {"from": 42, "to": 8} переподшивает все входящие cross-refs на узел id=8 одной командой; tree-refs (path и др.) этой командой не трогаются.'
-      - "(#289) move-node в tree-scope": 'Переподшить subtask под другой parent_task в дереве strategic: move-node {"id": SUBTASK, "to": NEW_TASK, "tree": "strategic"}; без поля tree команда работает в дереве path и запустит реструктуризацию хранилища.'
-      - "(#291) move-node без --tree": 'move-node {"id": 42, "to": 8} без поля tree → tree=path по умолчанию → каскадное переписывание SourceFile у всех потомков и физический перенос между документами/папками. Нужен tree-scope, отличный от path? — указать явно.'
-      - "(#293) Без правки sequence.txt руками": 'Прямая правка sequence.txt → следующий create-node выдаст уже занятый id → duplicate_id. Восстановление: пересчитать sequence как max(id)+1 по графу — но проще не трогать вообще.'
-      - "(#295) Новый out_ref в Схема.yml": Добавление новой связи (например, out_refs.related в типе section) — ручная правка docs/Схема.yml человеком; LLM этого не делает. После правки — check-integrity для верификации.
+      - "(#279) Цепочка перед записью":
+        - text: get-tree --id=42 → describe-type --name=section → create-node --type=section --path=42 ...
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#281) dry-run перед боевой записью":
+        - text: 'create-node {"type": "rule", "title": "foo", "text": "...", "path": 42, "examples": [99], "dry_run": true} → applied=false; ответ покажет, что вернётся при реальном вызове.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#283) check-integrity на старте":
+        - text: 'check-integrity {} → {"ok": true, "errors": []} перед цепочкой правок; ok=false → разбираться с errors до начала записи.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#285) Удаление поддерева вручную":
+        - text: 'Удалить project и все его tasks по дереву strategic: get-tree --id=PROJECT --tree=strategic → собрать все id''ы поддерева → добавить path-children каждого через get-tree --tree=path → передать всё списком в delete-nodes --ids=.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#287) redirect-refs перед удалением":
+        - text: 'Перед delete-nodes на узел id=42, на который смотрят сторонние cross-refs: redirect-refs {"from": 42, "to": 8} переподшивает все входящие cross-refs на узел id=8 одной командой; tree-refs (path и др.) этой командой не трогаются.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#289) move-node в tree-scope":
+        - text: 'Переподшить subtask под другой parent_task в дереве strategic: move-node {"id": SUBTASK, "to": NEW_TASK, "tree": "strategic"}; без поля tree команда работает в дереве path и запустит реструктуризацию хранилища.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#291) move-node без --tree":
+        - text: 'move-node {"id": 42, "to": 8} без поля tree → tree=path по умолчанию → каскадное переписывание SourceFile у всех потомков и физический перенос между документами/папками. Нужен tree-scope, отличный от path? — указать явно.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#293) Без правки sequence.txt руками":
+        - text: 'Прямая правка sequence.txt → следующий create-node выдаст уже занятый id → duplicate_id. Восстановление: пересчитать sequence как max(id)+1 по графу — но проще не трогать вообще.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#295) Новый out_ref в Схема.yml":
+        - text: Добавление новой связи (например, out_refs.related в типе section) — ручная правка docs/Схема.yml человеком; LLM этого не делает. После правки — check-integrity для верификации.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - llm:
-      - "(#297) describe-type экономит токены": Если для задачи нужен один тип — вызывай describe-type --name=<type>, не get-schema. Get-schema выдаёт всю Схему целиком; describe-type — только запрошенный тип в FS-агностичной форме (без title_source).
+      - "(#297) describe-type экономит токены":
+        - text: Если для задачи нужен один тип — вызывай describe-type --name=<type>, не get-schema. Get-schema выдаёт всю Схему целиком; describe-type — только запрошенный тип в FS-агностичной форме (без title_source).
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#386) Addressable trees":
     - rules:
       - "(#393) addressable = unique_sibling_titles":
         - text: 'У tree-связи в Схеме (`name=<...>; tree=<name>`) поле `unique_sibling_titles: true` (опциональное в meta-schema, default false) делает соответствующее дерево addressable. False — sibling-дубли разрешены, дерево навигируется только через get-tree или get-refs.'
         - examples: [387]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#394) get-by-path только с addressable":
         - text: Команда get-by-path работает только с addressable деревьями. Параметр `--tree=<name>` — опциональный (resolution default-а — см. правило о default tree). Если указан и tree non-addressable — ошибка `tree_not_addressable` с подсказкой использовать get-tree --tree=<name> --id=<root> либо get-refs.
         - examples: [388]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#395) Default tree resolution":
         - text: 'Resolution параметра `--tree=` в get-by-path: 1) если в meta-schema задано `default_addressable_tree: <name>` — используется оно; 2) иначе если в Схеме ровно один addressable tree — он default; 3) иначе (addressable trees > 1, поле не задано) — `--tree=` обязателен; ошибка `tree_required`.'
         - examples: [390]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#396) duplicate_sibling_title validation":
         - text: 'При write (create-node, move-node с change of parent в addressable tree, update-node с change of title у узла, сидящего в каком-либо addressable tree) — для каждого addressable tree, в котором узел участвует, kernel проверяет: title не дублирует существующих siblings нового parent. Конфликт → ошибка `duplicate_sibling_title` с указанием conflicting id и tree-name. Транзакция откатывается полностью.'
         - examples: [389]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#397) FS-материализация — kernel-internal":
         - text: 'FS-структура хранилища (как граф материализуется в файлы и каталоги) — деталь реализации kernel-а, не часть API-контракта. В текущей реализации kernel материализует одно конкретное addressable дерево (имя `path`) в FS-структуру. В будущем может стать configurable (`materialize_tree: <name>` в kernel-config) или вообще отвязано (JSON-storage).'
         - examples: [391]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#392) addressable tree": 'Дерево в Схеме (объявленное в trees), у которого хотя бы одна tree-связь в типах-источниках имеет `unique_sibling_titles: true` в meta-schema. Свойство derived из meta-schema, не отдельный концепт. Addressable trees поддерживают get-by-path и duplicate_sibling_title-валидацию при write (create-node, move-node с change of parent, update-node с change of title в этом дереве). Не-addressable деревья навигируются только через get-tree / get-refs.'
+      - "(#392) addressable tree":
+        - text: 'Дерево в Схеме (объявленное в trees), у которого хотя бы одна tree-связь в типах-источниках имеет `unique_sibling_titles: true` в meta-schema. Свойство derived из meta-schema, не отдельный концепт. Addressable trees поддерживают get-by-path и duplicate_sibling_title-валидацию при write (create-node, move-node с change of parent, update-node с change of title в этом дереве). Не-addressable деревья навигируются только через get-tree / get-refs.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#387) addressable — следствие unique_sibling_titles": 'У tree-связи в Схеме `unique_sibling_titles: true` — дерево становится addressable. Пример: связь `name=path tree=path unique_sibling_titles=true target_types=[section]` в типе statement → дерево path становится addressable, узлы типа statement в этом дереве адресуются через get-by-path по строке title-сегментов.'
-      - "(#388) get-by-path с --tree=": 'get-by-path --path=DocsWalker/Модель процесса/Standalone HTTP-сервис → находит узел через addressable tree (default — единственный addressable, либо default_addressable_tree из meta-schema). С --tree=path explicitly: тот же результат. С --tree=<non-addressable> → ошибка tree_not_addressable с подсказкой `используй get-tree --tree=<name> --id=<root> или get-refs`.'
-      - "(#389) duplicate_sibling_title при create": create-node --type=section --title=Назначение --path=1 (под document id=1, где уже есть section с title=Назначение) → ошибка duplicate_sibling_title с указанием conflicting_id и tree_name=path. Транзакция откатывается полностью; ничего не записано на диск. Аналогично при move-node с change of parent и при update-node с change of title.
-      - "(#390) Default tree resolution — три случая": 'Случай 1 (один addressable): Схема с одним unique_sibling_titles=true деревом → get-by-path без --tree= использует это дерево автоматически. Случай 2 (default_addressable_tree задан): Схема с двумя addressable + default_addressable_tree=strategic в meta-schema → get-by-path без --tree= использует strategic. Случай 3 (несколько, default не задан): Схема с двумя addressable, default_addressable_tree пустой → get-by-path без --tree= → tree_required.'
-      - "(#391) FS-материализация только path-дерева": 'Текущая реализация kernel-а материализует addressable дерево с именем path в FS-структуру: каждый узел типа section — каталог; каждый узел типа document — YAML-файл; узлы-атомы (rule, statement, definition, ...) — inline-key в YAML родителя. Если в Схеме появится второе addressable дерево — оно НЕ материализуется в FS (только path материализуется как FS). Это deliberate kernel-internal деталь, не часть API-контракта; в будущем может стать configurable.'
+      - "(#387) addressable — следствие unique_sibling_titles":
+        - text: 'У tree-связи в Схеме `unique_sibling_titles: true` — дерево становится addressable. Пример: связь `name=path tree=path unique_sibling_titles=true target_types=[section]` в типе statement → дерево path становится addressable, узлы типа statement в этом дереве адресуются через get-by-path по строке title-сегментов.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#388) get-by-path с --tree=":
+        - text: 'get-by-path --path=DocsWalker/Модель процесса/Standalone HTTP-сервис → находит узел через addressable tree (default — единственный addressable, либо default_addressable_tree из meta-schema). С --tree=path explicitly: тот же результат. С --tree=<non-addressable> → ошибка tree_not_addressable с подсказкой `используй get-tree --tree=<name> --id=<root> или get-refs`.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#389) duplicate_sibling_title при create":
+        - text: create-node --type=section --title=Назначение --path=1 (под document id=1, где уже есть section с title=Назначение) → ошибка duplicate_sibling_title с указанием conflicting_id и tree_name=path. Транзакция откатывается полностью; ничего не записано на диск. Аналогично при move-node с change of parent и при update-node с change of title.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#390) Default tree resolution — три случая":
+        - text: 'Случай 1 (один addressable): Схема с одним unique_sibling_titles=true деревом → get-by-path без --tree= использует это дерево автоматически. Случай 2 (default_addressable_tree задан): Схема с двумя addressable + default_addressable_tree=strategic в meta-schema → get-by-path без --tree= использует strategic. Случай 3 (несколько, default не задан): Схема с двумя addressable, default_addressable_tree пустой → get-by-path без --tree= → tree_required.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#391) FS-материализация только path-дерева":
+        - text: 'Текущая реализация kernel-а материализует addressable дерево с именем path в FS-структуру: каждый узел типа section — каталог; каждый узел типа document — YAML-файл; узлы-атомы (rule, statement, definition, ...) — inline-key в YAML родителя. Если в Схеме появится второе addressable дерево — оно НЕ материализуется в FS (только path материализуется как FS). Это deliberate kernel-internal деталь, не часть API-контракта; в будущем может стать configurable.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
   - "(#409) Multi-tree классификаторы":
     - rules:
       - "(#414) Обязательность классификатора":
         - text: Каждое объявленное classifier_tree в Схеме формирует на атом-типах required tree-ref. Узел любого атом-типа обязан иметь ровно одну ссылку в этом дереве. Допустимая цель — реальная категория или специальный узел `none`. Отсутствие ссылки → ошибка missing_classifier при валидации; узел с двумя ссылками в одном classifier_tree — ошибка cardinality.
         - examples: [412]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
       - "(#415) Фильтр включает подграф":
         - text: 'Параметр in_tree в read-командах (find, search) принимает массив {name, under}: name — имя classifier_tree, under — id корня поддерева в этом дереве. Результат содержит узлы, чья классификатор-ссылка попадает в подграф (включая сам under и всех его потомков по дереву). Несколько in_tree-элементов комбинируются по И (пересечение).'
         - examples: [413]
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - definitions:
-      - "(#410) classifier_tree": Дерево-классификатор — отдельный tree-scope в Схеме, узлы которого описывают категории по конкретной оси таксономии (тема, подсистема, аудитория, структура кода и т. п.). Узлы classifier_tree — это узлы-категории; атом-узлы документации (rule, statement, definition, example, note, may_rule, llm_hint) держат на категории required tree-ref. classifier_tree объявляется в Схеме рядом с path-деревом, но не материализуется в FS — не несёт нагрузки на размещение файлов.
-      - "(#411) none_category": '`none` — first-class категория в каждом classifier_tree: явный узел уровня корня дерева, означающий «узел не классифицирован по этой оси». Существует на равных с реальными категориями: атом-узел ссылается на `none` точно так же, как на любую другую категорию. Назначение — закрыть required-контракт классификатора, когда классификация не имеет смысла или ещё не определена, без расширения Схемы пустыми значениями (null). `none` — обязательный элемент каждого classifier_tree.'
+      - "(#410) classifier_tree":
+        - text: Дерево-классификатор — отдельный tree-scope в Схеме, узлы которого описывают категории по конкретной оси таксономии (тема, подсистема, аудитория, структура кода и т. п.). Узлы classifier_tree — это узлы-категории; атом-узлы документации (rule, statement, definition, example, note, may_rule, llm_hint) держат на категории required tree-ref. classifier_tree объявляется в Схеме рядом с path-деревом, но не материализуется в FS — не несёт нагрузки на размещение файлов.
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#411) none_category":
+        - text: '`none` — first-class категория в каждом classifier_tree: явный узел уровня корня дерева, означающий «узел не классифицирован по этой оси». Существует на равных с реальными категориями: атом-узел ссылается на `none` точно так же, как на любую другую категорию. Назначение — закрыть required-контракт классификатора, когда классификация не имеет смысла или ещё не определена, без расширения Схемы пустыми значениями (null). `none` — обязательный элемент каждого classifier_tree.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
     - examples:
-      - "(#412) Два классификатора на узле": 'rule с двумя required tree-связями: subject=api/read и subsystem=mcp. Эти связи лежат в разных classifier_tree, не пересекаются и не конкурируют — единичность ссылки в каждом дереве задаётся cardinality=one + required=true на out_ref. Узел, помеченный subject=api/read, может быть помечен и subsystem=mcp — это разные оси.'
-      - "(#413) Фильтр под категорией": 'find или search с параметром in_tree=[{name: ''subject'', under: <id_api>}] отдаёт узлы, чья ссылка subject находится в подграфе категории <id_api> по path-дереву внутри classifier_tree subject. Узел, ссылающийся на корневую категорию api, попадает в выдачу; узел, ссылающийся на api/read, — тоже попадает. Узел с subject=none — не попадает (`none` лежит вне подграфа api).'
+      - "(#412) Два классификатора на узле":
+        - text: 'rule с двумя required tree-связями: subject=api/read и subsystem=mcp. Эти связи лежат в разных classifier_tree, не пересекаются и не конкурируют — единичность ссылки в каждом дереве задаётся cardinality=one + required=true на out_ref. Узел, помеченный subject=api/read, может быть помечен и subsystem=mcp — это разные оси.'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+      - "(#413) Фильтр под категорией":
+        - text: 'find или search с параметром in_tree=[{name: ''subject'', under: <id_api>}] отдаёт узлы, чья ссылка subject находится в подграфе категории <id_api> по path-дереву внутри classifier_tree subject. Узел, ссылающийся на корневую категорию api, попадает в выдачу; узел, ссылающийся на api/read, — тоже попадает. Узел с subject=none — не попадает (`none` лежит вне подграфа api).'
+        - subject: [425]
+        - subsystem: [433]
+        - audience: [436]
+        - csharp_structure: [437]
+  - "(#416) Категории классификаторов":
+    - subject_categories:
+      - "(#417) api":
+        - subject_parent: [0]
+        - children:
+          - "(#418) read":
+            - subject_parent: [417]
+          - "(#419) write":
+            - subject_parent: [417]
+      - "(#420) schema":
+        - subject_parent: [0]
+      - "(#421) runtime":
+        - subject_parent: [0]
+      - "(#422) format":
+        - subject_parent: [0]
+      - "(#423) validation":
+        - subject_parent: [0]
+      - "(#424) planning":
+        - subject_parent: [0]
+      - "(#425) none":
+        - subject_parent: [0]
+    - subsystem_categories:
+      - "(#426) core":
+        - subsystem_parent: [0]
+      - "(#427) kernel":
+        - subsystem_parent: [0]
+      - "(#428) cli":
+        - subsystem_parent: [0]
+      - "(#429) mcp":
+        - subsystem_parent: [0]
+      - "(#430) repl":
+        - subsystem_parent: [0]
+      - "(#431) tests":
+        - subsystem_parent: [0]
+      - "(#432) docs-format":
+        - subsystem_parent: [0]
+      - "(#433) none":
+        - subsystem_parent: [0]
+    - audience_categories:
+      - "(#434) developer":
+        - audience_parent: [0]
+      - "(#435) llm-agent":
+        - audience_parent: [0]
+      - "(#436) none":
+        - audience_parent: [0]
+    - csharp_structure_categories:
+      - "(#437) none":
+        - csharp_structure_parent: [0]

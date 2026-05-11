@@ -221,7 +221,7 @@ public sealed class WriteApi
     /// <see cref="WriteResult"/> в обоих режимах одинаковой формы; режим различает
     /// поле <see cref="WriteResult.Applied"/>.
     /// </summary>
-    public WriteResult Apply(IReadOnlyList<WriteOp> ops, bool dryRun = false)
+    public WriteResult Apply(IReadOnlyList<WriteOp> ops, bool dryRun = false, bool force = false)
     {
         ArgumentNullException.ThrowIfNull(ops);
         if (ops.Count == 0)
@@ -242,7 +242,7 @@ public sealed class WriteApi
             try
             {
                 using var fileLock = CrossProcessLock.Acquire(lockPath, CrossProcessLockTimeout);
-                return ApplyLocked(ops, dryRun);
+                return ApplyLocked(ops, dryRun, force);
             }
             catch (CrossProcessLockTimeoutException ex)
             {
@@ -254,7 +254,7 @@ public sealed class WriteApi
         }
     }
 
-    public WriteResult ApplyOne(WriteOp op, bool dryRun = false) => Apply(new[] { op }, dryRun);
+    public WriteResult ApplyOne(WriteOp op, bool dryRun = false, bool force = false) => Apply(new[] { op }, dryRun, force);
 
     /// <summary>
     /// Atomic-замена <c>docs/Схема.yml</c>. Серверная валидация в порядке:
@@ -262,8 +262,12 @@ public sealed class WriteApi
     /// (3) текущий граф под новой Схемой через <see cref="Validator"/> — все
     /// существующие узлы должны остаться валидными. При ошибке Схема на диск
     /// не пишется. <paramref name="dryRun"/>=true — пропустить FS-фазу.
+    /// <paramref name="force"/>=true пропускает шаг (3): новая Схема пишется,
+    /// даже если ломает граф (массовый missing_required_ref/missing_classifier).
+    /// Это admin-knob для миграций, где следующий же шаг чинит граф (например,
+    /// stg-0011/migrate-classifiers-data). Meta-schema всегда проверяется.
     /// </summary>
-    public SchemaUpdateResult UpdateSchema(string yamlText, bool dryRun = false)
+    public SchemaUpdateResult UpdateSchema(string yamlText, bool dryRun = false, bool force = false)
     {
         if (string.IsNullOrWhiteSpace(yamlText))
             throw new WriteApiException("invalid_yaml", "Параметр yaml_text пуст или содержит только пробелы.");
@@ -274,7 +278,7 @@ public sealed class WriteApi
             try
             {
                 using var fileLock = CrossProcessLock.Acquire(lockPath, CrossProcessLockTimeout);
-                return UpdateSchemaLocked(yamlText, dryRun);
+                return UpdateSchemaLocked(yamlText, dryRun, force);
             }
             catch (CrossProcessLockTimeoutException ex)
             {
@@ -286,7 +290,7 @@ public sealed class WriteApi
         }
     }
 
-    private SchemaUpdateResult UpdateSchemaLocked(string yamlText, bool dryRun)
+    private SchemaUpdateResult UpdateSchemaLocked(string yamlText, bool dryRun, bool force)
     {
         SchemaDocument newSchema;
         try
@@ -301,17 +305,20 @@ public sealed class WriteApi
                 "Проверь форму YAML — типы, out_refs, trees должны следовать meta-schema v6 (см. get-meta-schema).");
         }
 
-        var oldSchema = SchemaLoader.LoadSchema(_ctx.SchemaPath);
-        var loaded = DocumentLoader.Load(_ctx.DocsRoot, oldSchema);
+        if (!force)
+        {
+            var oldSchema = SchemaLoader.LoadSchema(_ctx.SchemaPath);
+            var loaded = DocumentLoader.Load(_ctx.DocsRoot, oldSchema);
 
-        // Применяем новую Схему к существующему графу и валидируем — это ловит
-        // несовместимые правки (убран тип, on котором стоят узлы; убрана требуемая
-        // out_ref, оставив узлы без неё; и т. п.).
-        loaded.Graph.AttachSchema(newSchema);
-        var validator = new Validator(_ctx.MetaSchema, newSchema);
-        var validation = validator.Validate(loaded.Graph);
-        if (!validation.IsValid)
-            throw new WriteValidationException(validation.Errors);
+            // Применяем новую Схему к существующему графу и валидируем — это ловит
+            // несовместимые правки (убран тип, on котором стоят узлы; убрана требуемая
+            // out_ref, оставив узлы без неё; и т. п.).
+            loaded.Graph.AttachSchema(newSchema);
+            var validator = new Validator(_ctx.MetaSchema, newSchema);
+            var validation = validator.Validate(loaded.Graph);
+            if (!validation.IsValid)
+                throw new WriteValidationException(validation.Errors);
+        }
 
         if (!dryRun)
         {
@@ -325,7 +332,7 @@ public sealed class WriteApi
             TreesCount: newSchema.Trees.Count);
     }
 
-    private WriteResult ApplyLocked(IReadOnlyList<WriteOp> ops, bool dryRun)
+    private WriteResult ApplyLocked(IReadOnlyList<WriteOp> ops, bool dryRun, bool force)
     {
         var schema = SchemaLoader.LoadSchema(_ctx.SchemaPath);
         var loaded = DocumentLoader.Load(_ctx.DocsRoot, schema);
@@ -349,11 +356,17 @@ public sealed class WriteApi
 
         var newGraph = state.BuildGraph();
 
-        var validator = new Validator(_ctx.MetaSchema, schema);
         var newSequence = state.SequenceBase + state.IdsConsumed;
-        var validation = validator.Validate(newGraph, newSequence);
-        if (!validation.IsValid)
-            throw new WriteValidationException(validation.Errors);
+        if (!force)
+        {
+            // force=true — admin-knob для миграций, в которых граф уже невалиден из-за
+            // предыдущего update-schema --force и пачка операций является шагом починки.
+            // Validator пропущен; индивидуальные проверки per-op (ApplyOp) уже выполнились.
+            var validator = new Validator(_ctx.MetaSchema, schema);
+            var validation = validator.Validate(newGraph, newSequence);
+            if (!validation.IsValid)
+                throw new WriteValidationException(validation.Errors);
+        }
 
         var targets = new List<AtomicWriteTarget>();
         foreach (var rootId in state.AffectedDocumentIds)
@@ -649,6 +662,10 @@ public sealed class WriteApi
         foreach (var rd in parentType.OutRefs)
         {
             if (string.Equals(rd.Name, Node.PathRefName, StringComparison.Ordinal)) continue;
+            // Любая tree-ref (включая classifier-tree-refs типа subject_parent) — не path-child-слот:
+            // путать их с path-child-ref'ами ломает self-referencing типы (subject_category и т.п.),
+            // у которых tree-ref имеет target=self и совпадает с path-self-target по типу.
+            if (rd.Tree is not null) continue;
             if (!rd.TargetTypes.Any(tt => string.Equals(tt, childType, StringComparison.Ordinal))) continue;
             // Дополнительно убедимся, что это path-child ref — иначе это cross-ref, а они
             // здесь не имеют отношения к path-детству.
