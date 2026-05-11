@@ -127,6 +127,7 @@ internal static class Dispatcher
             "delete_ref"      => WriteHandlers.DeleteRef(storagePath, parsed.Params, dryRun),
             "redirect_refs"   => WriteHandlers.RedirectRefs(storagePath, parsed.Params, dryRun),
             "transaction"     => WriteHandlers.Transaction(storagePath, parsed.Params, dryRun),
+            "update_schema"   => WriteHandlers.UpdateSchema(storagePath, parsed.Params, dryRun),
             _                 => NotImplemented(spec),
         };
     }

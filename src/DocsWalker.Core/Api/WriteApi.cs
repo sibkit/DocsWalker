@@ -133,6 +133,17 @@ public sealed record WriteResult(
     bool Applied);
 
 /// <summary>
+/// Результат команды <c>update-schema</c>: серверная валидация новой Схемы прошла
+/// успешно (или dry-run); атомарная замена <c>docs/Схема.yml</c> применена при
+/// <see cref="Applied"/>=true. <see cref="TypesCount"/> и <see cref="TreesCount"/> —
+/// сводка из применённой Схемы для подтверждения, что LLM получила ожидаемый снимок.
+/// </summary>
+public sealed record SchemaUpdateResult(
+    bool Applied,
+    int TypesCount,
+    int TreesCount);
+
+/// <summary>
 /// Параметры окружения write-операций: пути к docs/, Схема.yml, sequence.txt и
 /// мета-схема (для прогона <see cref="Validator"/>). Используется как контейнер
 /// зависимостей; не хранит изменяемого состояния.
@@ -243,6 +254,75 @@ public sealed class WriteApi
     }
 
     public WriteResult ApplyOne(WriteOp op, bool dryRun = false) => Apply(new[] { op }, dryRun);
+
+    /// <summary>
+    /// Atomic-замена <c>docs/Схема.yml</c>. Серверная валидация в порядке:
+    /// (1) парсинг YAML; (2) <see cref="SchemaLoader.LoadSchemaFromString"/>;
+    /// (3) текущий граф под новой Схемой через <see cref="Validator"/> — все
+    /// существующие узлы должны остаться валидными. При ошибке Схема на диск
+    /// не пишется. <paramref name="dryRun"/>=true — пропустить FS-фазу.
+    /// </summary>
+    public SchemaUpdateResult UpdateSchema(string yamlText, bool dryRun = false)
+    {
+        if (string.IsNullOrWhiteSpace(yamlText))
+            throw new WriteApiException("invalid_yaml", "Параметр yaml_text пуст или содержит только пробелы.");
+
+        lock (_processLock)
+        {
+            var lockPath = Path.Combine(_ctx.DocsRoot, ".docswalker", ".lock");
+            try
+            {
+                using var fileLock = CrossProcessLock.Acquire(lockPath, CrossProcessLockTimeout);
+                return UpdateSchemaLocked(yamlText, dryRun);
+            }
+            catch (CrossProcessLockTimeoutException ex)
+            {
+                throw new WriteApiException(
+                    "lock_timeout",
+                    $"Не удалось взять межпроцессный lock '{ex.LockPath}' за {ex.Timeout.TotalSeconds:0.#} секунд.",
+                    "Другой процесс DocsWalker сейчас пишет в этот docs/. Подожди или прерви его.");
+            }
+        }
+    }
+
+    private SchemaUpdateResult UpdateSchemaLocked(string yamlText, bool dryRun)
+    {
+        SchemaDocument newSchema;
+        try
+        {
+            newSchema = SchemaLoader.LoadSchemaFromString(yamlText, _ctx.SchemaPath);
+        }
+        catch (SchemaLoadException ex)
+        {
+            throw new WriteApiException(
+                ex.Code,
+                $"Новая Схема не соответствует meta-schema: {ex.Message}",
+                "Проверь форму YAML — типы, out_refs, trees должны следовать meta-schema v6 (см. get-meta-schema).");
+        }
+
+        var oldSchema = SchemaLoader.LoadSchema(_ctx.SchemaPath);
+        var loaded = DocumentLoader.Load(_ctx.DocsRoot, oldSchema);
+
+        // Применяем новую Схему к существующему графу и валидируем — это ловит
+        // несовместимые правки (убран тип, on котором стоят узлы; убрана требуемая
+        // out_ref, оставив узлы без неё; и т. п.).
+        loaded.Graph.AttachSchema(newSchema);
+        var validator = new Validator(_ctx.MetaSchema, newSchema);
+        var validation = validator.Validate(loaded.Graph);
+        if (!validation.IsValid)
+            throw new WriteValidationException(validation.Errors);
+
+        if (!dryRun)
+        {
+            var target = new AtomicWriteTarget(_ctx.SchemaPath, yamlText);
+            AtomicWriter.WriteAndApply(new[] { target }, Array.Empty<DocsWalker.Core.Store.FsOperation>());
+        }
+
+        return new SchemaUpdateResult(
+            Applied: !dryRun,
+            TypesCount: newSchema.Types.Count,
+            TreesCount: newSchema.Trees.Count);
+    }
 
     private WriteResult ApplyLocked(IReadOnlyList<WriteOp> ops, bool dryRun)
     {

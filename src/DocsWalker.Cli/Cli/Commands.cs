@@ -246,6 +246,14 @@ internal static class Commands
                 Opt("to",           ParamType.Integer, "id узла-приёмника; альтернатива --unlink."),
                 Opt("name",         ParamType.String,  "Фильтр по имени связи."),
                 Opt("unlink",       ParamType.String,  "true → разрыв вместо переноса.")),
+            Write("update_schema",
+                desc: "Atomic-замена docs/Схема.yml. yaml_text — полный YAML новой Схемы. Сервер парсит, валидирует под meta-schema и прогоняет текущий граф под новой Схемой через Validator (ловит несовместимые правки, ломающие существующие узлы). Применяет атомарно при успехе.",
+                examples: new[]
+                {
+                    "docswalker update-schema --yaml-text='description: ...\\ntrees:\\n  - name: path\\n  - name: subject\\ntypes: [...]'",
+                    "docswalker update-schema --yaml-text='...' --dry-run=true",
+                },
+                Req("yaml_text", ParamType.String, "Полный YAML-текст новой Схемы (заменяет содержимое файла целиком).")),
             Write("transaction",
                 desc: "Атомарная пачка write-операций. Применяется целиком; результат — массив элементов {op, ...поля}.",
                 examples: new[] { "docswalker transaction --operations='[{\"op\":\"create-node\",...},{\"op\":\"create-ref\",...}]'" },

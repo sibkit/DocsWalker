@@ -264,6 +264,48 @@ internal static class WriteHandlers
         return RunMany(storagePath, ops, dryRun);
     }
 
+    public static int UpdateSchema(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
+    {
+        var yamlText = args["yaml-text"];
+        try
+        {
+            var ctx = WriteContext.FromStoragePath(storagePath);
+            var api = new WriteApi(ctx);
+            var result = api.UpdateSchema(yamlText, dryRun);
+            var json = new JsonObject
+            {
+                ["types_count"] = result.TypesCount,
+                ["trees_count"] = result.TreesCount,
+            };
+            Output.WriteSuccess(json, applied: result.Applied);
+            return 0;
+        }
+        catch (WriteValidationException ex)
+        {
+            Output.WriteError(
+                "validation_failed",
+                path: null,
+                FormatValidationMessage(ex.Errors),
+                FormatValidationHint(ex.Errors));
+            return 1;
+        }
+        catch (WriteApiException ex)
+        {
+            Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
+            return 1;
+        }
+        catch (SchemaLoadException ex)
+        {
+            Output.WriteError(ex.Code, ex.FilePath, ex.Message);
+            return 1;
+        }
+        catch (AtomicWriteException ex)
+        {
+            Output.WriteError(ex.Code, ex.FilePath, ex.Message);
+            return 1;
+        }
+    }
+
     private static int Run(string storagePath, WriteOp op, bool dryRun) =>
         RunCore(storagePath, new[] { op }, transaction: false, dryRun);
 

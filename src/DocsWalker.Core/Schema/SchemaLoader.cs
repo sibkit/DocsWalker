@@ -33,6 +33,14 @@ public static class SchemaLoader
     public static SchemaDocument LoadSchema(string filePath) =>
         LoadFile(filePath, ParseSchema);
 
+    /// <summary>
+    /// Разбирает Схему из готовой YAML-строки. <paramref name="virtualPath"/> подставляется
+    /// в сообщения об ошибках для согласованности с file-based загрузкой; используется
+    /// командой <c>update-schema</c>, где YAML приходит через MCP-arguments.
+    /// </summary>
+    public static SchemaDocument LoadSchemaFromString(string yamlText, string virtualPath) =>
+        LoadFromString(yamlText, virtualPath, ParseSchema);
+
     private static T LoadFile<T>(string filePath, Func<YamlReader, string, T> parse)
     {
         if (!File.Exists(filePath))
@@ -45,6 +53,17 @@ public static class SchemaLoader
 
         using var stream = File.OpenRead(filePath);
         using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+        return ParseWithReader(reader, filePath, parse);
+    }
+
+    private static T LoadFromString<T>(string yamlText, string virtualPath, Func<YamlReader, string, T> parse)
+    {
+        using var reader = new StringReader(yamlText);
+        return ParseWithReader(reader, virtualPath, parse);
+    }
+
+    private static T ParseWithReader<T>(TextReader reader, string filePath, Func<YamlReader, string, T> parse)
+    {
         var yr = new YamlReader(reader, filePath);
         try
         {
