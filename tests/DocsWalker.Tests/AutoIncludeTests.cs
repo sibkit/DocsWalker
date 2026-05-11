@@ -118,7 +118,7 @@ public class AutoIncludeTests
         // Получаем subtree, в котором rule — корень: нужно построить subtree от
         // самого rule. У rule в path-tree нет детей (statement-ы — это cross-refs,
         // не path-children), так что depth=0 даёт сам узел.
-        var subtree = api.GetSubtree(rule.Id, Node.PathRefName, depth: 0);
+        var subtree = api.GetTree(rule.Id, Node.PathRefName, depth: 0);
         var autoIncludes = api.CollectAutoIncludes(subtree);
         var json = ReadApiJson.SubtreeToJsonWithAutoIncludes(
             subtree, fields: null, autoIncludes);
@@ -136,7 +136,7 @@ public class AutoIncludeTests
         var (api, graph, _) = Build();
         var rule = FindFirstRuleWithExamples(graph);
 
-        var subtree = api.GetSubtree(rule.Id, Node.PathRefName, depth: 0);
+        var subtree = api.GetTree(rule.Id, Node.PathRefName, depth: 0);
         var autoIncludes = api.CollectAutoIncludes(subtree);
         var json = ReadApiJson.SubtreeToJson(
             subtree, Node.PathRefName, fields: null, autoIncludes);
@@ -153,7 +153,7 @@ public class AutoIncludeTests
         // Берём узел без rule-типа (например, root id=0 или document) — у него
         // не должно быть auto-include-связей (auto-include только у rule.examples).
         var doc = graph.Documents.First();
-        var subtree = api.GetSubtree(doc.Id, Node.PathRefName, depth: 0);
+        var subtree = api.GetTree(doc.Id, Node.PathRefName, depth: 0);
         var autoIncludes = api.CollectAutoIncludes(subtree);
 
         // Если у doc-узла есть транзитивные rule-узлы в subtree — auto-include может

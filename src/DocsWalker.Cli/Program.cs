@@ -96,13 +96,12 @@ internal static class Dispatcher
             "get_usage_guide" => SchemaHandlers.GetUsageGuide(
                                     storagePath,
                                     parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null),
-            "get_map"         => ReadHandlers.GetMap(storagePath),
             "get_nodes"       => ReadHandlers.GetNodes(storagePath, parsed.Params["ids"]),
             "get_by_path"     => ReadHandlers.GetByPath(
                                     storagePath,
                                     parsed.Params["path"],
                                     parsed.Params.TryGetValue("tree", out var gbpTree) ? gbpTree : null),
-            "get_subtree"     => DispatchGetSubtree(storagePath, parsed.Params),
+            "get_tree"        => DispatchGetTree(storagePath, parsed.Params),
             "get_ancestors"   => ReadHandlers.GetAncestors(
                                     storagePath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
@@ -138,14 +137,14 @@ internal static class Dispatcher
         return 1;
     }
 
-    private static int DispatchGetSubtree(string storagePath, IReadOnlyDictionary<string, string> args)
+    private static int DispatchGetTree(string storagePath, IReadOnlyDictionary<string, string> args)
     {
         var id = int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture);
         var tree = args.TryGetValue("tree", out var ts) ? ts : null;
         int? depth = args.TryGetValue("depth", out var ds)
             ? int.Parse(ds, System.Globalization.CultureInfo.InvariantCulture)
             : (int?)null;
-        return ReadHandlers.GetSubtree(storagePath, id, tree, depth, ParseFields(args));
+        return ReadHandlers.GetTree(storagePath, id, tree, depth, ParseFields(args));
     }
 
     private static ParamValidationError? TryValidateParams(

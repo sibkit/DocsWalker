@@ -24,21 +24,6 @@ public sealed class ReadApiException : Exception
 }
 
 /// <summary>
-/// Элемент карты документации: узел и его дети по path-связям.
-/// Дети упорядочены так же, как в <see cref="Graph.GetChildren"/>.
-/// <see cref="Tokens"/> — BPE-счёт самого узла (id+type+title+text+out_refs);
-/// <see cref="SubtreeTokens"/> — агрегат по этому узлу плюс всем path-потомкам;
-/// LLM использует обе метрики для оценки бюджета перед загрузкой содержимого.
-/// </summary>
-public sealed record MapNode(
-    int Id,
-    string Title,
-    string TypeName,
-    int Tokens,
-    int SubtreeTokens,
-    IReadOnlyList<MapNode> Children);
-
-/// <summary>
 /// Связи узла, сгруппированные по имени связи: для каждого имени — отсортированный
 /// по возрастанию список id противоположных узлов («цель» для исходящих,
 /// «источник» для входящих). Совпадает по форме с <c>out_refs</c> в get-nodes
@@ -50,7 +35,7 @@ public sealed record RefSet(
 
 /// <summary>
 /// Полное поддерево узла: сам узел плюс дочерние поддеревья (по выбранному tree-scope).
-/// <see cref="Tokens"/> — BPE-счёт самого узла (с учётом whitelist <see cref="ReadApi.GetSubtree(int, string, int?, IReadOnlyList{string}?)"/>:
+/// <see cref="Tokens"/> — BPE-счёт самого узла (с учётом whitelist <see cref="ReadApi.GetTree(int, string, int?)"/>:
 /// если <c>fields</c> отрезает text/out_refs, эти куски не попадают и в подсчёт);
 /// <see cref="SubtreeTokens"/> — агрегат по поддереву с учётом ограничения <c>depth</c>.
 /// </summary>
@@ -181,7 +166,7 @@ public sealed class ReadApi
     /// <summary>
     /// Удобный аналог <see cref="CollectAutoIncludes(IReadOnlyList{Node})"/> для subtree:
     /// заполняет seed-список всеми узлами поддерева (root + transitive children) и
-    /// делегирует. Полезен для get-subtree / get-by-path.
+    /// делегирует. Полезен для get-tree / get-by-path.
     /// </summary>
     public IReadOnlyList<Node> CollectAutoIncludes(NodeSubtree subtree)
     {
@@ -194,29 +179,6 @@ public sealed class ReadApi
     {
         sink.Add(st.Node);
         foreach (var c in st.Children) FlattenSubtree(c, sink);
-    }
-
-    public IReadOnlyList<MapNode> GetMap()
-    {
-        var docs = _graph.Documents;
-        var result = new List<MapNode>(docs.Count);
-        foreach (var d in docs.OrderBy(d => d.Title, StringComparer.Ordinal))
-        {
-            result.Add(BuildMapNode(d));
-        }
-        return result;
-    }
-
-    private MapNode BuildMapNode(Node node)
-    {
-        var children = _graph.GetChildren(node.Id);
-        var mapped = new List<MapNode>(children.Count);
-        foreach (var c in children) mapped.Add(BuildMapNode(c));
-
-        var tokens = TokenCounter.CountNode(node);
-        var subtreeTokens = tokens;
-        foreach (var m in mapped) subtreeTokens += m.SubtreeTokens;
-        return new MapNode(node.Id, node.Title, node.TypeName, tokens, subtreeTokens, mapped);
     }
 
     /// <summary>
@@ -391,7 +353,7 @@ public sealed class ReadApi
                 throw new ReadApiException(
                     "tree_not_addressable",
                     $"Дерево '{requested}' не является addressable (нет tree-связи с unique_sibling_titles=true).",
-                    "Используй get-subtree --tree=<name> --id=<root> для обхода не-addressable деревьев.");
+                    "Используй get-tree --tree=<name> --id=<root> для обхода не-addressable деревьев.");
 
             return requested;
         }
@@ -408,7 +370,7 @@ public sealed class ReadApi
             throw new ReadApiException(
                 "tree_required",
                 "В Схеме нет ни одного addressable tree (с unique_sibling_titles=true). get-by-path неприменим.",
-                "Используй get-subtree --tree=<name> --id=<root> для обхода произвольного дерева.");
+                "Используй get-tree --tree=<name> --id=<root> для обхода произвольного дерева.");
 
         throw new ReadApiException(
             "tree_required",
@@ -462,7 +424,7 @@ public sealed class ReadApi
     /// учитывает только включённые узлы, поэтому при урезании depth эта метрика —
     /// «сколько ты получишь сейчас», а не «сколько стоит весь оригинальный subtree».
     /// </summary>
-    public NodeSubtree GetSubtree(int rootId, string tree = Node.PathRefName, int? depth = null)
+    public NodeSubtree GetTree(int rootId, string tree = Node.PathRefName, int? depth = null)
     {
         ValidateTree(tree);
         if (depth is < 0)

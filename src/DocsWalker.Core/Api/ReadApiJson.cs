@@ -11,7 +11,7 @@ namespace DocsWalker.Core.Api;
 /// Сериализация результатов <see cref="ReadApi"/> в JSON для CLI / MCP.
 /// Узел отдаётся в форме 5 концептуальных полей refs-модели:
 /// <c>id, type, title, text, out_refs</c>; плюс метрики <c>tokens</c> /
-/// <c>subtree_tokens</c> в map- и subtree-ответах.
+/// <c>subtree_tokens</c> в subtree-ответах.
 /// </summary>
 public static class ReadApiJson
 {
@@ -21,36 +21,6 @@ public static class ReadApiJson
     /// </summary>
     public static readonly IReadOnlyCollection<string> AllNodeFields =
         new[] { "id", "type", "title", "text", "out_refs", "tokens", "subtree_tokens" };
-
-    public static JsonArray MapToJson(IReadOnlyList<MapNode> nodes)
-    {
-        var arr = new JsonArray();
-        foreach (var n in nodes) arr.Add((JsonNode?)MapNodeToJson(n));
-        return arr;
-    }
-
-    private static JsonObject MapNodeToJson(MapNode n)
-    {
-        var obj = new JsonObject
-        {
-            ["id"] = n.Id,
-            ["type"] = n.TypeName,
-            ["title"] = n.Title,
-            ["tokens"] = n.Tokens,
-        };
-        // subtree_tokens опускается при равенстве tokens — у листа в текущем поддереве
-        // эти числа всегда совпадают. По контракту LLM-guide отсутствие поля ⇒ узел
-        // листовой и subtree_tokens = tokens.
-        if (n.SubtreeTokens != n.Tokens) obj["subtree_tokens"] = n.SubtreeTokens;
-        // children опускается у листового узла: отсутствие массива ⇒ нет path-детей.
-        if (n.Children.Count > 0)
-        {
-            var children = new JsonArray();
-            foreach (var c in n.Children) children.Add((JsonNode?)MapNodeToJson(c));
-            obj["children"] = children;
-        }
-        return obj;
-    }
 
     public static JsonArray NodesToJson(IReadOnlyList<Node> nodes) =>
         NodesToJson(nodes, autoIncludes: null);
@@ -145,7 +115,7 @@ public static class ReadApiJson
     }
 
     /// <summary>
-    /// Сериализация get-subtree с указанием scope: оборачивает поддерево в объект
+    /// Сериализация get-tree с указанием scope: оборачивает поддерево в объект
     /// <c>{tree: <name>, root: {...subtree...}}</c>, чтобы LLM подтверждала, по какому
     /// дереву прошёл обход.
     /// </summary>
@@ -156,7 +126,7 @@ public static class ReadApiJson
         SubtreeToJson(subtree, tree, fields, autoIncludes: null);
 
     /// <summary>
-    /// Сериализация get-subtree с auto-include-целями (#340). К объекту
+    /// Сериализация get-tree с auto-include-целями (#340). К объекту
     /// <c>{tree, root}</c> добавляется поле <c>auto_includes: [...]</c>, если
     /// <paramref name="autoIncludes"/> непуст. Поле опускается, когда auto-include
     /// на текущей Схеме не сработал. Все узлы — полные.
@@ -358,7 +328,7 @@ public static class ReadApiJson
         };
         if (c.Description is not null) obj["description"] = c.Description;
         // parameters/examples опускаются, если коллекция пуста: у команд без параметров
-        // (get-meta-schema, get-schema, get-map, check-integrity, get-usage-guide) поле
+        // (get-meta-schema, get-schema, check-integrity, get-usage-guide) поле
         // не выводится; то же для команд без примеров.
         if (c.Parameters.Count > 0)
         {

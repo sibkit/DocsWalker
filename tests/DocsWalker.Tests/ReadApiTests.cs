@@ -14,28 +14,6 @@ public class ReadApiTests
     }
 
     [Fact]
-    public void GetMap_BuildsTreeOfDocs_WithTokenMetrics()
-    {
-        var api = BuildApi();
-        var map = api.GetMap();
-        Assert.Equal(3, map.Count);
-
-        var docsWalker = map.Single(m => m.Title == "DocsWalker");
-        Assert.Equal("document", docsWalker.TypeName);
-        Assert.NotEmpty(docsWalker.Children);
-        Assert.All(docsWalker.Children, c => Assert.Equal("section", c.TypeName));
-
-        // Метрики: токены сами должны быть положительны, subtree_tokens >= tokens
-        // (узел всегда часть собственного поддерева).
-        Assert.True(docsWalker.Tokens > 0);
-        Assert.True(docsWalker.SubtreeTokens >= docsWalker.Tokens);
-
-        // SubtreeTokens = tokens(self) + Σ subtree_tokens(child) — checking by construction.
-        var expected = docsWalker.Tokens + docsWalker.Children.Sum(c => c.SubtreeTokens);
-        Assert.Equal(expected, docsWalker.SubtreeTokens);
-    }
-
-    [Fact]
     public void GetNodes_ByIds_Returns_FullNodes_InOrder()
     {
         var api = BuildApi();
@@ -88,7 +66,7 @@ public class ReadApiTests
     public void GetSubtree_DepthZero_ReturnsRootOnly()
     {
         var api = BuildApi();
-        var subtree = api.GetSubtree(rootId: 2, tree: Node.PathRefName, depth: 0);
+        var subtree = api.GetTree(rootId: 2, tree: Node.PathRefName, depth: 0);
         Assert.Equal(2, subtree.Node.Id);
         Assert.Empty(subtree.Children);
         // SubtreeTokens === Tokens, потому что детей в результате нет.
@@ -99,7 +77,7 @@ public class ReadApiTests
     public void GetSubtree_DepthOne_ReturnsRootAndDirectChildrenOnly()
     {
         var api = BuildApi();
-        var subtree = api.GetSubtree(rootId: 2, tree: Node.PathRefName, depth: 1);
+        var subtree = api.GetTree(rootId: 2, tree: Node.PathRefName, depth: 1);
         Assert.NotEmpty(subtree.Children);
         Assert.All(subtree.Children, c => Assert.Empty(c.Children));
     }
@@ -108,7 +86,7 @@ public class ReadApiTests
     public void GetSubtree_NegativeDepth_Throws_InvalidParameter()
     {
         var api = BuildApi();
-        var ex = Assert.Throws<ReadApiException>(() => api.GetSubtree(rootId: 2, tree: Node.PathRefName, depth: -1));
+        var ex = Assert.Throws<ReadApiException>(() => api.GetTree(rootId: 2, tree: Node.PathRefName, depth: -1));
         Assert.Equal("invalid_parameter", ex.Code);
     }
 
@@ -116,7 +94,7 @@ public class ReadApiTests
     public void GetSubtree_DefaultDepth_TraversesFullTree()
     {
         var api = BuildApi();
-        var subtree = api.GetSubtree(rootId: 1);
+        var subtree = api.GetTree(rootId: 1);
         // У документа DocsWalker вложенные section'ы, у каждой — атомы. Хотя бы 2 уровня.
         Assert.NotEmpty(subtree.Children);
         Assert.Contains(subtree.Children, c => c.Children.Count > 0);

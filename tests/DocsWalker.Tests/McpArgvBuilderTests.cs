@@ -24,7 +24,7 @@ public class McpArgvBuilderTests
     public void BuildArgv_IntegerValue_ProducesKvFlag()
     {
         using var doc = JsonDocument.Parse(@"{""id"":42,""depth"":2}");
-        var argv = McpArgvBuilder.BuildArgvFromArguments("get-subtree", doc.RootElement);
+        var argv = McpArgvBuilder.BuildArgvFromArguments("get-tree", doc.RootElement);
         Assert.Contains("--id=42", argv);
         Assert.Contains("--depth=2", argv);
     }
@@ -109,8 +109,8 @@ public class McpArgvBuilderTests
     [Fact]
     public void BuildArgv_NoArguments_ReturnsToolNameOnly()
     {
-        var argv = McpArgvBuilder.BuildArgvFromArguments("get-map", null);
-        Assert.Equal(new[] { "get-map" }, argv);
+        var argv = McpArgvBuilder.BuildArgvFromArguments("check-integrity", null);
+        Assert.Equal(new[] { "check-integrity" }, argv);
     }
 
     [Fact]

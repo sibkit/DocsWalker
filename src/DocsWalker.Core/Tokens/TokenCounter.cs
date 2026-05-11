@@ -6,7 +6,7 @@ namespace DocsWalker.Core.Tokens;
 
 /// <summary>
 /// BPE-счётчик токенов на cl100k_base (модель gpt-4 / Claude совместима по порядку
-/// величин). Используется для метрик tokens / subtree_tokens в get_map / get_subtree /
+/// величин). Используется для метрик tokens / subtree_tokens в get_tree /
 /// get_nodes — LLM прикидывает по ним бюджет ввода.
 ///
 /// Один экземпляр Tokenizer'а — потокобезопасный read-only объект; держим как singleton,

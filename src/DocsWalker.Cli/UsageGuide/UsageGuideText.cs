@@ -21,18 +21,18 @@ internal static class UsageGuideText
 
         Связи объявлены в Схеме у типа узла-источника (имя, target_types, cardinality, required). Часть связей объединена в named-tree (tree-scope) — например, дерево 'path' (физическое размещение в FS, единственное материализованное) или доменное 'strategic'. Tree-связи всегда cardinality=one + required=true.
 
-        Auto-include: связь с tree=null + required=true считается концептуально неотъемлемой — read-команды (get-nodes, get-subtree, get-by-path) транзитивно подтягивают цели таких связей в результат и помещают их в поле auto_includes (в плоский массив у get-nodes). Все узлы — полные, повторы между запросами и внутри одного ответа не фильтруются. Для дешёвого обзора без auto-include — fields=[title] + depth/tree в read-командах. На текущей Схеме auto-include активен только для rule.examples — единственная non-tree required связь.
+        Auto-include: связь с tree=null + required=true считается концептуально неотъемлемой — read-команды (get-nodes, get-tree, get-by-path) транзитивно подтягивают цели таких связей в результат и помещают их в поле auto_includes (в плоский массив у get-nodes). Все узлы — полные, повторы между запросами и внутри одного ответа не фильтруются. Для дешёвого обзора без auto-include — fields=[title] + depth/tree в read-командах. На текущей Схеме auto-include активен только для rule.examples — единственная non-tree required связь.
 
-        Корень — синглтон id=0, type=root. Любой обход начинается отсюда: get-subtree --id=0 --tree=path даёт всё дерево хранилища.
+        Корень — синглтон id=0, type=root. Любой обход начинается отсюда: get-tree --id=0 --tree=path даёт всё дерево хранилища.
 
         Порядок работы перед записью:
         1. check-integrity — убедиться, что граф валиден.
-        2. get-subtree / get-refs — прочитать актуальное состояние затронутого участка.
+        2. get-tree / get-refs — прочитать актуальное состояние затронутого участка.
         3. describe-type --name=<type> — уточнить контракт типа (если незнакомый).
         4. На незнакомой задаче — write-команда с --dry-run=true (applied=false, без записи в FS).
         5. Если ответ ожидаемый — повтор без --dry-run.
 
-        Удаление — только delete-nodes --ids= (явный список, без авто-каскада). Набор LLM собирает сама: get-subtree по нужному tree-scope + path-children каждого узла. Ошибки path_orphans_left и dangling_refs — обучающий сигнал, перечисляют недостающее.
+        Удаление — только delete-nodes --ids= (явный список, без авто-каскада). Набор LLM собирает сама: get-tree по нужному tree-scope + path-children каждого узла. Ошибки path_orphans_left и dangling_refs — обучающий сигнал, перечисляют недостающее.
 
         Переподшивка узла в дереве — move-node --tree=<scope> (по умолчанию 'path'). Массовая переподшивка cross-refs — redirect-refs.
 

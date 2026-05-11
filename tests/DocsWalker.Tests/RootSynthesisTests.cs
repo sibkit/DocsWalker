@@ -82,7 +82,7 @@ public class RootSynthesisTests
     public void GetSubtree_FromRoot_IncludesAllTopLevelEntries()
     {
         var api = BuildApi();
-        var subtree = api.GetSubtree(0);
+        var subtree = api.GetTree(0);
         Assert.Equal(0, subtree.Node.Id);
         Assert.Equal("root", subtree.Node.TypeName);
         Assert.NotEmpty(subtree.Children);

@@ -17,16 +17,6 @@ namespace DocsWalker.Cli.Cli.Handlers;
 /// </summary>
 internal static class ReadHandlers
 {
-    public static int GetMap(string storagePath)
-    {
-        return WithApi(storagePath, api =>
-        {
-            var map = api.ReadApi.GetMap();
-            Output.WriteSuccess(ReadApiJson.MapToJson(map));
-            return 0;
-        });
-    }
-
     public static int GetNodes(string storagePath, string idsParam)
     {
         var ids = ParseIds(idsParam);
@@ -69,14 +59,14 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetSubtree(string storagePath, int id, string? tree, int? depth, IReadOnlyCollection<string>? fields)
+    public static int GetTree(string storagePath, int id, string? tree, int? depth, IReadOnlyCollection<string>? fields)
     {
         var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
         return WithApi(storagePath, api =>
         {
             try
             {
-                var subtree = api.ReadApi.GetSubtree(id, scope, depth);
+                var subtree = api.ReadApi.GetTree(id, scope, depth);
                 var autoIncludes = api.ReadApi.CollectAutoIncludes(subtree);
                 var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, autoIncludes);
                 Output.WriteSuccess(json);
