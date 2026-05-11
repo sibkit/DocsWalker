@@ -20,15 +20,15 @@ sections:
       - "(#127) Ядро на C#": 'Ядро DocsWalker — библиотека на C#: парсер YAML, валидатор, API чтения и записи, сериализатор YAML.'
       - "(#128) Транспорты поверх": Поверх ядра — транспорты, отдающие API наружу.
     - rules:
-      - "(#129) CLI первым":
-        - text: Транспорт первой реализации — CLI с подкомандами.
+      - "(#129) MCP первый канал":
+        - text: Основной транспорт для LLM-агентов — MCP (stdio JSON-RPC), отдельный exe `DocsWalker.Mcp.exe`. Все новые операции и параметры появляются в MCP.
         - examples: [190]
-      - "(#130) MCP вторым":
-        - text: MCP-сервер (stdio JSON-RPC) добавляется как второй транспорт после стабилизации API через CLI.
+      - "(#130) CLI deprecated":
+        - text: 'CLI-интерфейс зафризен: новые команды и поведение в CLI не добавляются. CLI используется только REPL''ом (dev-utility) и для поддержки старых инструментов; запланирован выпил exe DocsWalker.Cli.'
         - examples: [191]
     - examples:
-      - "(#190) Подкоманды": 'Команды одинаковы во всех транспортах — MCP-tools и CLI-подкоманды: get-nodes, create-node, move-node.'
-      - "(#191) MCP-tool": Каждая API-операция доступна как MCP-tool в сервере после стабилизации CLI.
+      - "(#190) Подкоманды": 'Команды одинаковы во всех транспортах — MCP-tools (основной канал) и CLI-подкоманды (deprecated): get-nodes, create-node, move-node.'
+      - "(#191) MCP-tool": Каждая API-операция доступна как MCP-tool в `DocsWalker.Mcp.exe` (stdio↔HTTP-bridge к kernel'у).
   - "(#4) Уровни схемы":
     - rules:
       - "(#131) Двухуровневая валидация":
@@ -197,6 +197,7 @@ sections:
   - "(#35) CLI-интерфейс":
     - statements:
       - "(#157) Команды повторяют API": 'CLI-команды повторяют API один-в-один: имя команды — имя операции, аргументы — именованные ключи.'
+      - "(#407) CLI deprecated": CLI-интерфейс зафризен. Новые команды, флаги и поведение через CLI больше не добавляются — все новые операции выходят только в MCP. CLI остаётся как канал для REPL-сессий и поддержки старых tool-цепочек; после миграции потребителей запланирован полный выпил exe DocsWalker.Cli.
     - rules:
       - "(#158) kebab-case команды":
         - text: Имена команд — kebab-case (преобразование snake_case → kebab).
@@ -228,6 +229,8 @@ sections:
       - "(#301) Опускаемые дефолты":
         - text: 'В JSON-выводе опускаются дефолты и пустоты, чтобы не тратить токены LLM на тривиальные значения. В RefDef (describe-type, get-schema): cardinality=many и required=false не сериализуются (отсутствие поля при чтении трактуется как дефолт). В get-tree: children=[] не сериализуется (отсутствие поля children ⇒ узел-лист в текущем поддереве); subtree_tokens, равный tokens, не сериализуется (отсутствие поля ⇒ subtree_tokens = tokens). В get-usage-guide: parameters=[] и examples=[] не сериализуются (отсутствие поля ⇒ команда без параметров либо без примеров).'
         - examples: [300]
+    - notes:
+      - "(#408) Roadmap выпила CLI": 'Стадии: (1) deprecation-маркер в docs/ (текущий шаг); (2) перенос REPL на прямой HTTP-клиент без shared CLI-кода; (3) удаление подкоманд CLI один-к-одному с API; (4) удаление exe DocsWalker.Cli полностью. MCP-канал (`DocsWalker.Mcp.exe`) — постоянный основной интерфейс LLM-агента.'
     - examples:
       - "(#36) Чтение нескольких узлов сразу": 'get-nodes {"ids": [1, 8, 42]}'
       - "(#38) Поддерево по пути": 'get-by-path {"path": "DocsWalker/Операции чтения"}'
@@ -263,7 +266,7 @@ sections:
         - text: Транспорт MCP — newline-delimited JSON-RPC 2.0 над stdin/stdout. Команды API регистрируются как MCP-tools; имя tool = kebab-case CLI-команды; параметры — JSON-Schema, выводимая из контракта команды.
         - examples: [365]
       - "(#366) MCP-wrapper привязан к проекту через cwd":
-        - text: MCP-wrapper запускается командой `docswalker mcp-server`. Параметр root отсутствует — wrapper использует cwd для resolve `.dw/client.json` (поиск вверх по родителям до filesystem-root). LLM-клиент вызывает MCP-tools без указания graph — wrapper подставляет graph-name из client-config в URL HTTP-запроса к kernel-у. Multi-graph в одном MCP-канале не нужен — Claude Code запускает MCP-сервер раздельно для каждой записи в .mcp.json (разные cwd → разные client-config → разные graphs).
+        - text: MCP-wrapper — отдельный exe `DocsWalker.Mcp.exe` (stg-0011 вынес его из подкоманды `docswalker mcp-server`). Параметра root нет — wrapper использует cwd для resolve `.dw/client.json` (поиск вверх по родителям до filesystem-root). LLM-клиент вызывает MCP-tools без указания graph — wrapper подставляет graph-name из client-config в URL HTTP-запроса к kernel-у. Multi-graph в одном MCP-канале не нужен — Claude Code запускает MCP-сервер раздельно для каждой записи в .mcp.json (разные cwd → разные client-config → разные graphs).
         - examples: [369]
       - "(#377) inputSchema динамических tool":
         - text: "Для tool с динамическими параметрами (сейчас только create-node) inputSchema собирается из Схемы graph-а на старте mcp-server. Форма — JSON-Schema object без top-level oneOf/allOf/anyOf: Anthropic API их на верхнем уровне inputSchema запрещает, а if/then/else и dependentRequired не поддерживает — условный required по значению type машинно невыразим.\n\nproperties перечисляет все поля: type-enum (без root), title, text, имена связей всех типов как optional (integer для cardinality=one, array+items=integer для many), плюс dry-run. required на верхнем уровне — [type, title]. Per-type required (text при text_required=true, path-ref, прочие required out_refs) транслируется текстовой таблицей в description корневой схемы и поля type — модель читает её при выборе type.\n\nИсточник истины для required по типу — серверный валидатор ядра. root в enum не включается. Если Схему загрузить не удалось — tool отдаётся с базовой схемой, warning в stderr; mcp-server не падает."
