@@ -38,10 +38,12 @@ internal sealed class CliUsageGuideSource : IUsageGuideSource
 
     private static string ParamTypeToString(ParamType type) => type switch
     {
-        ParamType.String  => "string",
-        ParamType.Integer => "integer",
-        ParamType.IdList  => "id_list",
-        ParamType.Json    => "json",
+        ParamType.String    => "string",
+        ParamType.Integer   => "integer",
+        ParamType.IdList    => "id_list",
+        ParamType.Json      => "json",
+        ParamType.JsonArray => "json_array",
+        ParamType.Boolean   => "boolean",
         _ => type.ToString().ToLowerInvariant(),
     };
 

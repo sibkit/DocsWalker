@@ -129,12 +129,12 @@ public class ReadApiTests
     }
 
     [Fact]
-    public void Search_FindsSubstring_InText()
+    public void Search_FindsTermInText()
     {
         var api = BuildApi();
         var hits = api.Search("DocsWalker");
         Assert.NotEmpty(hits);
-        Assert.All(hits, h => Assert.NotEmpty(h.Fragments));
+        Assert.All(hits, h => Assert.True(h.Score > 0));
     }
 
     [Fact]

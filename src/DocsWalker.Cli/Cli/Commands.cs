@@ -18,6 +18,12 @@ internal enum ParamType
     /// прислать array через arguments напрямую без escape-string-обхода.
     /// </summary>
     JsonArray,
+    /// <summary>
+    /// Булев флаг. В CLI передаётся как <c>true</c>/<c>false</c> (case-insensitive)
+    /// либо <c>1</c>/<c>0</c>; в MCP-схеме — <c>type=boolean</c>. McpArgvBuilder
+    /// автоматически конвертирует JSON-boolean в строку.
+    /// </summary>
+    Boolean,
 }
 
 internal enum CommandKind
@@ -85,9 +91,17 @@ internal static class Commands
                 examples: new[] { "docswalker describe-type --name=section", "docswalker describe-type --name=rule" },
                 Req("name", ParamType.String, "Имя типа из Схемы.")),
             Read("get_nodes",
-                desc: "Полные узлы по списку id. Возвращает 5 полей каждого узла: id, type, title, text, out_refs. Все узлы — полные; для дешёвого обзора используй get-tree с --fields=title и --depth.",
-                examples: new[] { "docswalker get-nodes --ids=1,8,42" },
-                Req("ids",     ParamType.IdList, "Один id или список id через запятую.")),
+                desc: "Полные узлы по списку id. Возвращает объект {nodes:[...], truncated?, stopped_at?, tokens_used?, tokens_budget?}. Truncation-протокол (#406): включаются узлы по порядку, пока влезает max_tokens; default 50000.",
+                examples: new[]
+                {
+                    "docswalker get-nodes --ids=1,8,42",
+                    "docswalker get-nodes --ids=1,8,42 --compact=true",
+                    "docswalker get-nodes --ids=1,8,42 --max-tokens=500",
+                },
+                Req("ids",        ParamType.IdList,  "Один id или список id через запятую."),
+                Opt("fields",     ParamType.String,  "Whitelist полей через запятую: id,type,title,text,out_refs,tokens,subtree_tokens. Без параметра — все поля. id всегда."),
+                Opt("compact",    ParamType.Boolean, "true → alias для fields=id,type,title; default false. Явные fields имеют приоритет."),
+                Opt("max_tokens", ParamType.Integer, "Бюджет токенов на ответ; default 50000. См. truncation-протокол #406.")),
             Read("get_by_path",
                 desc: "Полное поддерево узла по человекочитаемому пути 'Документ/Раздел/...' в указанном addressable дереве. По умолчанию tree берётся из schema.default_addressable_tree, либо автоматически если в Схеме ровно один addressable tree.",
                 examples: new[]
@@ -98,18 +112,21 @@ internal static class Commands
                 Req("path", ParamType.String, "Путь, разделитель '/'."),
                 Opt("tree", ParamType.String, "Имя addressable дерева. По умолчанию — default_addressable_tree из Схемы либо единственный addressable tree.")),
             Read("get_tree",
-                desc: "Поддерево узла в указанном tree-scope. По умолчанию tree=path, depth — без ограничения, fields — все поля включая токены. Каждый узел несёт tokens (только сам узел) и subtree_tokens (узел + потомки в результате) — для бюджет-планирования. Для дешёвого обзора — fields=title + depth/tree.",
+                desc: "Поддерево узла в указанном tree-scope с бюджетом токенов. По умолчанию tree=path, depth — без ограничения, fields — все поля, max_tokens=50000. Каждый узел несёт tokens / subtree_tokens. При превышении max_tokens — BFS-усечение; ответ дополняется полями truncated/stopped_at/tokens_used/tokens_budget (правило #301, #406).",
                 examples: new[]
                 {
                     "docswalker get-tree --id=0",
                     "docswalker get-tree --id=42 --depth=2",
                     "docswalker get-tree --id=0 --fields=id,type,title,tokens",
                     "docswalker get-tree --id=PROJECT --tree=strategic",
+                    "docswalker get-tree --id=0 --compact=true --max-tokens=200",
                 },
-                Req("id",      ParamType.Integer, "id корня поддерева."),
-                Opt("tree",    ParamType.String,  "Имя дерева (tree-scope). По умолчанию 'path'."),
-                Opt("depth",   ParamType.Integer, "Максимальная глубина обхода: 0 — только корень, 1 — корень + один уровень. Без параметра — без ограничения."),
-                Opt("fields",  ParamType.String,  "Whitelist полей через запятую: id,type,title,text,out_refs,tokens,subtree_tokens. Без параметра — все поля. Поле id присутствует всегда.")),
+                Req("id",         ParamType.Integer, "id корня поддерева."),
+                Opt("tree",       ParamType.String,  "Имя дерева (tree-scope). По умолчанию 'path'."),
+                Opt("depth",      ParamType.Integer, "Максимальная глубина обхода: 0 — только корень, 1 — корень + один уровень. Без параметра — без ограничения."),
+                Opt("fields",     ParamType.String,  "Whitelist полей через запятую: id,type,title,text,out_refs,tokens,subtree_tokens. Без параметра — все поля. Поле id присутствует всегда."),
+                Opt("compact",    ParamType.Boolean, "true → alias для fields=id,type,title; default false. Явные fields имеют приоритет."),
+                Opt("max_tokens", ParamType.Integer, "Бюджет токенов на ответ; default 50000. См. truncation-протокол #406.")),
             Read("get_ancestors",
                 desc: "Цепочка родителей в указанном tree-scope (от ближайшего к корню дерева).",
                 examples: new[] { "docswalker get-ancestors --id=42", "docswalker get-ancestors --id=42 --tree=strategic" },
@@ -126,9 +143,22 @@ internal static class Commands
                 Req("id",   ParamType.Integer, "id узла."),
                 Opt("name", ParamType.String,  "Имя связи; без параметра — все.")),
             Read("search",
-                desc: "Полнотекстовый поиск (case-insensitive substring) по text узлов.",
-                examples: new[] { "docswalker search --query=валидатор" },
-                Req("query", ParamType.String, "Подстрока поиска.")),
+                desc: "Полнотекстовый поиск с BM25-ранжированием по title и text узлов. Title-hit получает boost ×3 в режиме in=both. Сортировка: score desc, id asc. Снимок одного hit'а — {id, type, title, score, snippet}.",
+                examples: new[]
+                {
+                    "docswalker search --query=валидатор",
+                    "docswalker search --query=get-tree --in=title",
+                    "docswalker search --query=^stg --regex=true --type=definition",
+                    "docswalker search --query=поиск --tree=path --under=17 --limit=10",
+                },
+                Req("query",   ParamType.String,  "Substring (или regex, если --regex=true). Не пустой."),
+                Opt("in",      ParamType.String,  "Где искать: title|text|both. По умолчанию both."),
+                Opt("type",    ParamType.String,  "Фильтр по типу узла (TypeName из Схемы)."),
+                Opt("tree",    ParamType.String,  "Tree-scope для --under. По умолчанию path."),
+                Opt("under",   ParamType.Integer, "id узла; искать только в его поддереве в указанном tree."),
+                Opt("regex",   ParamType.Boolean, "true → query как .NET-regex (без BM25, сортировка по id asc). По умолчанию false."),
+                Opt("limit",   ParamType.Integer, "Максимум hit'ов; default 20."),
+                Opt("compact", ParamType.Boolean, "true → alias для whitelist полей id,type,title,score,snippet. По умолчанию false (на сейчас функционально no-op).")),
             Read("check_integrity",
                 desc: "Полный прогон валидатора на текущем docs/ без записи. Возвращает {ok, errors[]}; exit code всегда 0.",
                 examples: new[] { "docswalker check-integrity" }),

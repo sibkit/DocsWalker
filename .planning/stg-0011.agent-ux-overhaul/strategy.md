@@ -17,10 +17,10 @@
 - [+] code-mcp-project-split
 - [+] code-api-rename-and-remove
 - [+] code-get-overview
-- [*] code-search-v2-bm25
-- [*] code-compact-and-tokens
-- [*] code-mcp-tools-update
-- [*] code-api-v2-tests
+- [+] (08) code-search-v2-bm25
+- [+] (09) code-compact-and-tokens
+- [+] (10) code-mcp-tools-update
+- [+] (11) code-api-v2-tests
 - [*] docs-cli-deprecate
 - [*] docs-classifiers-model
 - [*] docs-meta-schema-classifiers

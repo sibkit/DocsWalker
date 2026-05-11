@@ -82,6 +82,16 @@ public static class ReadApiJson
         SubtreeToJson(subtree, fields: null);
 
     /// <summary>
+    /// Whitelist полей для compact-формы узла (используется при truncation, когда
+    /// корень один сам больше бюджета). Минимум, по которому можно опознать узел
+    /// и пойти за деталями отдельным запросом.
+    /// </summary>
+    private static readonly HashSet<string> CompactFields = new(StringComparer.Ordinal)
+    {
+        "id", "type", "title",
+    };
+
+    /// <summary>
     /// Сериализация get-by-path и аналогов с whitelist'ом полей. <paramref name="fields"/>=null
     /// → все поля включая <c>tokens</c>/<c>subtree_tokens</c>; иначе — только перечисленные
     /// (<c>id</c> всегда). <c>subtree_tokens</c> учитывает ровно те узлы, что фактически
@@ -147,6 +157,119 @@ public static class ReadApiJson
     }
 
     /// <summary>
+    /// Сериализация get-tree с truncation-протоколом (см. docs/DocsWalker.yml/#406).
+    /// При <paramref name="maxTokens"/>=null поведение совпадает с
+    /// <see cref="SubtreeToJson(NodeSubtree,string,IReadOnlyCollection{string}?,IReadOnlyList{Node}?)"/>.
+    /// Иначе делается BFS-обход с бюджетом: верхние уровни сериализуются целиком,
+    /// нижние — пока в буфер влезают токены. Если корень один сам больше бюджета —
+    /// возвращается компактная форма (id+type+title) и stopped_at с числом его children.
+    /// </summary>
+    public static JsonObject SubtreeToJson(
+        NodeSubtree subtree,
+        string tree,
+        IReadOnlyCollection<string>? fields,
+        IReadOnlyList<Node>? autoIncludes,
+        int? maxTokens)
+    {
+        if (maxTokens is null)
+            return SubtreeToJson(subtree, tree, fields, autoIncludes);
+
+        int budget = maxTokens.Value;
+        var ctx = new TruncationContext(budget);
+        var rootJson = BuildSubtreeBfs(subtree, fields, ctx);
+
+        var result = new JsonObject
+        {
+            ["tree"] = tree,
+            ["root"] = rootJson,
+        };
+        AddAutoIncludesField(result, autoIncludes, fields);
+        if (ctx.Truncated)
+            AppendTruncationFields(result, ctx);
+        return result;
+    }
+
+    /// <summary>
+    /// BFS-обход поддерева с накоплением бюджета. Root всегда включается —
+    /// в полном виде, если влезает, или в compact-форме (id+type+title)
+    /// со stopped_at на всех его children, если сам больше бюджета.
+    /// </summary>
+    private static JsonObject BuildSubtreeBfs(
+        NodeSubtree root,
+        IReadOnlyCollection<string>? fields,
+        TruncationContext ctx)
+    {
+        if (root.Tokens > ctx.Budget)
+        {
+            // Root alone over budget — возвращаем минимум (compact-форму корня).
+            var compactJson = SerializeSubtreeShallow(root, CompactFields);
+            ctx.ForceConsume(EstimateCompactTokens(root.Node));
+            if (root.Children.Count > 0)
+                ctx.RecordStop(root.Node.Id, root.Children.Count, 0);
+            return compactJson;
+        }
+
+        ctx.TryConsume(root.Tokens);
+        var rootJson = SerializeSubtreeShallow(root, fields);
+        var queue = new Queue<(JsonObject ParentJson, NodeSubtree ParentSubtree)>();
+        queue.Enqueue((rootJson, root));
+
+        while (queue.Count > 0)
+        {
+            var (parentJson, parentSubtree) = queue.Dequeue();
+            if (parentSubtree.Children.Count == 0) continue;
+
+            JsonArray? childrenArr = null;
+            bool stopped = false;
+            for (int i = 0; i < parentSubtree.Children.Count; i++)
+            {
+                var child = parentSubtree.Children[i];
+                if (!ctx.TryConsume(child.Tokens))
+                {
+                    ctx.RecordStop(parentSubtree.Node.Id, parentSubtree.Children.Count - i, i);
+                    queue.Clear();
+                    stopped = true;
+                    break;
+                }
+                childrenArr ??= new JsonArray();
+                var childJson = SerializeSubtreeShallow(child, fields);
+                childrenArr.Add((JsonNode?)childJson);
+                queue.Enqueue((childJson, child));
+            }
+            if (childrenArr is not null)
+                parentJson["children"] = childrenArr;
+            if (stopped) break;
+        }
+        return rootJson;
+    }
+
+    /// <summary>
+    /// Сериализует один уровень узла (без children) — copy <see cref="SubtreeToJson(NodeSubtree,IReadOnlyCollection{string}?)"/>
+    /// без рекурсии. Используется в BFS-обходе: children проставляются отдельно
+    /// после прохода по каждому уровню.
+    /// </summary>
+    private static JsonObject SerializeSubtreeShallow(NodeSubtree subtree, IReadOnlyCollection<string>? fields)
+    {
+        var n = subtree.Node;
+        var obj = new JsonObject { ["id"] = n.Id };
+        if (Include(fields, "type"))           obj["type"] = n.TypeName;
+        if (Include(fields, "title"))          obj["title"] = n.Title;
+        if (Include(fields, "text"))           obj["text"] = n.Text;
+        if (Include(fields, "out_refs"))       obj["out_refs"] = OutRefsToJson(n.OutRefs);
+        if (Include(fields, "tokens"))         obj["tokens"] = subtree.Tokens;
+        if (Include(fields, "subtree_tokens") && subtree.SubtreeTokens != subtree.Tokens)
+            obj["subtree_tokens"] = subtree.SubtreeTokens;
+        return obj;
+    }
+
+    /// <summary>
+    /// Оценка токенов compact-формы узла (id + type + title). Используется только
+    /// в edge-case'е «root больше бюджета».
+    /// </summary>
+    private static int EstimateCompactTokens(Node n) =>
+        TokenCounter.Count($"{n.Id} {n.TypeName} {n.Title}");
+
+    /// <summary>
     /// Сериализация get-by-path с auto-include-целями (#340). К плоскому subtree-объекту
     /// добавляется top-level поле <c>auto_includes: [...]</c>, если оно непусто. Шейп
     /// без auto-includes идентичен <see cref="SubtreeToJson(NodeSubtree,IReadOnlyCollection{string}?)"/>
@@ -160,6 +283,71 @@ public static class ReadApiJson
         var obj = SubtreeToJson(subtree, fields);
         AddAutoIncludesField(obj, autoIncludes, fields);
         return obj;
+    }
+
+    /// <summary>
+    /// Сериализация get-nodes с truncation-протоколом (см. docs/DocsWalker.yml/#406).
+    /// Прямо запрошенные id идут первыми и приоритизируются по бюджету; auto-include-цели
+    /// добавляются только если бюджет не исчерпан и они в него влезают. Шейп ответа —
+    /// всегда объект <c>{nodes: [...], truncated?, stopped_at?, tokens_used?, tokens_budget?}</c>.
+    /// </summary>
+    public static JsonObject NodesToJsonBudgeted(
+        IReadOnlyList<Node> nodes,
+        IReadOnlyList<Node>? autoIncludes,
+        IReadOnlyCollection<string>? fields,
+        int maxTokens)
+    {
+        var ctx = new TruncationContext(maxTokens);
+        var arr = new JsonArray();
+        bool stoppedOnDirect = false;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            int tokens = TokenCounter.CountNode(nodes[i]);
+            if (!ctx.TryConsume(tokens))
+            {
+                ctx.RecordStop(0, nodes.Count - i, i);
+                stoppedOnDirect = true;
+                break;
+            }
+            arr.Add((JsonNode?)NodeToJson(nodes[i], fields));
+        }
+        if (!stoppedOnDirect && autoIncludes is { Count: > 0 })
+        {
+            foreach (var n in autoIncludes)
+            {
+                int tokens = TokenCounter.CountNode(n);
+                if (!ctx.TryConsume(tokens)) break;
+                arr.Add((JsonNode?)NodeToJson(n, fields));
+            }
+        }
+
+        var result = new JsonObject { ["nodes"] = arr };
+        if (ctx.Truncated)
+            AppendTruncationFields(result, ctx);
+        return result;
+    }
+
+    /// <summary>
+    /// Дописывает к <paramref name="result"/> top-level поля truncation-протокола
+    /// в фиксированном порядке: truncated, stopped_at, tokens_used, tokens_budget.
+    /// Вызывается только когда <paramref name="ctx"/>.Truncated=true.
+    /// </summary>
+    private static void AppendTruncationFields(JsonObject result, TruncationContext ctx)
+    {
+        result["truncated"] = true;
+        var arr = new JsonArray();
+        foreach (var p in ctx.StoppedAt)
+        {
+            arr.Add((JsonNode?)new JsonObject
+            {
+                ["parent_id"] = p.ParentId,
+                ["remaining_children"] = p.RemainingChildren,
+                ["next_offset"] = p.NextOffset,
+            });
+        }
+        result["stopped_at"] = arr;
+        result["tokens_used"] = ctx.TokensUsed;
+        result["tokens_budget"] = ctx.Budget;
     }
 
     /// <summary>
@@ -395,20 +583,25 @@ public static class ReadApiJson
         _ => c.ToString(),
     };
 
+    /// <summary>
+    /// Сериализация search v2: каждый hit — объект {id, type, title, score, snippet}.
+    /// score округляется до 4 знаков для компактности; snippet опускается,
+    /// если null (правило #301).
+    /// </summary>
     public static JsonArray SearchToJson(IReadOnlyList<SearchHit> hits)
     {
         var arr = new JsonArray();
         foreach (var h in hits)
         {
-            var fragments = new JsonArray();
-            foreach (var f in h.Fragments) fragments.Add((JsonNode?)JsonValue.Create(f));
-            arr.Add((JsonNode?)new JsonObject
+            var obj = new JsonObject
             {
                 ["id"] = h.Id,
                 ["type"] = h.TypeName,
                 ["title"] = h.Title,
-                ["fragments"] = fragments,
-            });
+                ["score"] = Math.Round(h.Score, 4),
+            };
+            if (h.Snippet is not null) obj["snippet"] = h.Snippet;
+            arr.Add((JsonNode?)obj);
         }
         return arr;
     }

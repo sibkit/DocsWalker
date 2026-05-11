@@ -17,7 +17,11 @@ namespace DocsWalker.Cli.Cli.Handlers;
 /// </summary>
 internal static class ReadHandlers
 {
-    public static int GetNodes(string storagePath, string idsParam)
+    public static int GetNodes(
+        string storagePath,
+        string idsParam,
+        IReadOnlyCollection<string>? fields,
+        int maxTokens)
     {
         var ids = ParseIds(idsParam);
         return WithApi(storagePath, api =>
@@ -26,7 +30,7 @@ internal static class ReadHandlers
             {
                 var nodes = api.ReadApi.GetNodes(ids);
                 var autoIncludes = api.ReadApi.CollectAutoIncludes(nodes);
-                var json = ReadApiJson.NodesToJson(nodes, autoIncludes);
+                var json = ReadApiJson.NodesToJsonBudgeted(nodes, autoIncludes, fields, maxTokens);
                 Output.WriteSuccess(json);
                 return 0;
             }
@@ -59,7 +63,13 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetTree(string storagePath, int id, string? tree, int? depth, IReadOnlyCollection<string>? fields)
+    public static int GetTree(
+        string storagePath,
+        int id,
+        string? tree,
+        int? depth,
+        IReadOnlyCollection<string>? fields,
+        int maxTokens)
     {
         var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
         return WithApi(storagePath, api =>
@@ -68,7 +78,7 @@ internal static class ReadHandlers
             {
                 var subtree = api.ReadApi.GetTree(id, scope, depth);
                 var autoIncludes = api.ReadApi.CollectAutoIncludes(subtree);
-                var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, autoIncludes);
+                var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, autoIncludes, maxTokens);
                 Output.WriteSuccess(json);
                 return 0;
             }
@@ -169,13 +179,30 @@ internal static class ReadHandlers
         }
     }
 
-    public static int Search(string storagePath, string query)
+    public static int Search(
+        string storagePath,
+        string query,
+        SearchInMode inMode,
+        string? typeFilter,
+        string? tree,
+        int? under,
+        bool regex,
+        int? limit,
+        bool compact)
     {
         return WithApi(storagePath, api =>
         {
             try
             {
-                var hits = api.ReadApi.Search(query);
+                var hits = api.ReadApi.Search(
+                    query,
+                    inMode,
+                    typeFilter,
+                    tree,
+                    under,
+                    regex,
+                    limit ?? 20,
+                    compact);
                 Output.WriteSuccess(ReadApiJson.SearchToJson(hits));
                 return 0;
             }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using DocsWalker.Cli.Cli;
 using DocsWalker.Cli.Cli.Handlers;
 using DocsWalker.Cli.Cli.Kernel;
+using DocsWalker.Core.Api;
 
 // JSON-вывод DocsWalker — всегда UTF-8 без BOM. На Windows Console.Out по умолчанию
 // использует кодовую страницу консоли (CP866/CP1251), что искажает кириллицу при
@@ -96,7 +97,7 @@ internal static class Dispatcher
             "get_usage_guide" => SchemaHandlers.GetUsageGuide(
                                     storagePath,
                                     parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null),
-            "get_nodes"       => ReadHandlers.GetNodes(storagePath, parsed.Params["ids"]),
+            "get_nodes"       => DispatchGetNodes(storagePath, parsed.Params),
             "get_by_path"     => ReadHandlers.GetByPath(
                                     storagePath,
                                     parsed.Params["path"],
@@ -114,7 +115,7 @@ internal static class Dispatcher
                                     storagePath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
                                     parsed.Params.TryGetValue("name", out var n2) ? n2 : null),
-            "search"          => ReadHandlers.Search(storagePath, parsed.Params["query"]),
+            "search"          => DispatchSearch(storagePath, parsed.Params),
             "check_integrity" => ReadHandlers.CheckIntegrity(storagePath),
             "get_overview"    => ReadHandlers.GetOverview(storagePath),
             "create_node"     => WriteHandlers.CreateNode(storagePath, parsed.Params, dryRun),
@@ -138,6 +139,8 @@ internal static class Dispatcher
         return 1;
     }
 
+    private const int DefaultMaxTokens = 50000;
+
     private static int DispatchGetTree(string storagePath, IReadOnlyDictionary<string, string> args)
     {
         var id = int.Parse(args["id"], System.Globalization.CultureInfo.InvariantCulture);
@@ -145,7 +148,135 @@ internal static class Dispatcher
         int? depth = args.TryGetValue("depth", out var ds)
             ? int.Parse(ds, System.Globalization.CultureInfo.InvariantCulture)
             : (int?)null;
-        return ReadHandlers.GetTree(storagePath, id, tree, depth, ParseFields(args));
+
+        if (!TryParseBoolOpt(args, "compact", out bool compact, out string? compactErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, compactErr!);
+            return 1;
+        }
+        var fields = ResolveFields(args, compact);
+        if (!TryParseMaxTokens(args, out int maxTokens, out string? mtErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, mtErr!);
+            return 1;
+        }
+
+        return ReadHandlers.GetTree(storagePath, id, tree, depth, fields, maxTokens);
+    }
+
+    private static int DispatchGetNodes(string storagePath, IReadOnlyDictionary<string, string> args)
+    {
+        if (!TryParseBoolOpt(args, "compact", out bool compact, out string? compactErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, compactErr!);
+            return 1;
+        }
+        var fields = ResolveFields(args, compact);
+        if (!TryParseMaxTokens(args, out int maxTokens, out string? mtErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, mtErr!);
+            return 1;
+        }
+
+        return ReadHandlers.GetNodes(storagePath, args["ids"], fields, maxTokens);
+    }
+
+    private static IReadOnlyCollection<string>? ResolveFields(
+        IReadOnlyDictionary<string, string> args,
+        bool compact)
+    {
+        var explicitFields = ParseFields(args);
+        if (explicitFields is not null) return explicitFields;
+        if (!compact) return null;
+        return new HashSet<string>(StringComparer.Ordinal) { "id", "type", "title" };
+    }
+
+    private static bool TryParseMaxTokens(
+        IReadOnlyDictionary<string, string> args,
+        out int maxTokens,
+        out string? error)
+    {
+        maxTokens = DefaultMaxTokens;
+        error = null;
+        if (!args.TryGetValue("max-tokens", out var raw)) return true;
+        if (!int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+        {
+            error = $"Параметр '--max-tokens': ожидается целое число, получено '{raw}'.";
+            return false;
+        }
+        if (parsed <= 0)
+        {
+            error = $"Параметр '--max-tokens' должен быть положительным, получено '{raw}'.";
+            return false;
+        }
+        maxTokens = parsed;
+        return true;
+    }
+
+    private static int DispatchSearch(string storagePath, IReadOnlyDictionary<string, string> args)
+    {
+        var query = args["query"];
+
+        SearchInMode inMode = SearchInMode.Both;
+        if (args.TryGetValue("in", out var inRaw))
+        {
+            switch (inRaw)
+            {
+                case "title": inMode = SearchInMode.Title; break;
+                case "text":  inMode = SearchInMode.Text;  break;
+                case "both":  inMode = SearchInMode.Both;  break;
+                default:
+                    Output.WriteError(
+                        "invalid_parameter",
+                        path: null,
+                        $"Параметр '--in': ожидается одно из 'title', 'text', 'both'. Получено: '{inRaw}'.");
+                    return 1;
+            }
+        }
+
+        string? typeFilter = args.TryGetValue("type", out var tf) && !string.IsNullOrEmpty(tf) ? tf : null;
+        string? tree       = args.TryGetValue("tree", out var tr) && !string.IsNullOrEmpty(tr) ? tr : null;
+        int? under = args.TryGetValue("under", out var u)
+            ? int.Parse(u, System.Globalization.CultureInfo.InvariantCulture)
+            : (int?)null;
+        if (!TryParseBoolOpt(args, "regex", out bool regex, out string? regexErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, regexErr!);
+            return 1;
+        }
+        int? limit = args.TryGetValue("limit", out var l)
+            ? int.Parse(l, System.Globalization.CultureInfo.InvariantCulture)
+            : (int?)null;
+        if (!TryParseBoolOpt(args, "compact", out bool compact, out string? compactErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, compactErr!);
+            return 1;
+        }
+
+        return ReadHandlers.Search(storagePath, query, inMode, typeFilter, tree, under, regex, limit, compact);
+    }
+
+    private static bool TryParseBoolOpt(
+        IReadOnlyDictionary<string, string> args,
+        string key,
+        out bool value,
+        out string? error)
+    {
+        value = false;
+        error = null;
+        if (!args.TryGetValue(key, out var raw) || string.IsNullOrEmpty(raw)) return true;
+        if (string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || raw == "1")
+        {
+            value = true;
+            return true;
+        }
+        if (string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || raw == "0")
+        {
+            value = false;
+            return true;
+        }
+        error = $"Параметр '--{key}': ожидается 'true' или 'false'. Получено: '{raw}'.";
+        return false;
     }
 
     private static ParamValidationError? TryValidateParams(
@@ -292,6 +423,16 @@ internal static class Dispatcher
                     error = $"ожидается корректный JSON-массив, ошибка разбора: {ex.Message}";
                     return false;
                 }
+
+            case ParamType.Boolean:
+                if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1"
+                    || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) || value == "0")
+                {
+                    error = null;
+                    return true;
+                }
+                error = $"ожидается 'true' или 'false', получено '{value}'.";
+                return false;
 
             default:
                 error = "неизвестный тип параметра.";

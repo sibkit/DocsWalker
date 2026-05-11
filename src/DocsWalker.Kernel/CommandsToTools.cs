@@ -91,6 +91,7 @@ internal static class CommandsToTools
         // напрямую (а не через escape-string). Конвертер McpServer.JsonValueToCliString
         // распознаёт пару (array, object) и передаёт raw JSON со скобками в CLI.
         ParamType.JsonArray => ("array", "object"),
+        ParamType.Boolean   => ("boolean", null),
         _ => ("string", null),
     };
 
