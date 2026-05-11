@@ -115,6 +115,14 @@ dotnet publish src/DocsWalker.Mcp/DocsWalker.Mcp.csproj       -c Release -r win-
 - `src\DocsWalker.Cli\bin\Release\net10.0\win-x64\publish\DocsWalker.Cli.exe` — клиент-режим (форвард к kernel'у) + REPL.
 - `src\DocsWalker.Mcp\bin\Release\net10.0\win-x64\publish\DocsWalker.Mcp.exe` — stdio↔HTTP bridge для MCP-клиента (Claude Code и т.п.).
 
+**Пересборка при изменениях в `src/`.** При правках в `src/DocsWalker.Core/`,
+`src/DocsWalker.Kernel/`, `src/DocsWalker.Cli/` нужна повторная публикация Kernel и
+Cli (Core линкуется внутрь обоих). `DocsWalker.Mcp.exe` — тонкий stdio↔HTTP-bridge
+без бизнес-логики; его публикация повторяется **только** при правках в самом
+`src/DocsWalker.Mcp/`. Дополнительная причина не трогать Mcp без необходимости:
+активная MCP-сессия Claude Code удерживает `DocsWalker.Mcp.exe` запущенным, и
+`dotnet publish` падает с file-lock (MSB3027) до завершения сессии.
+
 ### Один раз — конфиги
 
 **`kernel-config.json`** в корне проекта (gitignore'ить отдельно, если хочешь — он dev-локальный):

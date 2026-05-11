@@ -12,7 +12,11 @@ namespace DocsWalker.Tests;
 /// (step-06): убеждается, что error-code определяется именно
 /// в network-fault ветке <see cref="KernelHttpClient"/>, без запуска реального
 /// kernel-процесса.
+/// Сериализуется через collection "ConsoleRedirect" — тест перехватывает
+/// <see cref="Console.Error"/>, параллельный запуск с другими console-redirect
+/// тестами ломает захват.
 /// </summary>
+[Collection("ConsoleRedirect")]
 public class KernelHttpClientTests
 {
     [Fact]
