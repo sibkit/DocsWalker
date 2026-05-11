@@ -21,7 +21,7 @@ namespace DocsWalker.Core.Validation;
 internal static class StyleCheck
 {
     /// <summary>Максимальная длина text в символах (см. правило #139).</summary>
-    public const int MaxTextLength = 1000;
+    public const int MaxTextLength = 2000;
 
     private static readonly char[] ForbiddenInTitle = ['\n', '\r', '\t'];
     private static readonly char[] ForbiddenInText = ['\r', '\t'];

@@ -34,7 +34,7 @@ public class ValidatorTests
     [Fact]
     public void Validate_TextWithNewline_IsAllowed()
     {
-        // text с \n больше не запрещён (правило #139): \n допустим, лимит — длина 1000 chars.
+        // text с \n больше не запрещён (правило #139): \n допустим, лимит — длина 2000 chars.
         var (v, g, _, schema) = Setup();
         var node = g.GetById(127)!; // statement «Ядро на C#»
         var rebuilt = RebuildWithReplacement(g, schema, ReplaceText(node, "первая строка\nвторая строка"));
@@ -64,22 +64,22 @@ public class ValidatorTests
     }
 
     [Fact]
-    public void Validate_TextOver1000Chars_Reports_TextTooLong()
+    public void Validate_TextOver2000Chars_Reports_TextTooLong()
     {
         var (v, g, _, schema) = Setup();
         var node = g.GetById(127)!;
-        var longText = new string('a', 1001);
+        var longText = new string('a', 2001);
         var rebuilt = RebuildWithReplacement(g, schema, ReplaceText(node, longText));
         var result = v.Validate(rebuilt);
         Assert.Contains(result.Errors, e => e.Code == "text_too_long" && e.NodeId == node.Id);
     }
 
     [Fact]
-    public void Validate_TextAt1000Chars_Passes()
+    public void Validate_TextAt2000Chars_Passes()
     {
         var (v, g, _, schema) = Setup();
         var node = g.GetById(127)!;
-        var exactlyAtLimit = new string('a', 1000);
+        var exactlyAtLimit = new string('a', 2000);
         var rebuilt = RebuildWithReplacement(g, schema, ReplaceText(node, exactlyAtLimit));
         var result = v.Validate(rebuilt);
         Assert.DoesNotContain(result.Errors, e => e.Code == "text_too_long" && e.NodeId == node.Id);
