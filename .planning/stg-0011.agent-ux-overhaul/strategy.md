@@ -14,7 +14,7 @@
 - [+] (04) docs-remove-get-map
 - [+] (05) docs-truncation-protocol
 - [+] (06) docs-examples-json-migration
-- [*] code-mcp-project-split
+- [+] code-mcp-project-split
 - [*] code-api-rename-and-remove
 - [*] code-get-overview
 - [*] code-search-v2-bm25

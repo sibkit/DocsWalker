@@ -16,12 +16,13 @@ if (args.Length == 0 || args[0].StartsWith("--", StringComparison.Ordinal))
 
 var cmd = args[0].Replace('_', '-');
 
-// cmd == "mcp-server" → stdio↔HTTP wrapper к ядру.
-// cmd == "repl" → интерактивный HTTP-клиент к ядру.
-// Обе не идут через одноразовый клиент-режим (KernelHttpClient): живут до
-// EOF stdin / выхода REPL и сами читают .dw/client.json + держат HttpClient к ядру.
+// cmd == "repl" → интерактивный HTTP-клиент к ядру: не идёт через одноразовый
+// клиент-режим (KernelHttpClient), живёт до выхода REPL, сам читает
+// .dw/client.json и держит HttpClient к ядру.
 // Команда `kernel` — отдельный exe DocsWalker.Kernel.exe.
-if (cmd == "mcp-server" || cmd == "repl")
+// Команда `mcp-server` — отдельный exe DocsWalker.Mcp.exe (вынесена в
+// stg-0011 code-mcp-project-split).
+if (cmd == "repl")
     return Dispatcher.Run(args);
 
 // Любая другая команда → клиент-режим: читаем .dw/client.json, форвардим
@@ -56,12 +57,13 @@ internal static class Dispatcher
             return 1;
         }
 
-        // storage-path для repl/mcp_server не нужен (эти wrapper'ы сами читают
-        // ClientConfig). Для остальных команд — обязателен; kernel инжектит его
-        // через --storage-path=<docs-folder> до вызова Dispatcher.Run. Прямой
-        // запуск CLI с этими командами без --storage-path = ошибка контракта.
+        // storage-path для repl не нужен (wrapper сам читает ClientConfig). Для
+        // остальных команд — обязателен; kernel инжектит его через
+        // --storage-path=<docs-folder> до вызова Dispatcher.Run. Прямой запуск
+        // CLI с этими командами без --storage-path = ошибка контракта.
+        // mcp_server вынесен в DocsWalker.Mcp.exe (stg-0011 code-mcp-project-split).
         string storagePath = string.Empty;
-        if (spec.SnakeName != "repl" && spec.SnakeName != "mcp_server")
+        if (spec.SnakeName != "repl")
         {
             if (!TryResolveStoragePath(parsed.Params, out storagePath, out var spError))
             {
@@ -88,7 +90,6 @@ internal static class Dispatcher
         return spec.SnakeName switch
         {
             "repl"            => ReplHandler.Run(parsed.Params),
-            "mcp_server"      => McpWrapperHandler.Run(parsed.Params),
             "get_meta_schema" => SchemaHandlers.GetMetaSchema(storagePath),
             "get_schema"      => SchemaHandlers.GetSchema(storagePath),
             "describe_type"   => SchemaHandlers.DescribeType(storagePath, parsed.Params["name"]),

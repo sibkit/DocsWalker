@@ -1,6 +1,6 @@
 using System.Text.Json;
-using DocsWalker.Cli.Mcp;
 using DocsWalker.Core.Mcp;
+using DocsWalker.Kernel;
 
 namespace DocsWalker.Tests;
 

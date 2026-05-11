@@ -3,10 +3,11 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DocsWalker.Cli.Cli;
 using DocsWalker.Cli.Cli.Kernel;
 using DocsWalker.Core.Server.Protocol;
 
-namespace DocsWalker.Cli.Cli.Handlers;
+namespace DocsWalker.Mcp;
 
 /// <summary>
 /// Handler команды <c>mcp-server</c> в новой архитектуре stg-0010: тонкий

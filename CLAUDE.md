@@ -102,16 +102,18 @@ docs — даже в виде краткой выжимки. Только ссы
 
 ### Один раз — собрать бинари
 
-AOT-публикация даёт self-contained `.exe`'шники под Windows. Делается один раз; повторять при изменениях в `src/`.
+AOT-публикация даёт self-contained `.exe`'шники под Windows. Делается один раз; повторять при изменениях в `src/` соответствующего проекта.
 
 ```powershell
 dotnet publish src/DocsWalker.Kernel/DocsWalker.Kernel.csproj -c Release -r win-x64
-dotnet publish src/DocsWalker.Cli/DocsWalker.Cli.csproj    -c Release -r win-x64
+dotnet publish src/DocsWalker.Cli/DocsWalker.Cli.csproj       -c Release -r win-x64
+dotnet publish src/DocsWalker.Mcp/DocsWalker.Mcp.csproj       -c Release -r win-x64
 ```
 
 После — на диске:
-- `src\DocsWalker.Kernel\bin\Release\net10.0\win-x64\publish\DocsWalker.Kernel.exe`
-- `src\DocsWalker.Cli\bin\Release\net10.0\win-x64\publish\DocsWalker.Cli.exe`
+- `src\DocsWalker.Kernel\bin\Release\net10.0\win-x64\publish\DocsWalker.Kernel.exe` — HTTP-сервис (управляющий процесс).
+- `src\DocsWalker.Cli\bin\Release\net10.0\win-x64\publish\DocsWalker.Cli.exe` — клиент-режим (форвард к kernel'у) + REPL.
+- `src\DocsWalker.Mcp\bin\Release\net10.0\win-x64\publish\DocsWalker.Mcp.exe` — stdio↔HTTP bridge для MCP-клиента (Claude Code и т.п.).
 
 ### Один раз — конфиги
 
@@ -165,7 +167,9 @@ curl http://127.0.0.1:18080/health
 
 ### MCP-интеграция с Claude Code
 
-`.mcp.json` в корне проекта уже настроен — он зовёт `DocsWalker.Cli.exe mcp-server --quiet=true`, который читает `.dw/client.json` поиском вверх от cwd и форвардит JSON-RPC frames к kernel'у. Никакого `--root=` в args быть не должно (после stg-0010 mcp-server параметра `root` не знает; такие args отвергаются как `unknown_parameter` и MCP-сервер не поднимается).
+`.mcp.json` в корне проекта уже настроен — он зовёт `DocsWalker.Mcp.exe --quiet=true`, который читает `.dw/client.json` поиском вверх от cwd и форвардит JSON-RPC frames к kernel'у. Никаких других args быть не должно (Mcp.exe понимает только `--quiet=true|false`; конфигурация транспорта целиком в `.dw/client.json`).
+
+С stg-0011 (code-mcp-project-split) MCP-сервер вынесен в отдельный exe `DocsWalker.Mcp.exe` — раньше тот же мост жил как `DocsWalker.Cli.exe mcp-server`. Если в `.mcp.json` остаётся старая команда — обновить путь и убрать аргумент `mcp-server`.
 
 Чтобы Claude Code увидел tool'ы — открыть проект из корня (где лежит `.mcp.json`) и перезапустить сессию. После этого должны появиться tool'ы `mcp__docswalker__get-nodes`, `mcp__docswalker__get-map` и так далее.
 

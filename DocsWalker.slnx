@@ -3,6 +3,7 @@
     <Project Path="src/DocsWalker.Cli/DocsWalker.Cli.csproj" />
     <Project Path="src/DocsWalker.Core/DocsWalker.Core.csproj" />
     <Project Path="src/DocsWalker.Kernel/DocsWalker.Kernel.csproj" />
+    <Project Path="src/DocsWalker.Mcp/DocsWalker.Mcp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DocsWalker.Tests/DocsWalker.Tests.csproj" />

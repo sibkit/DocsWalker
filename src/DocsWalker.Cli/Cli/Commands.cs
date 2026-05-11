@@ -156,18 +156,6 @@ internal static class Commands
                 },
                 Opt("quiet", ParamType.String, "Глушит баннер старта и приветствие в stderr (true/false). По умолчанию false.")),
 
-            // MCP-wrapper — тонкий stdio↔HTTP bridge между Claude Code (JSON-RPC 2.0
-            // поверх stdio) и DocsWalker.Kernel.exe (POST /db/{graph}/rpc). Читает
-            // .dw/client.json для определения kernel host/port + graph.
-            Read("mcp_server",
-                desc: "Тонкий stdio↔HTTP bridge между MCP-клиентом (Claude Code) и DocsWalker.Kernel.exe: читает JSON-RPC frames из stdin, форвардит в /db/{graph}/rpc ядра. Конфигурация через .dw/client.json (поиск вверх от cwd). Kernel должен быть запущен заранее (auto-spawn убран в stg-0010). Команда вызывается клиентом через mcpServers-запись в конфиге, не вручную.",
-                examples: new[]
-                {
-                    "docswalker mcp-server",
-                    "docswalker mcp-server --quiet=true",
-                },
-                Opt("quiet", ParamType.String, "Глушит баннер старта в stderr (true/false). По умолчанию false.")),
-
             // Запись
             DynamicWrite("create_node",
                 desc: "Создать узел: type+title+text плюс значения всех required-связей контракта типа (--<имя_связи>=<id|csv>). Имя обязательного path-параметра — --path.",

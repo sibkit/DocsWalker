@@ -3,7 +3,7 @@ using DocsWalker.Cli.Cli;
 using DocsWalker.Core.Mcp;
 using DocsWalker.Core.Schema;
 
-namespace DocsWalker.Cli.Mcp;
+namespace DocsWalker.Kernel;
 
 /// <summary>
 /// Конвертирует <see cref="Commands.All"/> CLI-команд в манифест MCP-tools.
@@ -18,6 +18,12 @@ namespace DocsWalker.Cli.Mcp;
 /// и docs/DocsWalker.yml/«(#377)»). Если Схема не передана (null) — descriptor
 /// отдаётся с базовой схемой, сгенерированной из статических <see cref="CommandSpec.Params"/>.
 /// </para>
+/// <para>
+/// Жильё в DocsWalker.Kernel: с stg-0011 (code-mcp-project-split) MCP-сервер
+/// живёт в kernel'е (RpcDispatcher.HandleListTools/HandleCallToolAsync), а
+/// DocsWalker.Mcp.exe — лишь stdio↔HTTP bridge. Соответственно генератор
+/// tool-манифеста переехал из Cli в Kernel — туда, где реально используется.
+/// </para>
 /// </summary>
 internal static class CommandsToTools
 {
@@ -27,8 +33,8 @@ internal static class CommandsToTools
         foreach (var spec in Commands.All)
         {
             if (spec.KebabName == "run") continue;
-            // mcp-server тоже исключаем — сама себя как tool регистрировать незачем.
-            if (spec.KebabName == "mcp-server") continue;
+            // mcp-server вынесен в отдельный exe (DocsWalker.Mcp.exe) — здесь
+            // отсутствует как CLI-команда, защитный фильтр уже не нужен.
 
             var parameters = new List<McpToolParam>(spec.Params.Count);
             foreach (var p in spec.Params)

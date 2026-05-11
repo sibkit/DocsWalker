@@ -2,9 +2,8 @@
   "mcpServers": {
     "docswalker": {
       "type": "stdio",
-      "command": "src/DocsWalker.Cli/bin/Release/net10.0/win-x64/publish/DocsWalker.Cli.exe",
+      "command": "src/DocsWalker.Mcp/bin/Release/net10.0/win-x64/publish/DocsWalker.Mcp.exe",
       "args": [
-        "mcp-server",
         "--quiet=true"
       ]
     }

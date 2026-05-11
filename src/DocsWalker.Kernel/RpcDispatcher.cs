@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using DocsWalker.Cli.Mcp;
 using DocsWalker.Core.Mcp;
 using DocsWalker.Core.Schema;
 using Microsoft.AspNetCore.Http;
