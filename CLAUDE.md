@@ -4,6 +4,50 @@
 стеку и синтаксису здесь нет и быть не должно** — они живут только в
 [docs/](docs/).
 
+## Активная сессия
+
+**Стратегия:** `stg-0011.agent-ux-overhaul`. Все шаги до сегодняшней пачки закрыты
+(см. `.planning/stg-0011.agent-ux-overhaul/strategy.md`).
+
+**Активная задача — step `code-update-schema-command` (WIP):**
+- API `WriteApi.UpdateSchema(yamlText, dryRun)` реализован — atomic-замена `docs/Схема.yml`
+  с серверной валидацией: парсинг YAML → meta-schema-check → прогон Validator на
+  текущем графе под новой Схемой → atomic write через AtomicWriter.
+- Добавлены: `SchemaLoader.LoadSchemaFromString`, record `SchemaUpdateResult`,
+  CLI-команда `update-schema` (см. `Commands.cs`), handler `WriteHandlers.UpdateSchema`,
+  dispatch в `Program.cs`.
+- Все существующие 221 тест проходят. **Unit-тесты для update-schema ещё не написаны**
+  (планируются: invalid YAML → invalid_yaml; broken meta-schema → schema_load_error;
+  schema, ломающая graph → validation_failed; valid → applied=true, файл обновлён;
+  dry-run → applied=false, файл не изменён).
+- См. `.planning/stg-0011.agent-ux-overhaul/step-code-update-schema-command.md`.
+
+**Следующее в очереди после закрытия #9:**
+- `docs-schema-classifier-trees` (#7) — объявить 4 classifier-tree (`subject`,
+  `csharp_structure`, `subsystem`, `audience`), типы-категории, none-узлы, required
+  tree-refs на атом-типах. Делается через свежий `update-schema`.
+- `migrate-classifiers-data` (#8) — массовая `transaction` с `create-ref` на
+  `none` для всех 337 узлов, потом точечная классификация по очевидным секциям.
+
+**Контекст среды:**
+- Kernel запущен (pid 20964), но собран **до** последних коммитов
+  (commit `3c5cad5` — WIP update-schema). Чтобы новая команда `update-schema`
+  стала доступна через MCP — нужна пересборка и рестарт:
+  1. `dotnet publish src/DocsWalker.Kernel/DocsWalker.Kernel.csproj -c Release -r win-x64`
+  2. `dotnet publish src/DocsWalker.Cli/DocsWalker.Cli.csproj       -c Release -r win-x64`
+  3. `dotnet publish src/DocsWalker.Mcp/DocsWalker.Mcp.csproj       -c Release -r win-x64`
+  4. `taskkill /F /PID 20964` (или Stop-Process).
+  5. Перезапуск kernel из CLAUDE.md «Запуск DocsWalker».
+
+**Ключевые предположения / решения:**
+- Решение пользователя: для правки Схемы добавляется atomic MCP-команда
+  `update-schema(yaml_text)` (а не granular API).
+- Схема не управляется графом — она остаётся YAML-файлом, но писаться будет
+  только через MCP (после закрытия #9).
+- В тестах для шагов 7+8 используется live `docs/` через MCP-команды, не synthetic.
+
+**Незаданные вопросы:** нет.
+
 ## Единственный источник истины — `docs/`
 
 Вся спецификация (язык, синтаксис, доменная модель, стек, архитектура,
