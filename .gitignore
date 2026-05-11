@@ -26,6 +26,11 @@
 Thumbs.db
 desktop.ini
 
+# MSYS2/Cygwin bash stack-dumps — рантайм-падения эмуляции fork() на Windows,
+# не наши крэши. Подавляем создание через MSYS=nodumpstack в .claude/settings.json,
+# но на всякий случай прячем от git.
+*.stackdump
+
 # Локальные настройки Claude Code
 .claude/
 
