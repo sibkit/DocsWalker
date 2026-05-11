@@ -116,6 +116,7 @@ internal static class Dispatcher
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
                                     parsed.Params.TryGetValue("name", out var n2) ? n2 : null),
             "search"          => DispatchSearch(storagePath, parsed.Params),
+            "find"            => DispatchFind(storagePath, parsed.Params),
             "check_integrity" => ReadHandlers.CheckIntegrity(storagePath),
             "get_overview"    => ReadHandlers.GetOverview(storagePath),
             "create_node"     => WriteHandlers.CreateNode(storagePath, parsed.Params, dryRun),
@@ -253,7 +254,91 @@ internal static class Dispatcher
             return 1;
         }
 
-        return ReadHandlers.Search(storagePath, query, inMode, typeFilter, tree, under, regex, limit, compact);
+        List<TreeFilter>? inTree = null;
+        if (args.TryGetValue("in-tree", out var inTreeRaw) && !string.IsNullOrEmpty(inTreeRaw))
+        {
+            if (!TryParseInTree(inTreeRaw, out inTree, out var inTreeError))
+            {
+                Output.WriteError("invalid_parameter", path: null, inTreeError!);
+                return 1;
+            }
+        }
+
+        return ReadHandlers.Search(storagePath, query, inMode, typeFilter, tree, under, regex, limit, compact, inTree);
+    }
+
+    private static int DispatchFind(string storagePath, IReadOnlyDictionary<string, string> args)
+    {
+        if (!TryParseInTree(args["in-tree"], out var filters, out var parseError))
+        {
+            Output.WriteError("invalid_parameter", path: null, parseError!);
+            return 1;
+        }
+
+        string? typeFilter = args.TryGetValue("type", out var tf) && !string.IsNullOrEmpty(tf) ? tf : null;
+        int? limit = args.TryGetValue("limit", out var l)
+            ? int.Parse(l, System.Globalization.CultureInfo.InvariantCulture)
+            : (int?)null;
+        if (!TryParseBoolOpt(args, "compact", out bool compact, out string? compactErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, compactErr!);
+            return 1;
+        }
+
+        return ReadHandlers.Find(storagePath, filters!, typeFilter, limit, compact);
+    }
+
+    /// <summary>
+    /// Разбирает значение параметра <c>--in-tree</c> (raw JSON-массив объектов
+    /// <c>{name, under}</c>) в список <see cref="TreeFilter"/>. Возвращает false
+    /// при синтаксических ошибках; <paramref name="error"/> содержит готовое к
+    /// выводу сообщение.
+    /// </summary>
+    private static bool TryParseInTree(
+        string rawJson,
+        out List<TreeFilter>? filters,
+        out string? error)
+    {
+        filters = null;
+        error = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Array)
+            {
+                error = "Параметр --in-tree: ожидается JSON-массив объектов {name, under}.";
+                return false;
+            }
+            var list = new List<TreeFilter>(root.GetArrayLength());
+            for (int i = 0; i < root.GetArrayLength(); i++)
+            {
+                var el = root[i];
+                if (el.ValueKind != JsonValueKind.Object)
+                {
+                    error = $"Параметр --in-tree[{i}]: ожидается объект {{name, under}}.";
+                    return false;
+                }
+                if (!el.TryGetProperty("name", out var nameProp) || nameProp.ValueKind != JsonValueKind.String)
+                {
+                    error = $"Параметр --in-tree[{i}].name: ожидается строка.";
+                    return false;
+                }
+                if (!el.TryGetProperty("under", out var underProp) || underProp.ValueKind != JsonValueKind.Number)
+                {
+                    error = $"Параметр --in-tree[{i}].under: ожидается целое число.";
+                    return false;
+                }
+                list.Add(new TreeFilter(nameProp.GetString()!, underProp.GetInt32()));
+            }
+            filters = list;
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = $"Параметр --in-tree: ошибка парсинга JSON — {ex.Message}";
+            return false;
+        }
     }
 
     private static bool TryParseBoolOpt(

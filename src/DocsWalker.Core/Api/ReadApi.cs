@@ -72,6 +72,14 @@ public enum SearchInMode
 }
 
 /// <summary>
+/// Фильтр multi-tree для <see cref="ReadApi.Find"/>: имя classifier-дерева
+/// и id корня подграфа, в котором ограничивается выборка. Узел попадает в
+/// выдачу, если его tree-ref в дереве <see cref="Tree"/> указывает на узел
+/// в подграфе под <see cref="Under"/> (включая сам <see cref="Under"/>).
+/// </summary>
+public sealed record TreeFilter(string Tree, int Under);
+
+/// <summary>
 /// FS-агностичное описание одного типа узла из Схемы. В отличие от <see cref="TypeDefinition"/>,
 /// не выдаёт <c>title_source</c> наружу: это контракт «движок ↔ docs/», LLM его не должна знать.
 /// Возвращается операцией <c>describe-type</c>; экономит токены LLM по сравнению с
@@ -647,7 +655,8 @@ public sealed class ReadApi
         int? under = null,
         bool regex = false,
         int limit = 20,
-        bool compact = false)
+        bool compact = false,
+        IReadOnlyList<TreeFilter>? inTree = null)
     {
         if (string.IsNullOrEmpty(query))
             throw new ReadApiException("invalid_query", "Параметр query не должен быть пустым.");
@@ -657,14 +666,55 @@ public sealed class ReadApi
                 "Параметр limit должен быть положительным.");
 
         var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
-        var candidates = BuildSearchCandidates(typeFilter, scope, under);
+        var candidates = BuildSearchCandidates(typeFilter, scope, under, inTree);
 
         return regex
             ? RegexSearch(candidates, query, inMode, limit)
             : Bm25Search(candidates, query, inMode, limit);
     }
 
-    private IReadOnlyList<Node> BuildSearchCandidates(string? typeFilter, string scope, int? under)
+    /// <summary>
+    /// Структурный поиск без текстового запроса: пересечение узлов, чьи
+    /// classifier-tree-ссылки попадают в подграф каждой указанной категории
+    /// (см. <see cref="TreeFilter"/>). Опциональный фильтр по типу узла.
+    /// Сортировка результата — id asc; <paramref name="limit"/> применяется
+    /// после пересечения и фильтра по типу.
+    /// </summary>
+    public IReadOnlyList<Node> Find(
+        IReadOnlyList<TreeFilter> inTree,
+        string? typeFilter = null,
+        int limit = 50)
+    {
+        if (inTree is null || inTree.Count == 0)
+            throw new ReadApiException(
+                "invalid_parameter",
+                "Параметр in_tree обязателен — передай хотя бы один фильтр {name, under}.");
+        if (limit <= 0)
+            throw new ReadApiException(
+                "invalid_parameter",
+                "Параметр limit должен быть положительным.");
+
+        var intersection = CollectByClassifierFilters(inTree);
+        if (intersection.Count == 0) return Array.Empty<Node>();
+
+        IEnumerable<Node> source = intersection
+            .Select(id => _graph.GetById(id)!)
+            .Where(n => n is not null);
+
+        if (!string.IsNullOrEmpty(typeFilter))
+            source = source.Where(n => string.Equals(n.TypeName, typeFilter, StringComparison.Ordinal));
+
+        return source
+            .OrderBy(n => n.Id)
+            .Take(limit)
+            .ToList();
+    }
+
+    private IReadOnlyList<Node> BuildSearchCandidates(
+        string? typeFilter,
+        string scope,
+        int? under,
+        IReadOnlyList<TreeFilter>? inTree)
     {
         IEnumerable<Node> source = _graph.ById.Values.Where(n => n.Id != Node.RootId);
 
@@ -680,7 +730,56 @@ public sealed class ReadApi
         if (!string.IsNullOrEmpty(typeFilter))
             source = source.Where(n => string.Equals(n.TypeName, typeFilter, StringComparison.Ordinal));
 
+        if (inTree is { Count: > 0 })
+        {
+            var allowedByClassifiers = CollectByClassifierFilters(inTree);
+            source = source.Where(n => allowedByClassifiers.Contains(n.Id));
+        }
+
         return source.OrderBy(n => n.Id).ToList();
+    }
+
+    /// <summary>
+    /// Множество id узлов, попадающих под пересечение всех classifier-tree-фильтров.
+    /// Логика идентична <see cref="Find"/>, выделена для переиспользования в
+    /// <see cref="BuildSearchCandidates"/>.
+    /// </summary>
+    private HashSet<int> CollectByClassifierFilters(IReadOnlyList<TreeFilter> inTree)
+    {
+        HashSet<int>? intersection = null;
+        foreach (var filter in inTree)
+        {
+            if (string.IsNullOrEmpty(filter.Tree))
+                throw new ReadApiException(
+                    "invalid_parameter",
+                    "Поле in_tree[].name не должно быть пустым.");
+            if (string.Equals(filter.Tree, Node.PathRefName, StringComparison.Ordinal))
+                throw new ReadApiException(
+                    "invalid_parameter",
+                    "Фильтр in_tree.name='path' запрещён: path — структурное дерево хранилища, не классификатор.");
+            ValidateTree(filter.Tree);
+            if (_graph.GetById(filter.Under) is null)
+                throw new ReadApiException(
+                    "node_not_found",
+                    $"Узел under={filter.Under} (in_tree.name='{filter.Tree}') не найден.");
+
+            var allowed = CollectScopeDescendants(filter.Under, filter.Tree);
+            var matched = new HashSet<int>();
+            foreach (var node in _graph.ById.Values)
+            {
+                if (node.Id == Node.RootId) continue;
+                var parentInTree = _graph.GetScopeParent(node.Id, filter.Tree);
+                if (parentInTree is int pid && allowed.Contains(pid))
+                    matched.Add(node.Id);
+            }
+
+            intersection = intersection is null
+                ? matched
+                : new HashSet<int>(intersection.Intersect(matched));
+
+            if (intersection.Count == 0) break;
+        }
+        return intersection ?? new HashSet<int>();
     }
 
     private HashSet<int> CollectScopeDescendants(int rootId, string scope)

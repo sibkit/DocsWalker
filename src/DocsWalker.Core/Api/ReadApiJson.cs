@@ -588,6 +588,22 @@ public static class ReadApiJson
     /// score округляется до 4 знаков для компактности; snippet опускается,
     /// если null (правило #301).
     /// </summary>
+    /// <summary>
+    /// Сериализация <see cref="ReadApi.Find"/>. <paramref name="compact"/>=true →
+    /// whitelist полей {id, type, title} (без text и out_refs), для экономии токенов
+    /// в больших структурных выборках.
+    /// </summary>
+    public static JsonArray FindToJson(IReadOnlyList<Node> nodes, bool compact)
+    {
+        var arr = new JsonArray();
+        var fields = compact ? CompactFields : null;
+        foreach (var n in nodes)
+        {
+            arr.Add((JsonNode?)NodeToJson(n, fields));
+        }
+        return arr;
+    }
+
     public static JsonArray SearchToJson(IReadOnlyList<SearchHit> hits)
     {
         var arr = new JsonArray();

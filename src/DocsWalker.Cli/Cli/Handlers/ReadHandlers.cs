@@ -188,7 +188,8 @@ internal static class ReadHandlers
         int? under,
         bool regex,
         int? limit,
-        bool compact)
+        bool compact,
+        IReadOnlyList<TreeFilter>? inTree = null)
     {
         return WithApi(storagePath, api =>
         {
@@ -202,8 +203,32 @@ internal static class ReadHandlers
                     under,
                     regex,
                     limit ?? 20,
-                    compact);
+                    compact,
+                    inTree);
                 Output.WriteSuccess(ReadApiJson.SearchToJson(hits));
+                return 0;
+            }
+            catch (ReadApiException ex)
+            {
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
+                return 1;
+            }
+        });
+    }
+
+    public static int Find(
+        string storagePath,
+        IReadOnlyList<TreeFilter> inTree,
+        string? typeFilter,
+        int? limit,
+        bool compact)
+    {
+        return WithApi(storagePath, api =>
+        {
+            try
+            {
+                var nodes = api.ReadApi.Find(inTree, typeFilter, limit ?? 50);
+                Output.WriteSuccess(ReadApiJson.FindToJson(nodes, compact));
                 return 0;
             }
             catch (ReadApiException ex)
