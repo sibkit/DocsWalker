@@ -412,4 +412,83 @@ public static class ReadApiJson
         }
         return arr;
     }
+
+    /// <summary>
+    /// Сериализация get-overview. Порядок ключей и имена снейк-кейс — по
+    /// docs/DocsWalker.yml/«(#404) get-overview на старте сессии». Поле
+    /// description в trees[] опускается, когда пустое (правило #301).
+    /// </summary>
+    public static JsonObject OverviewToJson(OverviewResponse o)
+    {
+        var trees = new JsonArray();
+        foreach (var t in o.Trees)
+        {
+            var tObj = new JsonObject { ["name"] = t.Name };
+            if (!string.IsNullOrEmpty(t.Description)) tObj["description"] = t.Description;
+            trees.Add((JsonNode?)tObj);
+        }
+
+        var topTypes = new JsonArray();
+        foreach (var tc in o.TopTypesByCount)
+        {
+            topTypes.Add((JsonNode?)new JsonObject
+            {
+                ["type"] = tc.TypeName,
+                ["count"] = tc.Count,
+            });
+        }
+
+        var rootChildren = new JsonArray();
+        foreach (var rc in o.RootChildren)
+        {
+            rootChildren.Add((JsonNode?)new JsonObject
+            {
+                ["id"] = rc.Id,
+                ["type"] = rc.TypeName,
+                ["title"] = rc.Title,
+                ["subtree_tokens"] = rc.SubtreeTokens,
+            });
+        }
+
+        var largest = new JsonArray();
+        foreach (var l in o.LargestNodes)
+        {
+            largest.Add((JsonNode?)new JsonObject
+            {
+                ["id"] = l.Id,
+                ["title"] = l.Title,
+                ["tokens"] = l.Tokens,
+            });
+        }
+
+        var connected = new JsonArray();
+        foreach (var m in o.MostConnectedNodes)
+        {
+            connected.Add((JsonNode?)new JsonObject
+            {
+                ["id"] = m.Id,
+                ["title"] = m.Title,
+                ["refs_count"] = m.RefsCount,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["total_nodes"] = o.TotalNodes,
+            ["max_depth"] = o.MaxDepth,
+            ["total_tokens"] = o.TotalTokens,
+            ["trees"] = trees,
+            ["schema"] = new JsonObject
+            {
+                ["types_count"] = o.TypesCount,
+                ["top_types_by_count"] = topTypes,
+            },
+            ["root_children"] = rootChildren,
+            ["hot_spots"] = new JsonObject
+            {
+                ["largest_nodes"] = largest,
+                ["most_connected_nodes"] = connected,
+            },
+        };
+    }
 }

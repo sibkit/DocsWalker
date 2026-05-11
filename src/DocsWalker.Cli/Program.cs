@@ -116,6 +116,7 @@ internal static class Dispatcher
                                     parsed.Params.TryGetValue("name", out var n2) ? n2 : null),
             "search"          => ReadHandlers.Search(storagePath, parsed.Params["query"]),
             "check_integrity" => ReadHandlers.CheckIntegrity(storagePath),
+            "get_overview"    => ReadHandlers.GetOverview(storagePath),
             "create_node"     => WriteHandlers.CreateNode(storagePath, parsed.Params, dryRun),
             "update_node"     => WriteHandlers.UpdateNode(storagePath, parsed.Params, dryRun),
             "delete_nodes"    => WriteHandlers.DeleteNodes(storagePath, parsed.Params, dryRun),

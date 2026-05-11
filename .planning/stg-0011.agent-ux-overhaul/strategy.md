@@ -16,7 +16,7 @@
 - [+] (06) docs-examples-json-migration
 - [+] code-mcp-project-split
 - [+] code-api-rename-and-remove
-- [*] code-get-overview
+- [+] code-get-overview
 - [*] code-search-v2-bm25
 - [*] code-compact-and-tokens
 - [*] code-mcp-tools-update

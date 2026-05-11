@@ -187,6 +187,24 @@ internal static class ReadHandlers
         });
     }
 
+    public static int GetOverview(string storagePath)
+    {
+        return WithApi(storagePath, api =>
+        {
+            try
+            {
+                var overview = api.ReadApi.GetOverview();
+                Output.WriteSuccess(ReadApiJson.OverviewToJson(overview));
+                return 0;
+            }
+            catch (ReadApiException ex)
+            {
+                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
+                return 1;
+            }
+        });
+    }
+
     private sealed record LoadedApi(GraphModel Graph, ReadApi ReadApi);
 
     /// <summary>

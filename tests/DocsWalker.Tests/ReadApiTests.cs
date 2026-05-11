@@ -166,4 +166,63 @@ public class ReadApiTests
             "Реальные docs/ должны проходить check-integrity без ошибок:" + Environment.NewLine +
             string.Join(Environment.NewLine, result.Errors.Select(e => $"[{e.Code}] {e.Message}")));
     }
+
+    [Fact]
+    public void GetOverview_OnRealDocs_HasSaneAggregates()
+    {
+        var api = BuildApi();
+        var o = api.GetOverview();
+
+        Assert.True(o.TotalNodes > 0);
+        Assert.True(o.MaxDepth >= 1);
+        Assert.True(o.TotalTokens > 0);
+
+        Assert.Contains(o.Trees, t => t.Name == Node.PathRefName);
+
+        Assert.True(o.TypesCount > 0);
+        Assert.NotEmpty(o.TopTypesByCount);
+        Assert.True(o.TopTypesByCount.Count <= 5);
+        // Сортировка по убыванию count.
+        for (int i = 1; i < o.TopTypesByCount.Count; i++)
+            Assert.True(o.TopTypesByCount[i - 1].Count >= o.TopTypesByCount[i].Count);
+
+        Assert.Contains(o.RootChildren, rc => rc.Title == "DocsWalker" && rc.TypeName == "document");
+        Assert.All(o.RootChildren, rc => Assert.True(rc.SubtreeTokens > 0));
+
+        Assert.True(o.LargestNodes.Count <= 5);
+        Assert.NotEmpty(o.LargestNodes);
+        for (int i = 1; i < o.LargestNodes.Count; i++)
+            Assert.True(o.LargestNodes[i - 1].Tokens >= o.LargestNodes[i].Tokens);
+
+        Assert.True(o.MostConnectedNodes.Count <= 5);
+        for (int i = 1; i < o.MostConnectedNodes.Count; i++)
+            Assert.True(o.MostConnectedNodes[i - 1].RefsCount >= o.MostConnectedNodes[i].RefsCount);
+    }
+
+    [Fact]
+    public void GetOverview_TopTypesByCount_ExcludesRootType()
+    {
+        var api = BuildApi();
+        var o = api.GetOverview();
+        Assert.DoesNotContain(o.TopTypesByCount, t => t.TypeName == Node.RootTypeName);
+    }
+
+    [Fact]
+    public void GetOverview_MostConnected_ExcludesTreeRefs()
+    {
+        // Метрика связанности должна игнорировать path-ref (он есть у каждого узла кроме root),
+        // иначе верх занимают узлы с многочисленными path-детьми. Проверка: число cross-refs
+        // у листа меньше его суммарного in/out если бы считали path-ref.
+        var api = BuildApi();
+        var o = api.GetOverview();
+        // Если бы tree-refs учитывались, root_children (документы) с десятками path-детей
+        // обязательно бы попали в top. Документ DocsWalker — самый «жирный» по path-связям.
+        // Проверяем, что в top связанности либо нет document'а DocsWalker, либо его refs_count
+        // не равен числу его прямых path-детей.
+        var doc = o.MostConnectedNodes.FirstOrDefault(m => m.Title == "DocsWalker");
+        // Допустим, документ может попасть по cross-refs (например, examples к нему),
+        // но refs_count явно меньше числа path-детей корпуса.
+        Assert.True(doc is null || doc.RefsCount < 30,
+            "DocsWalker в most_connected_nodes должен иметь меньше cross-refs, чем path-детей.");
+    }
 }

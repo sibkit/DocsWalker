@@ -132,6 +132,9 @@ internal static class Commands
             Read("check_integrity",
                 desc: "Полный прогон валидатора на текущем docs/ без записи. Возвращает {ok, errors[]}; exit code всегда 0.",
                 examples: new[] { "docswalker check-integrity" }),
+            Read("get_overview",
+                desc: "Глобальный snapshot хранилища: total_nodes, max_depth, total_tokens, trees, schema.types_count/top_types_by_count, root_children, hot_spots (largest_nodes по tokens — кандидаты на разбиение; most_connected_nodes по числу cross-refs, in+out без tree-refs). Зови первым в сессии — оценить размер и центры графа.",
+                examples: new[] { "docswalker get-overview" }),
             Read("get_usage_guide",
                 desc: "Manifest всех команд + ментальная модель + перечень tree-scope'ов + слепок графа. Зови в начале сессии. Опциональный --command=<kebab-name> отдаёт описание одной команды (mental_model/trees/snapshot остаются).",
                 examples: new[]

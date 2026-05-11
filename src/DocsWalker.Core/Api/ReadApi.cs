@@ -625,6 +625,174 @@ public sealed class ReadApi
         text.Contains(query, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Глобальный snapshot хранилища для команды get-overview. Один проход по всем
+    /// узлам собирает агрегаты (tokens, byType, cross-refs), второй проход по
+    /// path-дереву считает subtree_tokens и max_depth. Без параметров; контракт
+    /// — docs/DocsWalker.yml/«(#403) get_overview».
+    /// </summary>
+    public OverviewResponse GetOverview()
+    {
+        var byId = _graph.ById;
+
+        var nodeTokens = new Dictionary<int, int>(byId.Count);
+        var byTypeCount = new Dictionary<string, int>(StringComparer.Ordinal);
+        var crossInCount = new Dictionary<int, int>(byId.Count);
+        var crossOutCount = new Dictionary<int, int>(byId.Count);
+        var totalTokens = 0;
+
+        // Tree-refs (path и пр. tree-scopes) исключаем из метрики связанности:
+        // иначе верх всегда выигрывают document/section с многими path-детьми.
+        var treeRefNames = new HashSet<string>(StringComparer.Ordinal);
+        if (_schema is not null)
+        {
+            foreach (var t in _schema.Trees) treeRefNames.Add(t.Name);
+        }
+        else
+        {
+            foreach (var t in _graph.KnownTrees) treeRefNames.Add(t);
+        }
+
+        foreach (var node in byId.Values)
+        {
+            var tokens = TokenCounter.CountNode(node);
+            nodeTokens[node.Id] = tokens;
+            totalTokens += tokens;
+
+            byTypeCount[node.TypeName] = byTypeCount.TryGetValue(node.TypeName, out var c)
+                ? c + 1 : 1;
+
+            foreach (var (refName, targets) in node.OutRefs)
+            {
+                if (treeRefNames.Contains(refName)) continue;
+
+                crossOutCount[node.Id] = crossOutCount.TryGetValue(node.Id, out var co)
+                    ? co + targets.Count : targets.Count;
+
+                foreach (var tid in targets)
+                {
+                    if (byId.ContainsKey(tid))
+                    {
+                        crossInCount[tid] = crossInCount.TryGetValue(tid, out var ci) ? ci + 1 : 1;
+                    }
+                }
+            }
+        }
+
+        var subtreeTokens = new Dictionary<int, int>(byId.Count + 1);
+        var maxDepth = 0;
+        ComputeSubtreeRecursive(Node.RootId, depth: 0, nodeTokens, subtreeTokens, ref maxDepth);
+
+        var trees = new List<TreeOverview>();
+        if (_schema is not null)
+        {
+            foreach (var t in _schema.Trees)
+            {
+                var desc = string.IsNullOrEmpty(t.Description) ? null : t.Description;
+                trees.Add(new TreeOverview(t.Name, desc));
+            }
+        }
+        else
+        {
+            var names = new List<string>(_graph.KnownTrees);
+            names.Sort(StringComparer.Ordinal);
+            foreach (var name in names) trees.Add(new TreeOverview(name, null));
+        }
+
+        var topTypePairs = new List<KeyValuePair<string, int>>(byTypeCount.Count);
+        foreach (var kv in byTypeCount)
+        {
+            if (string.Equals(kv.Key, Node.RootTypeName, StringComparison.Ordinal)) continue;
+            topTypePairs.Add(kv);
+        }
+        topTypePairs.Sort(static (a, b) =>
+        {
+            var byCount = b.Value.CompareTo(a.Value);
+            return byCount != 0 ? byCount : StringComparer.Ordinal.Compare(a.Key, b.Key);
+        });
+        var topTypes = new List<TypeCount>(Math.Min(5, topTypePairs.Count));
+        for (int i = 0; i < topTypePairs.Count && i < 5; i++)
+            topTypes.Add(new TypeCount(topTypePairs[i].Key, topTypePairs[i].Value));
+
+        var rootChildIds = _graph.GetScopeChildren(Node.RootId, Node.PathRefName);
+        var rootChildren = new List<RootChildOverview>(rootChildIds.Count);
+        foreach (var cid in rootChildIds)
+        {
+            var n = _graph.GetById(cid);
+            if (n is null) continue;
+            rootChildren.Add(new RootChildOverview(
+                n.Id, n.TypeName, n.Title, subtreeTokens.GetValueOrDefault(cid)));
+        }
+
+        var largestPairs = new List<KeyValuePair<int, int>>(nodeTokens);
+        largestPairs.Sort(static (a, b) =>
+        {
+            var byTokens = b.Value.CompareTo(a.Value);
+            return byTokens != 0 ? byTokens : a.Key.CompareTo(b.Key);
+        });
+        var largest = new List<HotSpotByTokens>(Math.Min(5, largestPairs.Count));
+        for (int i = 0; i < largestPairs.Count && i < 5; i++)
+        {
+            var id = largestPairs[i].Key;
+            var n = _graph.GetById(id);
+            if (n is null) continue;
+            largest.Add(new HotSpotByTokens(id, n.Title, largestPairs[i].Value));
+        }
+
+        var refsPairs = new List<KeyValuePair<int, int>>();
+        foreach (var id in byId.Keys)
+        {
+            var refs = (crossInCount.TryGetValue(id, out var ci) ? ci : 0)
+                     + (crossOutCount.TryGetValue(id, out var co) ? co : 0);
+            if (refs > 0) refsPairs.Add(new KeyValuePair<int, int>(id, refs));
+        }
+        refsPairs.Sort(static (a, b) =>
+        {
+            var byRefs = b.Value.CompareTo(a.Value);
+            return byRefs != 0 ? byRefs : a.Key.CompareTo(b.Key);
+        });
+        var mostConnected = new List<HotSpotByRefs>(Math.Min(5, refsPairs.Count));
+        for (int i = 0; i < refsPairs.Count && i < 5; i++)
+        {
+            var id = refsPairs[i].Key;
+            var n = _graph.GetById(id);
+            if (n is null) continue;
+            mostConnected.Add(new HotSpotByRefs(id, n.Title, refsPairs[i].Value));
+        }
+
+        return new OverviewResponse(
+            TotalNodes: _graph.NodeCount,
+            MaxDepth: maxDepth,
+            TotalTokens: totalTokens,
+            Trees: trees,
+            TypesCount: _schema?.Types.Count ?? 0,
+            TopTypesByCount: topTypes,
+            RootChildren: rootChildren,
+            LargestNodes: largest,
+            MostConnectedNodes: mostConnected);
+    }
+
+    private int ComputeSubtreeRecursive(
+        int id,
+        int depth,
+        IReadOnlyDictionary<int, int> nodeTokens,
+        Dictionary<int, int> subtreeTokens,
+        ref int maxDepth)
+    {
+        int sum = id == Node.RootId
+            ? 0
+            : (nodeTokens.TryGetValue(id, out var t) ? t : 0);
+
+        if (id != Node.RootId && depth > maxDepth) maxDepth = depth;
+
+        foreach (var childId in _graph.GetScopeChildren(id, Node.PathRefName))
+        {
+            sum += ComputeSubtreeRecursive(childId, depth + 1, nodeTokens, subtreeTokens, ref maxDepth);
+        }
+        subtreeTokens[id] = sum;
+        return sum;
+    }
+
+    /// <summary>
     /// Полный прогон <see cref="Validator"/> на текущем графе без записи. Возвращает
     /// <see cref="ValidationResult"/> — успешное завершение операции (CLI exit=0)
     /// независимо от наличия ошибок графа; ошибки графа — данные ответа.
