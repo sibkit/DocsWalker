@@ -6,10 +6,11 @@ namespace DocsWalker.Tests;
 
 /// <summary>
 /// Контракт inputSchema для tool <c>create-node</c> (см. docs/DocsWalker.yml/«(#377)»):
-/// генерация из проектной Схемы должна давать единый JSON-Schema object с
-/// дискриминатором по полю <c>type</c>; <c>properties</c> описывает все
-/// известные поля, <c>oneOf</c> фиксирует required-набор для каждой ветки.
-/// Тесты проверяют форму на реальной Схеме docs/Схема.yml.
+/// единый JSON-Schema object без top-level <c>oneOf</c>/<c>allOf</c>/<c>anyOf</c>
+/// (запрещены Anthropic API). <c>properties</c> описывает все известные поля,
+/// <c>required</c> на верхнем уровне — <c>[type, title]</c>; per-type required
+/// транслируется в <c>description</c> корневой схемы и поля <c>type</c>.
+/// Источник истины для required по типу — серверный валидатор create-node.
 /// </summary>
 public class CreateNodeSchemaTests
 {
@@ -72,51 +73,58 @@ public class CreateNodeSchemaTests
     }
 
     [Fact]
-    public void OneOf_RuleBranch_RequiresTypeTitleTextPathExamples()
+    public void TopLevel_DoesNotContain_OneOfAllOfAnyOf()
     {
-        // type=rule: text_required=true + required out_ref examples (cardinality=many).
+        // Anthropic API на этапе валидации tool-list отвергает inputSchema с
+        // oneOf/allOf/anyOf на верхнем уровне. Регрессия — сессии падают
+        // с ошибкой "input_schema does not support oneOf, allOf, or anyOf
+        // at the top level". См. (#377).
         var schema = BuildSchema();
-        var oneOf = Assert.IsType<JsonArray>(schema["oneOf"]);
-        var ruleBranch = oneOf.OfType<JsonObject>()
-            .First(b => (string?)b["properties"]!["type"]!["const"] == "rule");
-
-        var required = Assert.IsType<JsonArray>(ruleBranch["required"]);
-        var requiredSet = required.Select(n => (string?)n).ToHashSet();
-
-        Assert.Contains("type", requiredSet);
-        Assert.Contains("title", requiredSet);
-        Assert.Contains("text", requiredSet);
-        Assert.Contains("path", requiredSet);
-        Assert.Contains("examples", requiredSet);
+        Assert.False(schema.ContainsKey("oneOf"));
+        Assert.False(schema.ContainsKey("allOf"));
+        Assert.False(schema.ContainsKey("anyOf"));
     }
 
     [Fact]
-    public void OneOf_SectionBranch_RequiresTypeTitlePath_ButNotText()
+    public void TopLevel_Required_IsExactlyTypeAndTitle()
     {
-        // type=section: text_required=false; нет required out_refs кроме path.
+        // Per-type required (text при text_required=true, обязательные out_refs)
+        // вынесен в description: на верхнем уровне фиксируем только два поля,
+        // которые обязательны для всех creatable-типов.
         var schema = BuildSchema();
-        var oneOf = Assert.IsType<JsonArray>(schema["oneOf"]);
-        var sectionBranch = oneOf.OfType<JsonObject>()
-            .First(b => (string?)b["properties"]!["type"]!["const"] == "section");
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+        var requiredSet = required.Select(n => (string?)n).Where(s => s is not null).Select(s => s!).ToHashSet();
 
-        var required = Assert.IsType<JsonArray>(sectionBranch["required"]);
-        var requiredSet = required.Select(n => (string?)n).ToHashSet();
-
-        Assert.Contains("type", requiredSet);
-        Assert.Contains("title", requiredSet);
-        Assert.Contains("path", requiredSet);
-        Assert.DoesNotContain("text", requiredSet);
+        Assert.Equal(new HashSet<string> { "type", "title" }, requiredSet);
     }
 
     [Fact]
-    public void OneOf_HasBranchPerCreatableType()
+    public void TopLevelDescription_ContainsPerTypeRequiredTable()
     {
-        var schemaDoc = SchemaLoader.LoadSchema(TestPaths.SchemaPath);
-        var schema = CommandsToTools.BuildCreateNodeInputSchema(schemaDoc);
-        var oneOf = Assert.IsType<JsonArray>(schema["oneOf"]);
+        // Required по типу транслируется в текстовую таблицу в description,
+        // чтобы модель видела required-наборы при выборе типа.
+        var schema = BuildSchema();
+        var description = (string?)schema["description"];
+        Assert.NotNull(description);
 
-        var creatableCount = schemaDoc.Types.Count(t => t.Name != "root");
-        Assert.Equal(creatableCount, oneOf.Count);
+        // rule: text_required=true + required out_ref examples (cardinality=many).
+        Assert.Contains("rule: [type, title, text, path, examples]", description!);
+        // section: text_required=false, нет required out_refs кроме path.
+        Assert.Contains("section: [type, title, path]", description!);
+    }
+
+    [Fact]
+    public void TypeProperty_Description_ContainsPerTypeRequiredTable()
+    {
+        // Та же таблица дублируется в description поля type — это самое
+        // вероятное место, куда модель смотрит при выборе значения type.
+        var schema = BuildSchema();
+        var typeProp = Assert.IsType<JsonObject>(schema["properties"]!["type"]);
+        var description = (string?)typeProp["description"];
+        Assert.NotNull(description);
+
+        Assert.Contains("rule: [type, title, text, path, examples]", description!);
+        Assert.Contains("section: [type, title, path]", description!);
     }
 
     [Fact]

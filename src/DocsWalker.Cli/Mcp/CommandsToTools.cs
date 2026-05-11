@@ -13,10 +13,10 @@ namespace DocsWalker.Cli.Mcp;
 /// <para>
 /// Для tool'ов с динамическими параметрами (см. <see cref="CommandSpec.DynamicParams"/>) —
 /// сейчас это только <c>create-node</c> — при наличии загруженной проектной Схемы
-/// собирается полная inputSchema с oneOf-дискриминатором по полю <c>type</c>
-/// (см. <see cref="BuildCreateNodeInputSchema"/> и docs/DocsWalker.yml/«(#377)»).
-/// Если Схема не передана (null) — descriptor отдаётся с базовой схемой,
-/// сгенерированной из статических <see cref="CommandSpec.Params"/>.
+/// собирается inputSchema с перечислением всех известных полей и таблицей
+/// required-наборов по типам в description (см. <see cref="BuildCreateNodeInputSchema"/>
+/// и docs/DocsWalker.yml/«(#377)»). Если Схема не передана (null) — descriptor
+/// отдаётся с базовой схемой, сгенерированной из статических <see cref="CommandSpec.Params"/>.
 /// </para>
 /// </summary>
 internal static class CommandsToTools
@@ -91,11 +91,17 @@ internal static class CommandsToTools
     /// <summary>
     /// Строит inputSchema для <c>create-node</c> по проектной Схеме.
     /// Контракт — docs/DocsWalker.yml/«(#377) inputSchema динамических tool»:
-    /// единый JSON-Schema object с дискриминатором по полю <c>type</c>; properties
-    /// перечисляет все известные поля (type-enum, title, text, все имена связей
-    /// всех типов как optional с корректным JSON-типом по cardinality), плюс
-    /// универсальный dry-run; oneOf-ветка на каждый создаваемый тип
-    /// фиксирует свой required-набор. Тип <c>root</c> в enum не включается —
+    /// единый JSON-Schema object, в котором <c>properties</c> перечисляет все
+    /// известные поля (type-enum, title, text, все имена связей всех типов как
+    /// optional с корректным JSON-типом по cardinality), плюс универсальный
+    /// dry-run. <c>required</c> на верхнем уровне — статически <c>[type, title]</c>;
+    /// per-type required (text при text_required=true, path-ref, прочие required
+    /// out_refs) транслируются в текстовую таблицу внутри <c>description</c>
+    /// корневой схемы и поля <c>type</c> — это обходной путь, т.к. Anthropic
+    /// API запрещает <c>oneOf</c>/<c>allOf</c>/<c>anyOf</c> на верхнем уровне
+    /// inputSchema, а <c>if/then/else</c> и <c>dependentRequired</c> не
+    /// поддерживает. Источник истины для required по типу — серверный
+    /// валидатор create-node в ядре. Тип <c>root</c> в enum не включается —
     /// он синтезируется ядром, через create-node не создаётся (#376).
     /// </summary>
     internal static JsonObject BuildCreateNodeInputSchema(SchemaDocument schema)
@@ -120,8 +126,29 @@ internal static class CommandsToTools
             }
         }
 
+        // Per-type required-наборы — строятся один раз и используются и в
+        // description корневой схемы (таблица), и в description поля type.
+        var requiredByType = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        foreach (var t in creatableTypes)
+        {
+            var requiredForType = new List<string> { "type", "title" };
+            if (t.TextRequired) requiredForType.Add("text");
+            foreach (var rd in t.OutRefs)
+            {
+                if (rd.Required && !requiredForType.Contains(rd.Name))
+                {
+                    requiredForType.Add(rd.Name);
+                }
+            }
+            requiredByType[t.Name] = requiredForType;
+        }
+
+        var requiredTable = string.Join(
+            "\n",
+            creatableTypes.Select(t => $"  - {t.Name}: [{string.Join(", ", requiredByType[t.Name])}]"));
+
         // Базовые properties: type-enum, title, text, далее все ref-имена,
-        // плюс универсальные root/dry-run.
+        // плюс универсальный dry-run.
         var typeEnum = new JsonArray();
         foreach (var t in creatableTypes) typeEnum.Add((JsonNode?)t.Name);
 
@@ -131,7 +158,7 @@ internal static class CommandsToTools
             {
                 ["type"] = "string",
                 ["enum"] = typeEnum,
-                ["description"] = "Имя типа узла из проектной Схемы. Определяет ветку oneOf и required-связи.",
+                ["description"] = "Имя типа узла из проектной Схемы. Required-набор полей по типу:\n" + requiredTable,
             },
             ["title"] = new JsonObject
             {
@@ -141,7 +168,7 @@ internal static class CommandsToTools
             ["text"] = new JsonObject
             {
                 ["type"] = "string",
-                ["description"] = "Текст узла. Обязателен для типов с text_required=true (см. Схему).",
+                ["description"] = "Текст узла. Обязателен для типов с text_required=true (см. таблицу required по типу в описании поля type).",
             },
         };
 
@@ -174,43 +201,21 @@ internal static class CommandsToTools
             ["description"] = "true → не записывать на FS, вернуть applied=false. По умолчанию false.",
         };
 
-        // oneOf — по ветке на каждый создаваемый тип, с фиксацией type=const
-        // и required-набора для этой ветки.
-        var oneOf = new JsonArray();
-        foreach (var t in creatableTypes)
-        {
-            var requiredForType = new List<string> { "type", "title" };
-            if (t.TextRequired) requiredForType.Add("text");
-            foreach (var rd in t.OutRefs)
-            {
-                if (rd.Required && !requiredForType.Contains(rd.Name))
-                {
-                    requiredForType.Add(rd.Name);
-                }
-            }
+        // Top-level required — статически [type, title]. Per-type required
+        // фиксируется текстом в description и серверной валидацией.
+        var rootRequired = new JsonArray { (JsonNode?)"type", (JsonNode?)"title" };
 
-            var requiredArr = new JsonArray();
-            foreach (var r in requiredForType) requiredArr.Add((JsonNode?)r);
-
-            var branch = new JsonObject
-            {
-                ["title"] = $"create-node:{t.Name}",
-                ["properties"] = new JsonObject
-                {
-                    ["type"] = new JsonObject { ["const"] = t.Name },
-                },
-                ["required"] = requiredArr,
-            };
-            // Cast to JsonNode? — generic Add<T> тянет IL2026/IL3050 при AOT.
-            oneOf.Add((JsonNode?)branch);
-        }
+        var description =
+            "Создать узел. Required-набор полей зависит от type — серверный валидатор отвергнет создание при недостаче. " +
+            "Required по типу:\n" + requiredTable +
+            "\nСм. (#377) docs/DocsWalker.yml.";
 
         return new JsonObject
         {
             ["type"] = "object",
-            ["description"] = "Создать узел: type выбирает ветку oneOf, в которой перечислены required-поля для этого типа (path-ref, text при text_required=true, прочие required out_refs). См. (#377) docs/DocsWalker.yml.",
+            ["description"] = description,
             ["properties"] = properties,
-            ["oneOf"] = oneOf,
+            ["required"] = rootRequired,
         };
     }
 }
