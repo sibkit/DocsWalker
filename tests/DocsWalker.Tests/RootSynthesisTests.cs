@@ -86,8 +86,9 @@ public class RootSynthesisTests
         Assert.Equal(0, subtree.Node.Id);
         Assert.Equal("root", subtree.Node.TypeName);
         Assert.NotEmpty(subtree.Children);
-        // На реальном docs/ — 3 top-level документа (DocsWalker, Стек, Правила оформления).
-        Assert.Equal(3, subtree.Children.Count);
+        var topLevelIds = api.GetInRefs(0, "path")["path"].Order().ToArray();
+        var childIds = subtree.Children.Select(c => c.Node.Id).Order().ToArray();
+        Assert.Equal(topLevelIds, childIds);
     }
 
     [Fact]

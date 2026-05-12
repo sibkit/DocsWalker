@@ -1,0 +1,388 @@
+id: 438
+text: 'Спецификация LLM-facing JSON API DocsWalker v1: методы hit, query и tx, формат запросов, ответы, правила выбора узлов и ограничения записи.'
+sections:
+  - "(#439) Назначение":
+    - statements:
+      - "(#446) Назначение API":
+        - text: DocsWalker-LLM JSON API v1 описывает единый формат JSON-запросов, через который LLM читает, проверяет и изменяет граф DocsWalker без ручной сборки низкоуровневых id/ref операций.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#447) Три метода":
+        - text: 'Внешняя поверхность v1 состоит из трех методов: hit для компактной проверки и оценки, query для чтения данных, tx для атомарного внесения изменений. Все методы принимают верхнеуровневый массив ops[].'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+  - "(#440) Модель v1":
+    - statements:
+      - "(#448) Без address":
+        - text: В LLM-facing API v1 нет термина address и нет выбора address tree. Уникальный человекочитаемый путь узла задается полем path; path является единственным адресным пространством v1.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#451) type как coordinate":
+        - text: Структурный тип узла в LLM API задается координатой coordinates.type, а не отдельным top-level полем type. Схема DocsWalker определяет, какой структурный контракт соответствует выбранному coordinates.type.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#452) Нет storage":
+        - text: Storage tree и физическая материализация docs/ являются внутренней реализацией DocsWalker. LLM API v1 оперирует только path, coordinates и relations.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+    - definitions:
+      - "(#449) path":
+        - text: path — уникальный человекочитаемый путь узла в DocsWalker v1. В create он задает место создания нового узла; в selectors и write-targets может быть точным путем или pattern с wildcard * и **.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#450) coordinates":
+        - text: coordinates — набор классификационных осей узла. В v1 значения coordinates задаются только строками. coordinates не являются уникальной идентичностью узла; много узлов могут иметь одинаковые coordinates.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#453) relations":
+        - text: relations — именованные смысловые связи между узлами. Имена relations, допустимые source/target контракты, cardinality и required-правила задаются Схемой DocsWalker.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+  - "(#441) Методы API":
+    - statements:
+      - "(#454) Метод hit":
+        - text: hit выполняет безопасную проверку selector-ов или будущих write-ops без записи. Он возвращает count, token-сводку, compact samples, validation и would_change summary, но не возвращает полный текст узлов.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#455) Метод query":
+        - text: query является методом чтения полного контекста и точных текстовых совпадений. Он принимает select-операции для получения узлов с управлением include и max_tokens, а также grep-операции для детерминированного поиска строк по title/text без возврата полного текста узлов.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#456) Метод tx":
+        - text: tx вносит изменения в граф как атомарная транзакция. Перед записью kernel каждый раз самостоятельно резолвит запрос, нормализует цели в ids, проверяет constraints Схемы, запускает валидатор и применяет изменения целиком или не применяет ничего.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#490) Allowed ops":
+        - text: Допустимые ops зависят от method. hit принимает select и write-ops для проверки без записи. query принимает select и grep. tx принимает select для объявления alias и write-ops create, update, delete, move, link, unlink. Операции с суффиксом _many в v1 не вводятся.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#491) Query compact":
+        - text: 'Если query.select не задает include, ответ возвращает compact-поля: id, path, coordinates.type, title и tokens. Полный text, relations, coordinates, ancestors, children и type_contract возвращаются только при явном include и с учетом max_tokens.'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#492) Hit result":
+        - text: hit не возвращает полный text. Для select он возвращает count, tokens, subtree_tokens, breakdown по coordinates.type, compact samples и within_budget. Для write-ops он дополнительно возвращает validation и would_change summary.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#498) Graph grep":
+        - text: query.grep выполняет детерминированный lexical scan по title и text узлов графа. Он нужен для точного поиска контрактных строк, error codes, имен операций и полей API; в отличие от BM25 search, grep не ранжирует по релевантности и не читает физические YAML-файлы.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+    - definitions:
+      - "(#457) request envelope":
+        - text: Каждый wire JSON-запрос v1 имеет форму {"method":"hit|query|tx","defaults":{...},"ops":[...]}. Поле method обязательно. Поле ops обязательно и всегда является массивом, даже если операция одна. Поле defaults опционально. При вызове одноименных MCP tools hit, query и tx method выводится из имени tool; если поле method передано явно, оно должно совпадать с именем tool.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#458) defaults":
+        - text: 'defaults задает значения, применяемые ко всем ops[]: path_parent и coordinates. defaults не скрывает результат резолва: ответы hit, query и tx обязаны показывать resolved path и resolved coordinates там, где они влияли на операцию.'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#499) grep operation":
+        - text: grep operation — read-only операция method=query с op=grep. Обязательное поле pattern задает строку или regex. Поле scope опционально и содержит selector object с path и coordinates. Поле in выбирает title, text или both. Ответ возвращает matches со snippet-ами, а не полный text узлов.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+    - examples:
+      - "(#459) create через defaults":
+        - text: '{"method":"tx","defaults":{"path_parent":"DocsWalker-LLM JSON API/Операции записи","coordinates":{"type":"rule","subject":"api/write","subsystem":"kernel","audience":"llm-agent","csharp_structure":"none"}},"ops":[{"op":"create","path":"create","set":{"text":"..."}}]} -> resolved path: DocsWalker-LLM JSON API/Операции записи/create.'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#493) query select include":
+        - text: '{"method":"query","ops":[{"op":"select","select":{"path":"DocsWalker-LLM JSON API/**","coordinates":{"type":"rule"}},"include":["text","relations","coordinates","ancestors","children","type_contract"],"max_tokens":12000}]}'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#494) hit update count":
+        - text: '{"method":"hit","ops":[{"op":"update","path":"DocsWalker-LLM JSON API/**","expected_count":3,"set":{"coordinates":{"audience":"llm-agent"}}}]} -> returns count, compact samples, validation and would_change without applying changes.'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#500) query grep":
+        - text: '{"method":"query","ops":[{"op":"grep","pattern":"validation_failed","scope":{"path":"DocsWalker-LLM JSON API/**"},"in":"both","regex":false,"case_sensitive":false,"limit":20,"context_chars":80,"max_tokens":2000}]}'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+  - "(#442) Выбор узлов":
+    - statements:
+      - "(#461) Wildcard path":
+        - text: В select.path и write path разрешены wildcard * и **. Паттерн foo/* выбирает один сегмент ниже foo; foo/** выбирает любую глубину; foo/**/bar выбирает bar на любой глубине внутри foo.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#462) Цель update/delete":
+        - text: Операции update и delete выбирают цели через ровно одно из полей id, ids, path, target или select. Если expected_count не задан, выбор должен дать ровно один узел. Если expected_count задан, выбор должен дать ровно expected_count узлов.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#463) expected_count":
+        - text: expected_count является обязательным для update/delete, когда операция должна затронуть больше одного узла. Если фактическое число целей отличается от expected_count, возвращается count_mismatch и tx ничего не применяет.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#464) ids":
+        - text: Поле ids разрешено в update/delete как явное перечисление нескольких целей. Для ids expected_count обязателен; kernel проверяет, что ids.length равен expected_count, все ids существуют, не повторяются и соответствуют constraints операции.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#466) Alias order":
+        - text: Порядок ops[] значим. Alias, объявленный через as, доступен только последующим операциям. В v1 as разрешен у select и create; ссылки на alias, объявленный позже, являются ошибкой unknown_alias.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+    - definitions:
+      - "(#460) select":
+        - text: 'select — объект выбора узлов. В v1 select может содержать path с exact path или wildcard pattern, coordinates как строковые фильтры и expect для явной cardinality-проверки. Отдельного select.type нет: тип фильтруется через select.coordinates.type.'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#465) target":
+        - text: target — универсальная ссылка на выбранный ранее alias или selector object. Для одиночных операций target должен резолвиться в один узел. Для массовых операций target может ссылаться на alias-набор, но размер набора обязан совпасть с expected_count.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+  - "(#443) Операции записи":
+    - statements:
+      - "(#467) create":
+        - text: create создает новый узел по exact path. Поле path обязательно напрямую или собирается из defaults.path_parent и последнего сегмента операции. Содержимое нового узла задается только в set. coordinates.type обязателен в set.coordinates или defaults.coordinates.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#468) title из path":
+        - text: Отдельного поля title в LLM API v1 нет. Title узла выводится kernel-ом из последнего сегмента path. Переименование узла выполняется через move с новым path, а не через update.set.title.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#469) create set":
+        - text: В create поле set содержит text, coordinates и relations. relations в create задают начальный набор связей и могут использовать короткую форму массива, потому что у нового узла нет прежнего списка связей, который можно случайно заменить.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#470) update":
+        - text: update меняет один узел или набор узлов. Изменения задаются только в set. update может менять text, coordinates и relations, но не меняет id и не меняет path/title; для изменения path используется move. Массовость update задается expected_count, отдельной операции update_many в v1 нет.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#471) relation patches":
+        - text: В update.set.relations запрещена неявная замена many-связей. Для каждой relation используется явный режим add, remove или replace. Kernel проверяет, что relation объявлена Схемой и target-узлы соответствуют контракту relation.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#472) update count":
+        - text: Если update должен затронуть несколько узлов, запрос использует тот же op=update и обязательный expected_count. Цели могут быть заданы через ids, path, target или select. Kernel нормализует выборку в конкретный список ids и применяет изменения атомарно.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#473) delete":
+        - text: delete удаляет один узел или набор узлов. Если expected_count не задан, цель должна быть ровно одна. Если expected_count задан, delete удаляет ровно expected_count узлов. Если удаление оставит path children или dangling incoming relations, tx возвращает ошибку и ничего не применяет.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#474) delete count":
+        - text: Отдельной операции delete_many в v1 нет. Массовое удаление выражается тем же op=delete с expected_count. Preview удаляемых узлов, path children и incoming relations доступен через hit; tx обязан повторно проверить все constraints перед записью.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#475) move":
+        - text: move переносит или переименовывает один узел. Source задается через id, path или target и должен резолвиться в один узел. Поле to обязательно, является exact path без wildcard и не меняет id узла.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#476) link unlink":
+        - text: link создает одну relation между from и to, unlink удаляет одну relation. from и to задаются через id, path, target, select или alias и должны резолвиться в одиночные узлы. Операции link_many и unlink_many в v1 не вводятся; несколько связей выражаются несколькими link/unlink внутри одного tx.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#477) No autocreate":
+        - text: tx не создает отсутствующие path-родители и не создает отсутствующие coordinate branches автоматически. Несуществующий path parent дает path_parent_not_found, несуществующая coordinate ветка дает unknown_coordinate без candidates.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#478) Relative path":
+        - text: Если defaults.path_parent задан, path внутри op обязан быть относительным путем внутри этого parent. Полный path вместе с defaults.path_parent является ошибкой ambiguous_path_scope. Если defaults.path_parent не задан, op.path обязан быть полным path.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+  - "(#444) Ответы":
+    - statements:
+      - "(#479) Единый envelope":
+        - text: 'Все методы hit, query и tx возвращают единый верхний envelope. Успех: {"ok":true,"method":"...","base_revision":N,"summary":"...","results":[...]}. Ошибка: {"ok":false,"method":"...","code":"...","message":"...","details":{...}}.'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#480) Tx atomic":
+        - text: tx является атомарным. Если любая операция из ops[] не проходит resolve, schema constraints или финальную validation-проверку графа, весь запрос возвращает ok=false и не применяет ни одной операции.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+    - definitions:
+      - "(#481) not_found":
+        - text: not_found означает, что selector, id, path или target не нашел ни одного узла там, где требовалась одиночная цель или непустой набор.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#482) ambiguous_selector":
+        - text: ambiguous_selector означает, что одиночная операция получила больше одного узла из path pattern, selector или target alias.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#483) count_mismatch":
+        - text: count_mismatch означает, что массовая операция нашла число целей, отличающееся от expected_count, либо ids.length не равен expected_count.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#484) already_exists":
+        - text: already_exists означает, что create пытается создать узел по path, который уже занят существующим узлом.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#485) unknown_coordinate":
+        - text: unknown_coordinate означает, что указанная ветка coordinates не существует. В v1 ошибка не содержит candidates и не создает ветку автоматически.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#486) path_parent_not_found":
+        - text: path_parent_not_found означает, что parent для create или move.to не существует. tx не создает отсутствующие path-родители автоматически.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#487) ambiguous_path_scope":
+        - text: ambiguous_path_scope означает, что запрос смешал defaults.path_parent с полным op.path. При defaults.path_parent все op.path должны быть относительными.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#495) invalid_json":
+        - text: invalid_json означает, что запрос LLM JSON API не является корректным JSON и не может быть разобран до request envelope.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#496) validation_failed":
+        - text: validation_failed означает, что tx дошел до финальной validation-проверки графа или write-layer validation и был отклонен; запрос возвращает ok=false и не применяет изменения.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#497) unknown_alias":
+        - text: unknown_alias означает, что target или ссылка на alias указывает на имя, которое не было объявлено предыдущей операцией ops[] в текущем запросе.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#501) invalid_grep_pattern":
+        - text: invalid_grep_pattern означает, что query.grep получил пустой pattern или некорректное regex-выражение. Запрос возвращает ok=false и не выполняет операцию чтения.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#502) grep_timeout":
+        - text: grep_timeout означает, что regex-поиск query.grep превысил bounded timeout. Запрос возвращает ok=false, чтобы LLM сузила scope, упростила pattern или отключила regex.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#503) invalid_grep_in":
+        - text: invalid_grep_in означает, что query.grep получил поле in со значением вне допустимого набора title, text или both. Запрос возвращает ok=false и не выполняет операцию чтения.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#504) invalid_limit":
+        - text: invalid_limit означает, что query.grep получил limit вне допустимого bounded-диапазона. Запрос возвращает ok=false; LLM должна уменьшить limit или использовать значение по умолчанию.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#505) invalid_context_chars":
+        - text: invalid_context_chars означает, что query.grep получил context_chars вне допустимого bounded-диапазона. Запрос возвращает ok=false; LLM должна уменьшить окно snippet-а или использовать значение по умолчанию.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#506) invalid_max_tokens":
+        - text: invalid_max_tokens означает, что query.select или query.grep получил max_tokens меньше или равный нулю. Запрос возвращает ok=false; LLM должна передать положительный token budget или убрать поле.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+  - "(#445) Workflow LLM":
+    - statements:
+      - "(#488) Рекомендуемый цикл":
+        - text: 'Рекомендуемый LLM workflow: сначала query select или query grep для чтения нужного контекста, затем hit для проверки selector-ов или будущих write-ops, затем tx для записи. hit не обязателен для tx, но полезен перед wildcard, update/delete с expected_count и потенциально крупными изменениями.'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#489) Массовые изменения":
+        - text: Перед массовым tx LLM должна явно понимать размер изменения и указывать expected_count. Если модель сомневается в размере выборки или token budget, она должна вызвать hit.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]

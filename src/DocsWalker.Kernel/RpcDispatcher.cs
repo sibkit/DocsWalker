@@ -2,8 +2,11 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DocsWalker.Core.Api;
+using DocsWalker.Core.Graph;
 using DocsWalker.Core.Mcp;
 using DocsWalker.Core.Schema;
+using DocsWalker.Core.Store;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 
@@ -26,6 +29,12 @@ internal sealed class RpcDispatcher
     private const string ServerName = "DocsWalker";
     private const string ServerVersion = "0.1";
     private const string McpProtocolVersion = "2024-11-05";
+    private static readonly HashSet<string> LlmJsonApiToolNames = new(StringComparer.Ordinal)
+    {
+        "hit",
+        "query",
+        "tx",
+    };
 
     private static readonly McpJsonContext RelaxedCtx = new(
         new JsonSerializerOptions(McpJsonContext.Default.Options)
@@ -134,10 +143,10 @@ internal sealed class RpcDispatcher
         {
             "initialize" => HandleInitialize(request),
             "notifications/initialized" => EmptyOk(request.Id),
-            "notifications/cancelled"   => EmptyOk(request.Id),
+            "notifications/cancelled" => EmptyOk(request.Id),
             "tools/list" => HandleListTools(request, graphName),
             "tools/call" => await HandleCallToolAsync(request, graphName, ct),
-            "shutdown"   => HandleShutdown(request),
+            "shutdown" => HandleShutdown(request),
             _ => MakeError(request.Id, JsonRpcErrorCodes.MethodNotFound,
                 $"method not found: {request.Method}"),
         };
@@ -210,6 +219,16 @@ internal sealed class RpcDispatcher
                 $"unknown_graph: '{graphName}' (kernel-config содержит только статически зарегистрированные графы)");
         }
 
+        if (IsLlmJsonApiTool(callParams.Name))
+        {
+            return await HandleLlmJsonApiToolAsync(
+                request.Id,
+                entry,
+                callParams.Name,
+                callParams.Arguments,
+                ct);
+        }
+
         // Schema для динамических tool'ов (create-node) грузим лениво на каждый
         // вызов (handlers — sole-writer контракт, переключаются на reload).
         var schema = TryLoadSchema(entry.StoragePath);
@@ -249,6 +268,170 @@ internal sealed class RpcDispatcher
             IsError: exitCode != 0 ? true : (bool?)null);
 
         return MakeOk(request.Id, JsonSerializer.SerializeToElement(result, RelaxedCtx.CallToolResult));
+    }
+
+    private async Task<JsonRpcResponse> HandleLlmJsonApiToolAsync(
+        JsonElement? requestId,
+        GraphEntry entry,
+        string toolName,
+        JsonElement? arguments,
+        CancellationToken ct)
+    {
+        if (arguments.HasValue &&
+            arguments.Value.ValueKind is not JsonValueKind.Object and not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            return MakeError(requestId, JsonRpcErrorCodes.InvalidParams,
+                "arguments must be an object");
+        }
+
+        JsonObject envelope;
+        await entry.Semaphore.WaitAsync(ct);
+        try
+        {
+            _registry.Touch(entry);
+            try
+            {
+                var request = BuildLlmJsonApiRequest(toolName, arguments);
+                var ctx = WriteContext.FromStoragePath(entry.StoragePath);
+                var schema = SchemaLoader.LoadSchema(ctx.SchemaPath);
+                var loaded = DocumentLoader.Load(ctx.DocsRoot, schema);
+                var baseRevision = new SequenceCounter(ctx.SequencePath).Read();
+                var writeApi = new WriteApi(ctx);
+                var executor = new LlmJsonApiExecutor(
+                    loaded.Graph,
+                    schema,
+                    writeApi,
+                    () => baseRevision);
+
+                envelope = executor.Execute(request);
+            }
+            catch (ArgumentException ex)
+            {
+                return MakeError(requestId, JsonRpcErrorCodes.InvalidParams, ex.Message);
+            }
+            catch (SchemaLoadException ex)
+            {
+                envelope = BuildLlmJsonApiInfrastructureError(
+                    toolName,
+                    ex.Code,
+                    ex.Message,
+                    BuildFileDetails(ex.FilePath));
+            }
+            catch (GraphLoadException ex)
+            {
+                envelope = BuildLlmJsonApiInfrastructureError(
+                    toolName,
+                    ex.Code,
+                    ex.Message,
+                    BuildGraphLoadDetails(ex));
+            }
+            catch (SequenceCounterException ex)
+            {
+                envelope = BuildLlmJsonApiInfrastructureError(
+                    toolName,
+                    ex.Code,
+                    ex.Message,
+                    BuildFileDetails(ex.FilePath));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                envelope = BuildLlmJsonApiInfrastructureError(
+                    toolName,
+                    "internal_error",
+                    ex.Message,
+                    null);
+            }
+        }
+        finally
+        {
+            entry.Semaphore.Release();
+        }
+
+        return MakeToolTextResponse(
+            requestId,
+            envelope.ToJsonString(RelaxedCtx.Options),
+            IsLlmJsonApiError(envelope));
+    }
+
+    private static bool IsLlmJsonApiTool(string name) =>
+        LlmJsonApiToolNames.Contains(name);
+
+    private static JsonObject BuildLlmJsonApiRequest(string method, JsonElement? arguments)
+    {
+        var request = new JsonObject { ["method"] = method };
+        if (!arguments.HasValue ||
+            arguments.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return request;
+        }
+
+        foreach (var prop in arguments.Value.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, "method", StringComparison.Ordinal))
+            {
+                if (prop.Value.ValueKind != JsonValueKind.String ||
+                    !string.Equals(prop.Value.GetString(), method, StringComparison.Ordinal))
+                {
+                    throw new ArgumentException("arguments.method must match tool name");
+                }
+                continue;
+            }
+
+            request[prop.Name] = JsonNode.Parse(prop.Value.GetRawText());
+        }
+
+        return request;
+    }
+
+    private static JsonObject BuildLlmJsonApiInfrastructureError(
+        string method,
+        string code,
+        string message,
+        JsonObject? details) =>
+        new()
+        {
+            ["ok"] = false,
+            ["method"] = method,
+            ["code"] = code,
+            ["message"] = message,
+            ["details"] = details ?? new JsonObject(),
+        };
+
+    private static JsonObject BuildFileDetails(string? filePath)
+    {
+        var details = new JsonObject();
+        if (!string.IsNullOrEmpty(filePath))
+            details["file"] = filePath;
+        return details;
+    }
+
+    private static JsonObject BuildGraphLoadDetails(GraphLoadException ex)
+    {
+        var details = BuildFileDetails(ex.FilePath);
+        if (!string.IsNullOrEmpty(ex.NodePath))
+            details["path"] = ex.NodePath;
+        return details;
+    }
+
+    private static bool IsLlmJsonApiError(JsonObject envelope)
+    {
+        if (!envelope.TryGetPropertyValue("ok", out var node) ||
+            node is not JsonValue value ||
+            !value.TryGetValue<bool>(out var ok))
+        {
+            return true;
+        }
+
+        return !ok;
+    }
+
+    private static JsonRpcResponse MakeToolTextResponse(JsonElement? id, string text, bool isError)
+    {
+        var result = new CallToolResult(
+            Content: new[] { new McpContentItem("text", text) },
+            IsError: isError ? true : (bool?)null);
+
+        return MakeOk(id, JsonSerializer.SerializeToElement(result, RelaxedCtx.CallToolResult));
     }
 
     private JsonRpcResponse HandleShutdown(JsonRpcRequest request)
@@ -372,11 +555,11 @@ internal sealed class RpcDispatcher
             switch (c)
             {
                 case '\\': sb.Append("\\\\"); break;
-                case '"':  sb.Append("\\\""); break;
+                case '"': sb.Append("\\\""); break;
                 case '\n': sb.Append("\\n"); break;
                 case '\r': sb.Append("\\r"); break;
                 case '\t': sb.Append("\\t"); break;
-                default:   sb.Append(c); break;
+                default: sb.Append(c); break;
             }
         }
         return sb.ToString();

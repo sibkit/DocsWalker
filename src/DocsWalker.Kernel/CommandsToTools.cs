@@ -29,7 +29,18 @@ internal static class CommandsToTools
 {
     public static IReadOnlyList<McpToolDescriptor> Build(SchemaDocument? schema = null)
     {
-        var list = new List<McpToolDescriptor>();
+        var list = new List<McpToolDescriptor>
+        {
+            BuildLlmJsonApiTool(
+                "hit",
+                "LLM-facing JSON API: безопасная проверка selector-ов и будущих write-ops без записи. Принимает defaults и ops[]."),
+            BuildLlmJsonApiTool(
+                "query",
+                "LLM-facing JSON API: чтение данных по select- и grep-операциям. Принимает defaults и ops[]."),
+            BuildLlmJsonApiTool(
+                "tx",
+                "LLM-facing JSON API: атомарное внесение изменений. Принимает defaults и ops[]."),
+        };
         foreach (var spec in Commands.All)
         {
             if (spec.KebabName == "run") continue;
@@ -81,17 +92,36 @@ internal static class CommandsToTools
         return list;
     }
 
+    private static McpToolDescriptor BuildLlmJsonApiTool(string name, string description) =>
+        new(
+            Name: name,
+            Description: description,
+            Params:
+            [
+                new McpToolParam(
+                    Name: "defaults",
+                    JsonType: "object",
+                    Required: false,
+                    Description: "Опциональные defaults LLM JSON API: path_parent и coordinates."),
+                new McpToolParam(
+                    Name: "ops",
+                    JsonType: "array",
+                    Required: true,
+                    Description: "Массив операций LLM JSON API. Метод задается именем MCP tool.",
+                    ItemsJsonType: "object"),
+            ]);
+
     private static (string JsonType, string? ItemsType) MapParamType(ParamType type) => type switch
     {
-        ParamType.String    => ("string", null),
-        ParamType.Integer   => ("integer", null),
-        ParamType.IdList    => ("array", "integer"),
-        ParamType.Json      => ("object", null),
+        ParamType.String => ("string", null),
+        ParamType.Integer => ("integer", null),
+        ParamType.IdList => ("array", "integer"),
+        ParamType.Json => ("object", null),
         // Array of object: MCP-клиент шлёт arguments.<name>=[...]
         // напрямую (а не через escape-string). Конвертер McpServer.JsonValueToCliString
         // распознаёт пару (array, object) и передаёт raw JSON со скобками в CLI.
         ParamType.JsonArray => ("array", "object"),
-        ParamType.Boolean   => ("boolean", null),
+        ParamType.Boolean => ("boolean", null),
         _ => ("string", null),
     };
 

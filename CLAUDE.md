@@ -80,10 +80,10 @@ docs — даже в виде краткой выжимки. Только ссы
 
 **Чтение через DocsWalker:**
 - Узлы по id — `get-nodes`.
-- По пути / поддерево / предки — `get-by-path`, `get-subtree`, `get-ancestors`.
+- По пути / поддерево / предки — `get-by-path`, `get-tree`, `get-ancestors`.
 - Связи — `get-refs`, `get-in-refs`.
-- Структура и схема — `get-map`, `describe-type`, `get-schema`, `get-meta-schema`, `get-usage-guide`.
-- Поиск — `search`.
+- Обзор, структура и схема — `get-overview`, `describe-type`, `get-schema`, `get-meta-schema`, `get-usage-guide`.
+- Поиск — `search`, `find`.
 
 **Запись через DocsWalker:**
 - Узлы — `create-node`, `update-node`, `delete-nodes`, `move-node`.
@@ -179,7 +179,7 @@ curl http://127.0.0.1:18080/health
 
 С stg-0011 (code-mcp-project-split) MCP-сервер вынесен в отдельный exe `DocsWalker.Mcp.exe` — раньше тот же мост жил как `DocsWalker.Cli.exe mcp-server`. Если в `.mcp.json` остаётся старая команда — обновить путь и убрать аргумент `mcp-server`.
 
-Чтобы Claude Code увидел tool'ы — открыть проект из корня (где лежит `.mcp.json`) и перезапустить сессию. После этого должны появиться tool'ы `mcp__docswalker__get-nodes`, `mcp__docswalker__get-map` и так далее.
+Чтобы Claude Code увидел tool'ы — открыть проект из корня (где лежит `.mcp.json`) и перезапустить сессию. После этого должны появиться tool'ы `mcp__docswalker__get-nodes`, `mcp__docswalker__get-tree`, `mcp__docswalker__get-overview` и так далее.
 
 ### Остановка kernel
 

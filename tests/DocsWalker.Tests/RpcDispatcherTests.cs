@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DocsWalker.Cli.Cli;
 using DocsWalker.Kernel;
 using Microsoft.Extensions.Hosting;
@@ -34,6 +35,117 @@ public class RpcDispatcherTests
 
         Assert.NotNull(resp);
         Assert.Contains("\"result\"", resp);
+    }
+
+    [Fact]
+    public async Task ToolsList_IncludesLlmJsonApiTools()
+    {
+        using var registry = NewRegistry(("main", TestPaths.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var resp = await dispatcher.HandleMessageAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""",
+            graphName: "main",
+            default);
+
+        Assert.NotNull(resp);
+        using var doc = JsonDocument.Parse(resp);
+        var tools = doc.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray().ToList();
+        var names = tools.Select(t => t.GetProperty("name").GetString()).ToHashSet();
+
+        Assert.Contains("hit", names);
+        Assert.Contains("query", names);
+        Assert.Contains("tx", names);
+
+        var queryTool = tools.First(t => t.GetProperty("name").GetString() == "query");
+        var schema = queryTool.GetProperty("inputSchema");
+        var ops = schema.GetProperty("properties").GetProperty("ops");
+        Assert.Equal("array", ops.GetProperty("type").GetString());
+        Assert.Equal("object", ops.GetProperty("items").GetProperty("type").GetString());
+        Assert.Contains(schema.GetProperty("required").EnumerateArray(),
+            item => item.GetString() == "ops");
+    }
+
+    [Fact]
+    public async Task ToolsCall_Query_RoutesThroughLlmJsonApiExecutor()
+    {
+        using var registry = NewRegistry(("main", TestPaths.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var resp = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 3,
+              "method": "tools/call",
+              "params": {
+                "name": "query",
+                "arguments": {
+                  "ops": [
+                    {
+                      "op": "select",
+                      "select": { "path": "DocsWalker-LLM JSON API" },
+                      "include": ["text"],
+                      "max_tokens": 500
+                    }
+                  ]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(resp);
+        using var rpcDoc = JsonDocument.Parse(resp);
+        var result = rpcDoc.RootElement.GetProperty("result");
+        Assert.False(result.TryGetProperty("isError", out _));
+
+        using var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc));
+        Assert.True(envelope.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal("query", envelope.RootElement.GetProperty("method").GetString());
+        Assert.True(envelope.RootElement.GetProperty("base_revision").TryGetInt64(out var revision));
+        Assert.True(revision >= 0);
+        Assert.Single(envelope.RootElement.GetProperty("results").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task ToolsCall_QueryFailure_ReturnsLlmEnvelopeAsToolError()
+    {
+        using var registry = NewRegistry(("main", TestPaths.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var resp = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 4,
+              "method": "tools/call",
+              "params": {
+                "name": "query",
+                "arguments": {
+                  "ops": [
+                    {
+                      "op": "select",
+                      "select": { "path": "No such LLM JSON API path" }
+                    }
+                  ]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(resp);
+        using var rpcDoc = JsonDocument.Parse(resp);
+        var result = rpcDoc.RootElement.GetProperty("result");
+        Assert.True(result.GetProperty("isError").GetBoolean());
+
+        using var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc));
+        Assert.False(envelope.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal("query", envelope.RootElement.GetProperty("method").GetString());
+        Assert.Equal("not_found", envelope.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
@@ -140,6 +252,13 @@ public class RpcDispatcherTests
         "{\"jsonrpc\":\"2.0\",\"id\":" + id +
         ",\"method\":\"tools/call\",\"params\":{\"name\":\"" + toolName +
         "\",\"arguments\":{}}}";
+
+    private static string ExtractToolText(JsonDocument rpcDoc) =>
+        rpcDoc.RootElement
+            .GetProperty("result")
+            .GetProperty("content")[0]
+            .GetProperty("text")
+            .GetString()!;
 
     /// <summary>
     /// Минимальная заглушка <see cref="IHostApplicationLifetime"/>:
