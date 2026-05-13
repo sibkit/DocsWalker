@@ -56,6 +56,8 @@ public class RpcDispatcherTests
         Assert.Contains("hit", names);
         Assert.Contains("query", names);
         Assert.Contains("tx", names);
+        Assert.DoesNotContain("repl", names);
+        Assert.DoesNotContain("Примеры CLI", resp);
 
         var queryTool = tools.First(t => t.GetProperty("name").GetString() == "query");
         var schema = queryTool.GetProperty("inputSchema");

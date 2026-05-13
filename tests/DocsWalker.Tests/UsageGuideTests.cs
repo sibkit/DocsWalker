@@ -96,6 +96,21 @@ public class UsageGuideTests
     }
 
     [Fact]
+    public void NoFilter_IsMcpKernelOnlyAndDoesNotAdvertiseCli()
+    {
+        using var doc = CaptureGuide(null);
+        var raw = doc.RootElement.GetRawText();
+        var names = doc.RootElement.GetProperty("commands").EnumerateArray()
+            .Select(c => c.GetProperty("name").GetString())
+            .ToHashSet();
+
+        Assert.DoesNotContain("docswalker ", raw);
+        Assert.DoesNotContain("Примеры CLI", raw);
+        Assert.DoesNotContain("Контракт CLI", raw);
+        Assert.DoesNotContain("repl", names);
+    }
+
+    [Fact]
     public void Filter_Tx_ReturnsLlmJsonApiTool()
     {
         using var doc = CaptureGuide("tx");

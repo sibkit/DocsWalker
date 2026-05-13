@@ -235,4 +235,28 @@ public class LlmJsonApiModelTests
         Assert.Equal("invalid_request", ex.Code);
         Assert.Equal("$.ops", ex.Path);
     }
+
+    [Fact]
+    public void Parse_SelectTypeField_ReturnsInvalidRequest()
+    {
+        var ex = Assert.Throws<LlmJsonApiParseException>(() =>
+            LlmJsonApiParser.Parse(JsonNode.Parse(
+                """
+                {
+                  "method": "query",
+                  "ops": [
+                    {
+                      "op": "select",
+                      "select": {
+                        "path": "DocsWalker-LLM JSON API/**",
+                        "type": "definition"
+                      }
+                    }
+                  ]
+                }
+                """)));
+
+        Assert.Equal("invalid_request", ex.Code);
+        Assert.Equal("$.ops[0].select.type", ex.Path);
+    }
 }

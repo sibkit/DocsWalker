@@ -36,6 +36,10 @@ internal sealed class RpcDispatcher
         "tx",
     };
 
+    private static readonly UTF8Encoding StrictUtf8NoBom = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
+
     private static readonly McpJsonContext RelaxedCtx = new(
         new JsonSerializerOptions(McpJsonContext.Default.Options)
         {
@@ -73,9 +77,24 @@ internal sealed class RpcDispatcher
     public async Task HandleAsync(HttpContext ctx, string graphName)
     {
         string body;
-        using (var reader = new StreamReader(ctx.Request.Body, Encoding.UTF8))
+        try
         {
+            using var reader = new StreamReader(
+                ctx.Request.Body,
+                StrictUtf8NoBom,
+                detectEncodingFromByteOrderMarks: false);
             body = await reader.ReadToEndAsync(ctx.RequestAborted);
+        }
+        catch (DecoderFallbackException)
+        {
+            var parseErrorJson = SerializeResponse(MakeError(
+                id: null,
+                code: JsonRpcErrorCodes.ParseError,
+                message: "JSON body is not valid UTF-8."));
+            ctx.Response.StatusCode = StatusCodes.Status200OK;
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            await ctx.Response.WriteAsync(parseErrorJson, Encoding.UTF8, ctx.RequestAborted);
+            return;
         }
 
         var responseJson = await HandleMessageAsync(body, graphName, ctx.RequestAborted);

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using DocsWalker.Core.IO;
 using DocsWalker.Core.Yaml;
 using SharpYaml.Events;
 
@@ -56,8 +57,6 @@ public static class FoldersFile
     private const string PathField = "path";
     private const string TitleField = "title";
 
-    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
-
     /// <summary>
     /// Возвращает абсолютный путь к <c>folders.yml</c> для заданного <paramref name="docsRoot"/>.
     /// </summary>
@@ -83,7 +82,15 @@ public static class FoldersFile
         string content;
         try
         {
-            content = File.ReadAllText(filePath, Utf8NoBom);
+            content = Utf8File.ReadAllTextStrict(filePath);
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new FoldersFileException(
+                "invalid_utf8",
+                filePath,
+                $"Файл '{filePath}' не является валидным UTF-8: {ex.Message}",
+                ex);
         }
         catch (Exception ex)
         {

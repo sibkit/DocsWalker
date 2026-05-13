@@ -31,8 +31,8 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
     - examples:
-      - "(#188) CLI":
-        - text: 'Создание section через create-node {"type": "section", "title": "..."}, не правкой YAML вручную.'
+      - "(#188) MCP-вызов":
+        - text: Создание section выполняется через MCP tools/call create-node с arguments {"type":"section","title":"...","path":<parent_id>}, не правкой YAML вручную.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -65,16 +65,16 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#130) CLI deprecated":
-        - text: 'CLI-интерфейс зафризен: новые команды и поведение в CLI не добавляются. CLI используется только REPL''ом (dev-utility) и для поддержки старых инструментов; запланирован выпил exe DocsWalker.Cli.'
+      - "(#130) Legacy executable deprecated":
+        - text: 'Legacy CLI executable зафризен: новые команды и поведение в него не добавляются. Эксплуатационный и LLM-facing путь — MCP tools поверх kernel JSON-RPC; exe остаётся только временным совместимым слоем до выпила.'
         - examples: [191]
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
     - examples:
-      - "(#190) Подкоманды":
-        - text: 'Команды одинаковы во всех транспортах — MCP-tools (основной канал) и CLI-подкоманды (deprecated): get-nodes, create-node, move-node.'
+      - "(#190) MCP-tools":
+        - text: 'Команды API доступны как MCP-tools: get-nodes, create-node, move-node. Это основной и единственный рекомендуемый канал для LLM.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -390,7 +390,7 @@ sections:
   - "(#16) Контракт валидации":
     - rules:
       - "(#149) Полный набор проверок":
-        - text: 'Каждая операция записи применяется только если результирующее состояние docs/ проходит все проверки: meta_schema (Схема.yml соответствует мета-схеме); schema (изменяемый документ соответствует Схеме — соблюдены path_targets и out_refs контракты типов, cardinality каждой связи, required-связи заполнены, text_required соблюдается); refs (имя каждой связи в out_refs узла объявлено в типе источника или равно path; цель связи существует; тип цели входит в target_types связи; цикл по path невозможен); unique (id узла глобально уникален; title уникален среди siblings одного типа в одном path-родителе); sequence (значение sequence-счётчика покрывает максимальный id графа); style (длина text ≤2000 символов, отсутствие \t в title и text — см. ниже).'
+        - text: 'Каждая операция записи применяется только если результирующее состояние docs/ проходит все проверки: meta_schema (Схема.yml соответствует мета-схеме); schema (изменяемый документ соответствует Схеме — соблюдены path_targets и out_refs контракты типов, cardinality каждой связи, required-связи заполнены, text_required соблюдается); refs (имя каждой связи в out_refs узла объявлено в типе источника или равно path; цель связи существует; тип цели входит в target_types связи; цикл по path невозможен); unique (id узла глобально уникален; title уникален среди siblings одного типа в одном path-родителе); sequence (значение sequence-счётчика покрывает максимальный id графа); style (длина text ≤2000 символов, отсутствие запрещённых управляющих символов и признаков испорченной кодировки). Файловая загрузка docs/schema/folders выполняется как строгий UTF-8: невалидная байтовая последовательность не заменяется символом-заглушкой и отвергается до попадания в граф.'
         - examples: [207]
         - subject: [425]
         - subsystem: [433]
@@ -404,7 +404,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#151) Style-проверка":
-        - text: 'Style-проверка: title узла соответствует title_format его типа (для смысловых типов — формат "(#id) title"); title не содержит \n, \r, \t (всегда одна строка); text не содержит \r и \t, длина text не превышает 2000 символов (\n в text допустим). Превышение длины — text_too_long; запрещённый символ — invalid_text.'
+        - text: 'Style-проверка: title узла соответствует title_format его типа (для смысловых типов — формат "(#id) title"); title не содержит \n, \r, \t (всегда одна строка); text не содержит \r и \t, длина text не превышает 2000 символов (\n в text допустим). Title и text не должны содержать признаки испорченной кодировки: Unicode replacement character, типичные mojibake-последовательности после неверного декодирования UTF-8 как legacy-encoding, а также длинные серии вопросительных знаков как lossy placeholder. Превышение длины — text_too_long; запрещённый символ — invalid_text; испорченный текст — corrupt_text.'
         - examples: [209]
         - subject: [425]
         - subsystem: [433]
@@ -438,7 +438,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#209) Запрет таба":
-        - text: Текст с символом табуляции отвергается с кодом invalid_text на этапе style-проверки.
+        - text: Текст с символом табуляции отвергается с кодом invalid_text. Текст с Unicode replacement character, типичным mojibake после неверного декодирования UTF-8 или длинной серией placeholder-вопросов отвергается с кодом corrupt_text на этапе style-проверки. Невалидные UTF-8 bytes в YAML отвергаются раньше загрузки графа с кодом invalid_utf8.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -458,7 +458,7 @@ sections:
   - "(#17) Операции чтения":
     - rules:
       - "(#406) Truncation-протокол":
-        - text: 'Read-??????? get-tree, get-by-path ? get-nodes ????????? max_tokens - ?????? ??????? ?? ?????; default 50000. ??? ?????????? ????? ?????????? BFS ?? depth: ??????? ?????? ????????????? ???????, ?????? - ???? ???????. ?????????????? top-level ???? ??????: truncated (bool), stopped_at (?????? {parent_id, remaining_children, next_offset} - ????? ?????? BFS; ??? get-nodes - ???????????? ?????? ? parent_id=0 ??? ?????? ???????? ??????), tokens_used (int - ?????????? ??????????? ??????), tokens_budget (int - ?????????? max_tokens, ???? ???-????????????). ??? truncated=false ???? stopped_at, tokens_used, tokens_budget ?????????? (??????? #301). ??? ??????????? ???????????? ????? - ????????? ????? ? id=parent_id ? offset=next_offset (??? ???? ???????? per-???????).'
+        - text: 'Read-команды get-tree, get-by-path и get-nodes принимают max_tokens — бюджет ответа по токенам; default 50000. При превышении бюджета обход идет BFS по depth: сначала включается максимально близкий контекст, затем более глубокие children. Усеченный ответ получает top-level поля truncated (bool), stopped_at (массив {parent_id, remaining_children, next_offset} — точки обрыва BFS; для get-nodes используется parent_id=0 как общий список), tokens_used (int — сколько токенов включено), tokens_budget (int — примененный max_tokens). При truncated=false поля stopped_at, tokens_used и tokens_budget опускаются. Для продолжения чтения LLM запрашивает тот же parent_id с offset=next_offset или сужает запрос через depth/fields/compact.'
         - examples: [405]
         - subject: [425]
         - subsystem: [433]
@@ -490,7 +490,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#23) get_by_path":
-        - text: '????????? ???? ?? ????????????????? ????. ????????? - path (?????? ???? "????????" ??? "????????/??????/?????????", ??????????? "/"), tree (???., addressable tree), depth (???., ???????? ???????: 0 - ?????? ????????? ????, 1 - ????????? ???? ? ???? ???????), fields (???., whitelist id,type,title,text,out_refs,tokens,subtree_tokens), compact (???., alias ??? fields=id,type,title), max_tokens (???., ?????? ???????; default 50000). ?????????? {tree, root, truncated?, stopped_at?, tokens_used?, tokens_budget?}. ???????????? ??? ????????? ??????? ?? ??????????? ????; ??? ??????? ?????????? LLM ?????? ???????? compact/depth/max_tokens, ????? ?? ???????? ?????????? ?????.'
+        - text: 'Поддерево узла по человекочитаемому пути. Параметры: path (строка пути, например "Документ" или "Документ/Раздел/Подраздел", разделитель "/"), tree (опционально, addressable tree), depth (опционально, максимальная глубина: 0 — только найденный узел, 1 — найденный узел и один уровень), fields (опционально, whitelist id,type,title,text,out_refs,tokens,subtree_tokens), compact (опционально, alias для fields=id,type,title), max_tokens (опционально, бюджет ответа; default 50000). Возвращает {tree, root, truncated?, stopped_at?, tokens_used?, tokens_budget?}. Используется для точечного чтения по известному пути; для крупных поддеревьев LLM должна задавать compact/depth/max_tokens, чтобы не получить чрезмерный ответ.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -654,16 +654,16 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-  - "(#35) CLI-интерфейс":
+  - "(#35) Legacy-клиенты":
     - statements:
-      - "(#157) Команды повторяют API":
-        - text: 'CLI-команды повторяют API один-в-один: имя команды — имя операции, аргументы — именованные ключи.'
+      - "(#157) MCP-tools повторяют API":
+        - text: 'MCP-tools повторяют API один-в-один: имя tool — kebab-case имя операции, arguments — JSON-object с именованными параметрами.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#407) CLI deprecated":
-        - text: CLI-интерфейс зафризен. Новые команды, флаги и поведение через CLI больше не добавляются — все новые операции выходят только в MCP. CLI остаётся как канал для REPL-сессий и поддержки старых tool-цепочек; после миграции потребителей запланирован полный выпил exe DocsWalker.Cli.
+      - "(#407) Legacy executable deprecated":
+        - text: Legacy CLI executable зафризен. Новые команды, флаги и поведение для него больше не добавляются; LLM-facing и эксплуатационный путь — только MCP tools поверх kernel JSON-RPC. Оставшийся exe нужен лишь как временный совместимый слой до выпила.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -684,7 +684,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#160) client-config через .dw/client.json":
-        - text: 'Endpoint kernel-а (host:port) и graph-name клиент берёт из `.dw/client.json` в проектной папке: поиск вверх по родителям от cwd до filesystem-root (как `.git`). Первый найденный — используется. Параметра --root в командах нет — клиент ничего про FS не знает. Команды `--help` / `--version` не требуют client-config (не делают RPC). Ошибки: `client_config_not_found` (.dw/client.json не найден), `client_config_invalid` (JSON не парсится / отсутствуют обязательные поля), `kernel_unreachable` (TCP-соединение с kernel-ом не установилось).'
+        - text: 'Endpoint kernel-а (host:port) и graph-name wrapper берёт из `.dw/client.json` в проектной папке: поиск вверх по родителям от cwd до filesystem-root (как `.git`). Первый найденный — используется. Параметра root в MCP tools нет — клиент не передаёт путь к docs/. Ошибки: `client_config_not_found` (.dw/client.json не найден), `client_config_invalid` (JSON не парсится / отсутствуют обязательные поля), `kernel_unreachable` (TCP-соединение с kernel-ом не установилось).'
         - examples: [325]
         - subject: [425]
         - subsystem: [433]
@@ -718,8 +718,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#165) Коды CLI-ошибок":
-        - text: На вход неизвестной команды CLI возвращает ошибку с кодом unknown_command, на отсутствующий обязательный параметр — missing_parameter, на лишний параметр — unknown_parameter, на нарушение формата значения — invalid_parameter.
+      - "(#165) Коды tool-ошибок":
+        - text: На неизвестный MCP tool возвращается `unknown_tool`; на отсутствующий обязательный параметр — `missing_parameter`; на лишний параметр — `unknown_parameter`; на нарушение формата значения — `invalid_parameter`.
         - examples: [223]
         - subject: [425]
         - subsystem: [433]
@@ -740,8 +740,8 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
     - notes:
-      - "(#408) Roadmap выпила CLI":
-        - text: 'Стадии: (1) deprecation-маркер в docs/ (текущий шаг); (2) перенос REPL на прямой HTTP-клиент без shared CLI-кода; (3) удаление подкоманд CLI один-к-одному с API; (4) удаление exe DocsWalker.Cli полностью. MCP-канал (`DocsWalker.Mcp.exe`) — постоянный основной интерфейс LLM-агента.'
+      - "(#408) Roadmap выпила legacy executable":
+        - text: 'Стадии: (1) зафиксировать deprecation-маркер; (2) убрать CLI-примеры из LLM-facing usage-guide и MCP tool metadata; (3) перенести оставшиеся внутренние зависимости kernel/MCP с legacy command contracts на отдельный core-contract слой; (4) удалить exe DocsWalker.Cli. Постоянный интерфейс LLM-агента — MCP/kernel.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -795,8 +795,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#216) Преобразование":
-        - text: Имя API create_node (snake_case) → команда CLI create-node (kebab-case).
+      - "(#216) Маппинг tool-name":
+        - text: Имя API create_node (snake_case) публикуется как MCP tool create-node (kebab-case).
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -831,8 +831,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#223) Коды CLI":
-        - text: Несуществующий tool/команда → unknown_tool или unknown_command; обязательный параметр пропущен → missing_parameter.
+      - "(#223) Коды tool-ошибок":
+        - text: Несуществующий MCP tool → unknown_tool; обязательный параметр пропущен → missing_parameter; лишний параметр → unknown_parameter; неверный формат значения → invalid_parameter.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -898,7 +898,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#404) get-overview на старте сессии":
-        - text: "get-overview {}\n\nБез параметров. Ответ — компактный snapshot:\n\n{\n  \"total_nodes\": 337,\n  \"max_depth\": 5,\n  \"total_tokens\": 28450,\n  \"trees\": [{\"name\": \"path\", \"description\": \"Дерево хранилища.\"}],\n  \"schema\": {\"types_count\": 11, \"top_types_by_count\": [{\"type\": \"example\", \"count\": 95}, {\"type\": \"rule\", \"count\": 78}]},\n  \"root_children\": [{\"id\": 1, \"type\": \"document\", \"title\": \"DocsWalker\", \"subtree_tokens\": 18230}],\n  \"hot_spots\": {\n    \"largest_nodes\": [{\"id\": 200, \"title\": \"...\", \"tokens\": 420}],\n    \"most_connected_nodes\": [{\"id\": 35, \"title\": \"CLI-интерфейс\", \"refs_count\": 14}]\n  }\n}\n\nЦель — оценить размер хранилища, понять крупные/центральные узлы, прежде чем читать конкретные поддеревья."
+        - text: 'get-overview возвращает snapshot: total_nodes, max_depth, total_tokens, trees, schema.types_count/top_types_by_count, root_children и hot_spots. Пример hot_spots: largest_nodes по tokens и most_connected_nodes по числу cross-refs. Цель — оценить размер хранилища, понять крупные узлы и центры графа перед чтением деталей.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -913,14 +913,14 @@ sections:
         - csharp_structure: [437]
     - rules:
       - "(#364) JSON-RPC stdio":
-        - text: Транспорт MCP — newline-delimited JSON-RPC 2.0 над stdin/stdout. Команды API регистрируются как MCP-tools; имя tool = kebab-case CLI-команды; параметры — JSON-Schema, выводимая из контракта команды.
+        - text: Транспорт MCP — newline-delimited JSON-RPC 2.0 над stdin/stdout. Команды API регистрируются как MCP-tools; имя tool = kebab-case имя операции; параметры публикуются как JSON-Schema, выведенная из контракта операции.
         - examples: [365]
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#366) MCP-wrapper привязан к проекту через cwd":
-        - text: MCP-wrapper — отдельный exe `DocsWalker.Mcp.exe` (stg-0011 вынес его из подкоманды `docswalker mcp-server`). Параметра root нет — wrapper использует cwd для resolve `.dw/client.json` (поиск вверх по родителям до filesystem-root). LLM-клиент вызывает MCP-tools без указания graph — wrapper подставляет graph-name из client-config в URL HTTP-запроса к kernel-у. Multi-graph в одном MCP-канале не нужен — Claude Code запускает MCP-сервер раздельно для каждой записи в .mcp.json (разные cwd → разные client-config → разные graphs).
+        - text: 'MCP-wrapper — отдельный exe `DocsWalker.Mcp.exe`: тонкий stdio↔HTTP bridge к kernel-у. Параметра root нет — wrapper использует cwd для resolve `.dw/client.json` (поиск вверх по родителям до filesystem-root). LLM-клиент вызывает MCP-tools без указания graph — wrapper подставляет graph-name из client-config в URL HTTP-запроса к kernel-у. Multi-graph в одном MCP-канале не нужен — клиент запускает MCP-сервер раздельно для каждой записи в .mcp.json (разные cwd → разные client-config → разные graphs).'
         - examples: [369]
         - subject: [425]
         - subsystem: [433]
@@ -935,7 +935,7 @@ sections:
         - csharp_structure: [437]
     - definitions:
       - "(#372) MCP-wrapper":
-        - text: 'Короткоживущий процесс DocsWalker, запущенный командой `docswalker mcp-server`, обслуживающий один MCP-клиент (например, Claude Code). Транспорт со стороны клиента — JSON-RPC 2.0 над stdio. Внутри: HTTP-клиент к kernel-у (без auto-spawn — kernel запускается оператором отдельно), endpoint и graph-name берёт из `.dw/client.json` через cwd-resolution. Не держит данных, не парсит docs/, не имеет своего lock — всё это на kernel-е (#317).'
+        - text: 'Короткоживущий процесс DocsWalker.Mcp.exe, обслуживающий один MCP-клиент (например, Claude Code). Транспорт со стороны LLM — JSON-RPC stdio; транспорт к kernel — HTTP POST `/<graph>`. Wrapper не запускает kernel сам: kernel запускается оператором отдельно. Endpoint и graph-name wrapper берёт из `.dw/client.json` через cwd-resolution. Не держит данных, не парсит docs/, не имеет своей бизнес-логики.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -997,7 +997,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#173) JSON для всех транспортов":
-        - text: JSON ???????????? ??? CLI stdout/stderr ? ??? wire-????????? kernel-? (HTTP POST `/<graph>` - JSON-RPC 2.0 body). YAML - ?????? storage docs/. ???????????? - System.Text.Json ? source-???????????? (JsonSerializerContext) ??? AOT-?????????????.
+        - text: JSON используется для stdout/stderr клиентских команд и для wire-протокола kernel-а (HTTP POST `/<graph>` — JSON-RPC 2.0 body). YAML — только storage docs/. Сериализация — System.Text.Json и source-generation (JsonSerializerContext) для AOT-совместимости.
         - examples: [229]
         - subject: [425]
         - subsystem: [433]
@@ -1061,8 +1061,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#306) CLI/REPL/MCP — клиенты kernel-а":
-        - text: Все команды (включая интерактивный REPL и MCP-tools) исполняются клиентами, делающими HTTP/JSON-RPC к kernel-у. CLI — короткоживущий клиент (один запрос → ответ → exit). REPL — длинная серия запросов в TTY. MCP-сервер — тонкий stdio↔HTTP мост (см. (#372)). Endpoint клиент берёт из `.dw/client.json` (см. (#160)) — поиск вверх по родителям от cwd до filesystem-root. Никакой клиент не парсит docs/ и не валидирует — вся семантика на kernel-е.
+      - "(#306) MCP-wrapper — клиент kernel-а":
+        - text: 'MCP-wrapper исполняет tools/call как HTTP/JSON-RPC запросы к kernel-у. Wrapper — тонкий stdio↔HTTP мост (см. (#372)): берёт endpoint из `.dw/client.json` (см. (#160)), отправляет canonical URL `/<graph>`, не парсит docs/ и не валидирует данные. Вся семантика чтения, записи и валидации живёт на kernel-е.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1096,7 +1096,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#312) JSON-RPC 2.0 как контракт":
-        - text: Wire-???????? graph plane kernel-? - JSON-RPC 2.0 ??? HTTP POST `/<graph-name>`. ??? ????? ???????????????? ?? URL ?????? ???? ? JSON-payload. `/api/v0.4` - ????????? reserved namespace ??? API/control plane DocsWalker; graph-name `api` ????????. ??????????????? wire/API ??????????? ? API namespace; mismatch ?????? client/kernel ? JSON-RPC error response ? code=version_mismatch; ?????? ???????? stderr ? ??????? ????????? ?????.
+        - text: Wire-контракт graph plane kernel-а — JSON-RPC 2.0 поверх HTTP POST `/<graph-name>`. Имя графа маршрутизируется через URL, а не через JSON-payload. `/api/v0.4` — зарезервированный namespace для API/control plane DocsWalker; graph-name `api` запрещен. Несовпадение поддерживаемых wire/API версий должно возвращаться как JSON-RPC error response с code=version_mismatch; клиент обязан показать ошибку явно.
         - examples: [330]
         - subject: [425]
         - subsystem: [433]
@@ -1116,8 +1116,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#315) REPL без persistent history":
-        - text: REPL — отдельный процесс docswalker repl, длинноживущий HTTP-клиент к kernel-у. В пределах одной TTY-сессии доступен нативный line-edit платформы .NET 10. История между сессиями не сохраняется — для MVP не нужно, добавляется отдельной задачей при потребности.
+      - "(#315) Legacy REPL без persistent history":
+        - text: 'Legacy REPL — отдельный dev-utility процесс поверх HTTP-клиента к kernel-у. Он не является LLM-facing эксплуатационным путём и не хранит persistent history: prompt-состояние живёт только в процессе REPL; kernel не знает о REPL-сессиях.'
         - examples: [337]
         - subject: [425]
         - subsystem: [433]
@@ -1131,7 +1131,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#383) Auto-spawn убран":
-        - text: Клиент не запускает kernel сам. Если kernel offline или endpoint неверный — клиент даёт `kernel_unreachable` с подсказкой `запусти DocsWalker.Kernel.exe --config=<path> или поправь endpoint в .dw/client.json`. Запуск kernel — задача оператора (systemd, NSSM, manual). DocsWalker.Cli.exe не имеет CLI-обёртки `docswalker kernel` — единственный способ запустить kernel это `DocsWalker.Kernel.exe --config=<path>`.
+        - text: 'Клиент не запускает kernel сам. Если kernel offline или endpoint неверный — клиент даёт `kernel_unreachable` с подсказкой `запусти DocsWalker.Kernel.exe --config=<path> или поправь endpoint в .dw/client.json`. Запуск kernel — задача оператора (systemd, NSSM, manual). Единственный штатный запуск kernel: `DocsWalker.Kernel.exe --config=<path>`.'
         - examples: [380]
         - subject: [425]
         - subsystem: [433]
@@ -1145,13 +1145,13 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#318) клиент":
-        - text: 'Процесс DocsWalker, делающий HTTP/JSON-RPC к kernel-у. Виды: CLI (один запрос за вызов бинаря), REPL (TTY-сессия с серией запросов), MCP-wrapper (#372) — stdio↔HTTP мост для LLM-клиента. Алгоритм: читает `.dw/client.json` (поиск вверх от cwd до filesystem-root), берёт endpoint host:port и graph-name, шлёт JSON-RPC tools/call к canonical URL `/<graph-name>`, читает ответ, проксирует в свой stdout/stderr. Если `.dw/client.json` не найден — `client_config_not_found`. Если kernel offline — `kernel_unreachable`. Auto-spawn-а kernel-а нет: запуск kernel — отдельная задача оператора. Никакого парсинга docs/ или валидации не делает.'
+        - text: 'Клиент DocsWalker — процесс, делающий HTTP/JSON-RPC к kernel-у. Основной LLM-клиент — MCP-wrapper (#372), stdio↔HTTP bridge. Алгоритм: читает `.dw/client.json` (поиск вверх от cwd до filesystem-root), берёт endpoint host:port и graph-name, шлёт JSON-RPC tools/call к canonical URL `/<graph-name>`, читает ответ и возвращает его в MCP-формате. Если `.dw/client.json` не найден — `client_config_not_found`. Если kernel offline — `kernel_unreachable`. Auto-spawn-а kernel-а нет: запуск kernel — отдельная задача оператора. Никакого парсинга docs/ или валидации клиент не делает.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#321) HTTP-эндпоинт kernel-а":
-        - text: '????????? HTTP-?????? kernel-? ?? Kestrel (ASP.NET Core minimal API). Canonical endpoints: GET `/health` - liveness kernel-? ??? graph; GET `/api/v0.4` - ????????????????? API/control namespace DocsWalker, ?????????? ???????? ? kernel API ? ??????????? graphs; POST `/<graph-name>` - JSON-RPC 2.0 main channel ??? ??????????? graph-?. ??? `api` ??????????????? ? ?? ????? ???? graph-name ? kernel-config.'
+        - text: 'Публичная HTTP-поверхность kernel-а работает на Kestrel (ASP.NET Core minimal API). Canonical endpoints: GET `/health` — liveness kernel-а без graph; GET `/api/v0.4` — зарезервированный API/control namespace DocsWalker, который возвращает сведения о kernel API и доступных graphs; POST `/<graph-name>` — JSON-RPC 2.0 main channel для выбранного graph-а. Имя `api` зарезервировано и не может быть graph-name в kernel-config.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1163,7 +1163,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#323) JSON-RPC response":
-        - text: 'Один ответ — JSON-RPC 2.0 объект: успех {"jsonrpc":"2.0","id":<int>,"result":{"payload":<тот же JSON, что текущий stdout успешного ответа CLI из (#161)>}}; ошибка {"jsonrpc":"2.0","id":<int>,"error":{"code":<int>,"message":"...","data":{"code":"<строковый-код>","message":"...","hint":"..."?}}}. Клиент проксирует payload в stdout (успех) или data в stderr (ошибка) и устанавливает exit code (0 / ≠0).'
+        - text: 'Один ответ — JSON-RPC 2.0 объект. Успех: {"jsonrpc":"2.0","id":<int>,"result":{"content":[{"type":"text","text":"<JSON результата tool>"}]}}. Ошибка JSON-RPC: {"jsonrpc":"2.0","id":<int>,"error":{"code":<int>,"message":"..."}}. Ошибка DocsWalker tool передаётся как MCP tool error: result.isError=true, а content[0].text содержит JSON с code/message/path?/hint?.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1175,20 +1175,20 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#385) client-config":
-        - text: 'JSON-файл `.dw/client.json` в проектной папке. Формат: {"kernel":{"host":"127.0.0.1","port":8080},"graph":"docswalker"}. Resolution: поиск вверх от cwd до filesystem-root (как git ищет .git/). Первый найденный — используется. Один client-config = один graph; override в запросе нет. Команды `--help` / `--version` не требуют client-config (не делают RPC).'
+        - text: 'JSON-файл `.dw/client.json` в проектной папке. Формат: {"kernel":{"host":"127.0.0.1","port":8080},"graph":"docswalker"}. Клиент ищет файл вверх от cwd до filesystem-root (как git ищет .git/). Первый найденный — используется. Один client-config = один graph; override в запросе нет.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
     - examples:
-      - "(#325) Запуск REPL":
-        - text: REPL — длинноживущий процесс, HTTP-клиент к kernel-у; читает `.dw/client.json` (поиск вверх от cwd); получает endpoint host:port + graph-name; проверяет /health kernel-а; открывает prompt `dw> ` с баннером `graph=<name>, kernel=<host>:<port>`; ввод argv-команды (без префикса) шлётся в kernel POST /<graph> → ответ печатается; ввод `:quit` / `:exit` или EOF (Ctrl+D / Ctrl+Z) — выход REPL (kernel остаётся работать); одиночный Ctrl+C — отмена текущей строки, prompt перерисовывается.
+      - "(#325) Legacy REPL":
+        - text: Legacy REPL — dev-utility поверх HTTP-клиента к kernel-у. Он не является LLM-facing эксплуатационным путём. Для LLM используется MCP-wrapper; kernel остаётся отдельным фоновым процессом и не зависит от REPL-сессий.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#329) Внешняя правка YAML":
-        - text: Kernel запущен → правка docs/foo.yml в IDE = нарушение контракта (#294); kernel не подхватывает изменения (нет FS-watcher), а первый же write-запрос через kernel перезапишет файл текущим in-memory графом, потеряв ручную правку. Штатный путь — все правки через DocsWalker-команды (CLI/REPL/MCP). Если ручная правка всё-таки нужна (миграция, восстановление) — оператор гасит kernel (kill), правит YAML, запускает kernel заново.
+        - text: Kernel запущен → правка docs/foo.yml в IDE = нарушение контракта (#294); kernel не подхватывает изменения (нет FS-watcher), а первый же write-запрос через kernel перезапишет файл текущим in-memory графом, потеряв ручную правку. Штатный путь — все правки через MCP tools/kernel JSON-RPC. Если ручная правка всё-таки нужна (миграция, восстановление) — оператор гасит kernel, правит YAML, запускает kernel заново.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1435,7 +1435,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#294) Запрет ручной правки YAML и служебных файлов":
-        - text: Правка любых файлов в docs/ (включая sequence.txt и folders.yml) в обход CLI запрещена — теряются sequence-инвариант, целостность графа, атомарность записи и path-child симметрия. Все правки — через DocsWalker.
+        - text: Правка любых файлов в docs/ (включая sequence.txt и folders.yml) в обход kernel API запрещена — теряются sequence-инвариант, целостность графа, атомарность записи и path-child симметрия. Все правки — через MCP tools/kernel JSON-RPC.
         - examples: [293]
         - subject: [425]
         - subsystem: [433]

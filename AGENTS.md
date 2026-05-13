@@ -18,12 +18,13 @@
 ## Работа с `docs/`
 
 `docs/**/*.yml` нельзя читать, искать, редактировать или переписывать напрямую.
-Доступ к графу идет через DocsWalker MCP tools или, если MCP еще не подключен,
-через опубликованный CLI:
+Доступ к графу идет через DocsWalker MCP tools или напрямую через kernel
+JSON-RPC `tools/call` на `http://127.0.0.1:18080/<graph>`.
 
-```powershell
-src\DocsWalker.Cli\bin\Release\net10.0\win-x64\publish\DocsWalker.Cli.exe get-usage-guide
-```
+CLI считается legacy/diagnostic surface: Codex не проектирует, не чинит, не
+тестирует и не использует CLI-поверхность как часть текущей работы без прямого
+запроса пользователя. Если MCP недоступен, используй kernel JSON-RPC; если и он
+недоступен, остановись и сообщи о деградации инструментария.
 
 В начале сессии с docs:
 
@@ -136,7 +137,7 @@ git -c safe.directory=D:/Dev/cs/projects/DocsWalker status --short --branch
 
 ```powershell
 curl.exe http://127.0.0.1:18080/health
-src\DocsWalker.Cli\bin\Release\net10.0\win-x64\publish\DocsWalker.Cli.exe check-integrity
+# check-integrity вызывать через DocsWalker MCP/kernel JSON-RPC tools/call
 dotnet test .\DocsWalker.slnx --no-restore
 git -c safe.directory=D:/Dev/cs/projects/DocsWalker status --short --branch
 ```

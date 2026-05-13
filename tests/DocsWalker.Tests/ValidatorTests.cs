@@ -54,6 +54,63 @@ public class ValidatorTests
     }
 
     [Fact]
+    public void Validate_TextWithCorruptQuestionRun_Reports_CorruptText()
+    {
+        var (v, g, _, schema) = Setup();
+        var node = g.GetById(127)!;
+        var rebuilt = RebuildWithReplacement(g, schema, ReplaceText(node, "поврежденный ????? текст"));
+        var result = v.Validate(rebuilt);
+        Assert.Contains(result.Errors, e => e.Code == "corrupt_text" && e.NodeId == node.Id);
+    }
+
+    [Fact]
+    public void Validate_TextWithThreeQuestionMarks_AllowsText()
+    {
+        var (v, g, _, schema) = Setup();
+        var node = g.GetById(127)!;
+        var rebuilt = RebuildWithReplacement(g, schema, ReplaceText(node, "Что происходит???"));
+        var result = v.Validate(rebuilt);
+        Assert.DoesNotContain(result.Errors, e => e.Code == "corrupt_text" && e.NodeId == node.Id);
+    }
+
+    [Fact]
+    public void Validate_TitleWithReplacementCharacter_Reports_CorruptText()
+    {
+        var (v, g, _, schema) = Setup();
+        var node = g.GetById(127)!;
+        var rebuilt = RebuildWithReplacement(g, schema, ReplaceTitle(node, "плохой � title"));
+        var result = v.Validate(rebuilt);
+        Assert.Contains(result.Errors, e => e.Code == "corrupt_text" && e.NodeId == node.Id);
+    }
+
+    [Fact]
+    public void Validate_TextWithMojibake_Reports_CorruptText()
+    {
+        var (v, g, _, schema) = Setup();
+        var node = g.GetById(127)!;
+        var rebuilt = RebuildWithReplacement(g, schema, ReplaceText(node, "Р—Р°РїСѓСЃРє kernel"));
+        var result = v.Validate(rebuilt);
+        Assert.Contains(result.Errors, e => e.Code == "corrupt_text" && e.NodeId == node.Id);
+    }
+
+    [Fact]
+    public void Load_DocumentWithInvalidUtf8_ReportsInvalidUtf8()
+    {
+        using var env = new WriteTestEnvironment();
+        var schema = SchemaLoader.LoadSchema(env.SchemaPath);
+        var docPath = Directory
+            .EnumerateFiles(env.DocsRoot, "*.yml", SearchOption.AllDirectories)
+            .First(p =>
+                !p.EndsWith("Схема.yml", StringComparison.Ordinal)
+                && !p.Contains($"{Path.DirectorySeparatorChar}.docswalker{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
+
+        File.WriteAllBytes(docPath, [0xFF]);
+
+        var ex = Assert.Throws<GraphLoadException>(() => DocumentLoader.Load(env.DocsRoot, schema));
+        Assert.Equal("invalid_utf8", ex.Code);
+    }
+
+    [Fact]
     public void Validate_TitleWithNewline_Reports_InvalidText()
     {
         var (v, g, _, schema) = Setup();

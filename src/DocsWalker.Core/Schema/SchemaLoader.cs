@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json.Nodes;
+using DocsWalker.Core.IO;
 using DocsWalker.Core.Yaml;
 using SharpYaml.Events;
 
@@ -51,8 +53,20 @@ public static class SchemaLoader
                 $"Файл '{filePath}' не найден.");
         }
 
-        using var stream = File.OpenRead(filePath);
-        using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+        string content;
+        try
+        {
+            content = Utf8File.ReadAllTextStrict(filePath);
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new SchemaLoadException(
+                "invalid_utf8",
+                filePath,
+                $"Файл '{filePath}' не является валидным UTF-8: {ex.Message}");
+        }
+
+        using var reader = new StringReader(content);
         return ParseWithReader(reader, filePath, parse);
     }
 
@@ -149,9 +163,9 @@ public static class SchemaLoader
         var ev = r.Peek();
         return ev switch
         {
-            MappingStart  => ReadAnyMapping(r),
+            MappingStart => ReadAnyMapping(r),
             SequenceStart => ReadAnySequence(r),
-            Scalar        => ReadAnyScalar(r),
+            Scalar => ReadAnyScalar(r),
             _ => throw NewError(
                 "yaml_parse_error",
                 $"Неожиданное событие YAML при чтении значения: {ev?.GetType().Name ?? "null"}."),

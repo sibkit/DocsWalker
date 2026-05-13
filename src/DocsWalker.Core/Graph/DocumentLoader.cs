@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using DocsWalker.Core.IO;
 using DocsWalker.Core.Schema;
 using DocsWalker.Core.Store;
 using DocsWalker.Core.Yaml;
@@ -270,8 +271,20 @@ public static class DocumentLoader
                 $"Каталог 'docs/{dirRel}' содержит документ '{fileName}', но не имеет записи в .docswalker/folders.yml.");
         }
 
-        using var stream = File.OpenRead(path);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
+        string content;
+        try
+        {
+            content = Utf8File.ReadAllTextStrict(path);
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new GraphLoadException(
+                "invalid_utf8",
+                rel,
+                $"Файл 'docs/{rel}' не является валидным UTF-8: {ex.Message}");
+        }
+
+        using var reader = new StringReader(content);
         var r = new YamlReader(reader, path);
 
         try

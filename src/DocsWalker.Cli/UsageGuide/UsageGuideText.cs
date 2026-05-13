@@ -1,51 +1,47 @@
 namespace DocsWalker.Cli.UsageGuide;
 
 /// <summary>
-/// Краткая ментальная модель DocsWalker для LLM-агента (≤30 строк). Возвращается
-/// командой <c>get-usage-guide</c> в поле <c>mental_model</c>. Полная версия
-/// (атомарными узлами с примерами) — в docs/DocsWalker.yml/«Как LLM работает с DocsWalker».
+/// Краткая ментальная модель DocsWalker для LLM-агента. Возвращается tool-ом
+/// <c>get-usage-guide</c> в поле <c>mental_model</c>.
 /// </summary>
 internal static class UsageGuideText
 {
     public const string MentalModel =
         """
-        DocsWalker представляет docs/ как граф: узлы (units of meaning) + направленные именованные связи (out_refs). LLM работает только с узлами и связями через CLI/MCP — имена файлов и каталогов наружу не торчат.
+        DocsWalker представляет docs/ как граф: узлы (units of meaning) + направленные именованные связи (out_refs). LLM работает только с узлами и связями через MCP tools поверх kernel JSON-RPC; имена файлов и каталогов наружу не торчат.
 
-        Архитектура процессов: DocsWalker.Kernel.exe — фоновое ядро, HTTP+JSON-RPC 2.0 на 127.0.0.1:<port>, держит N графов в RAM (multi-graph). Все CLI-команды и MCP-вызовы идут к ядру; routing — через graph-name в canonical URL: POST /<graph>. Namespace /api/v0.4 зарезервирован под API/control plane DocsWalker, поэтому graph-name api запрещён. Имена графов и storage-paths объявлены в kernel-config.json (на стороне ядра, путь передаётся ему как DocsWalker.Kernel.exe --config=<path>). CLI/REPL/MCP-wrapper читают .dw/client.json (kernel host/port + graph-name) поиском вверх по родителям от cwd, как .git/. Auto-spawn убран: ядро запускается пользователем заранее; если ядро не отвечает — клиент возвращает kernel_unreachable.
+        Архитектура процессов: DocsWalker.Kernel.exe — фоновое ядро, HTTP+JSON-RPC 2.0 на 127.0.0.1:<port>, держит N графов в RAM (multi-graph). Canonical endpoint графа: POST /<graph>. Namespace /api/v0.4 зарезервирован под API/control plane DocsWalker, поэтому graph-name api запрещён. Имена графов и storage-paths объявлены в kernel-config.json; kernel запускается оператором заранее как DocsWalker.Kernel.exe --config=<path>.
 
-        Контракт CLI (envelope-free):
-        - Успех — exit 0, stdout — JSON-результат команды напрямую, без обёртки. Шейп — специфика команды (объект или массив).
-        - Ошибка — exit ≠ 0, stderr — плоский JSON {code, message, path?, hint?, describe_type?}. stdout при ошибке пустой.
-        - Дискриминатор — exit-code и поток (stdout vs stderr).
-        - Для низкоуровневых write-команд applied: true|false — top-level поле результата (true — записано на FS, false — dry-run). Для LLM-facing batch-записи используй MCP tool tx с единым envelope.
+        Основной LLM-канал — MCP: клиент вызывает tools/list и tools/call, wrapper читает .dw/client.json (kernel host/port + graph-name) поиском вверх от cwd и пересылает вызов в /<graph>. Auto-spawn отсутствует: если kernel не отвечает, клиент получает kernel_unreachable.
 
-        Связи объявлены в Схеме у типа узла-источника (имя, target_types, cardinality, required). Часть связей объединена в named-tree (tree-scope) — например, дерево 'path' (физическое размещение в FS, единственное материализованное) или доменное 'strategic'. Tree-связи всегда cardinality=one + required=true.
+        Контракт kernel/MCP:
+        - JSON-RPC request: {"jsonrpc":"2.0","id":<id>,"method":"tools/call","params":{"name":"<tool>","arguments":{...}}}.
+        - Успех: JSON-RPC result с MCP content; внутри text лежит JSON-результат конкретного tool.
+        - Ошибка JSON-RPC: error {code,message}. Ошибка DocsWalker tool: JSON с машинным code, message, path?, hint?, describe_type?.
+        - Для LLM-facing batch-записи используй tool tx: он возвращает единый envelope с ok/method/base_revision/results.
 
-        Auto-include: связь с tree=null + required=true считается концептуально неотъемлемой — read-команды (get-nodes, get-tree, get-by-path) транзитивно подтягивают цели таких связей в результат и помещают их в поле auto_includes (в плоский массив у get-nodes). Все узлы — полные, повторы между запросами и внутри одного ответа не фильтруются. Для дешёвого обзора без auto-include — fields=[title] + depth/tree в read-командах. На текущей Схеме auto-include активен только для rule.examples — единственная non-tree required связь.
+        Связи объявлены в Схеме у типа узла-источника: имя, target_types, cardinality, required. Часть связей объединена в named-tree (tree-scope): path для физического размещения в хранилище и доменные классификаторы. Tree-связи всегда cardinality=one + required=true.
 
-        Корень — синглтон id=0, type=root. Любой обход начинается отсюда: get-tree --id=0 --tree=path даёт всё дерево хранилища.
+        Auto-include: связь с tree=null + required=true считается концептуально неотъемлемой. Read-tools get-nodes/get-tree/get-by-path транзитивно подтягивают цели таких связей в результат и помещают их в auto_includes. Для дешёвого обзора без auto-include используй fields=[title] + depth/tree. На текущей Схеме auto-include активен только для rule.examples.
+
+        Корень графа — id=0, type=root. Обход всего хранилища: tools/call get-tree с arguments {"id":0,"tree":"path"}.
 
         Порядок работы перед записью:
         1. check-integrity — убедиться, что граф валиден.
         2. get-tree / get-refs — прочитать актуальное состояние затронутого участка.
-        3. describe-type --name=<type> — уточнить контракт типа (если незнакомый).
-        4. На незнакомой задаче — hit для проверки selector/write-ops или низкоуровневая write-команда с --dry-run=true.
-        5. Если ответ ожидаемый — tx для атомарной записи или повтор низкоуровневой команды без --dry-run.
+        3. describe-type — уточнить контракт типа, если он незнаком.
+        4. hit — проверить selectors/write-ops без записи.
+        5. tx — атомарно применить ожидаемые изменения.
 
-        Удаление — только delete-nodes --ids= (явный список, без авто-каскада). Набор LLM собирает сама: get-tree по нужному tree-scope + path-children каждого узла. Ошибки path_orphans_left и dangling_refs — обучающий сигнал, перечисляют недостающее.
+        Удаление — только delete-nodes явным списком ids; авто-каскада нет. Набор собирает LLM через get-tree по нужному tree-scope и path-children каждого узла. Ошибки path_orphans_left и dangling_refs перечисляют недостающее.
 
-        Переподшивка узла в дереве — move-node --tree=<scope> (по умолчанию 'path'). Массовая переподшивка cross-refs — redirect-refs.
+        Переподшивка узла в дереве — move-node с явным tree, если цель не path. Массовая переподшивка cross-refs — redirect-refs.
 
         Запреты:
-        - Прямая правка YAML / sequence.txt / folders.yml в обход API — ядро sole-writer; внешний edit ломает консистентность RAM-графа в ядре. Если правка действительно нужна — graceful kernel stop, edit, restart.
-        - Изменение Схемы — через update-schema (atomic-замена docs/Схема.yml с серверной валидацией под meta-schema и текущий граф; ломающие правки отвергаются).
-        - move-node без --tree, если намерение — переподшить в доменном дереве: запустится реструктуризация хранилища.
+        - Не править YAML / sequence.txt / folders.yml в обход kernel API: kernel — sole-writer, внешний edit ломает консистентность RAM-графа.
+        - Схему менять только через update-schema: atomic-замена с server-side проверкой meta-schema и текущего графа.
+        - Не использовать legacy CLI как рабочую поверхность LLM. Он остается внутренним/diagnostic слоем до выпила, но usage-guide и эксплуатационный путь — MCP/kernel-only.
 
-        Команды по сценариям:
-        - Одноразовый CLI-вызов: docswalker <команда> — читает .dw/client.json (вверх от cwd), форвардит в /<graph> ядра. Никакого --root в команде.
-        - Интерактивный REPL: docswalker repl (HTTP-клиент к ядру; команды без префикса 'docswalker'; выход — :quit/:exit/Ctrl+D).
-        - MCP-канал для Claude Code: docswalker mcp-server (тонкий stdio↔HTTP wrapper; обычно вызывается через .mcp.json, не вручную).
-        - Запуск ядра: DocsWalker.Kernel.exe --config=<path-to-kernel-config.json> — отдельный exe (не подкоманда CLI). Слушает /<graph> для каждого графа из config'а и /api/v0.4 для API/control plane.
         Per-graph idle eviction = graph_idle_timeout (default 10m, configurable в kernel-config.json): если граф не запрашивался дольше — выгружается из RAM, при следующем обращении re-load с диска.
         """;
 }

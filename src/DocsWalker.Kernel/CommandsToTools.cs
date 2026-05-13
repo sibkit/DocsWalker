@@ -6,10 +6,9 @@ using DocsWalker.Core.Schema;
 namespace DocsWalker.Kernel;
 
 /// <summary>
-/// Конвертирует <see cref="Commands.All"/> CLI-команд в манифест MCP-tools.
+/// Конвертирует статические command contracts в манифест MCP-tools.
 /// Команда <c>run</c> исключается — это серверная сама-по-себе команда, через
-/// MCP её вызывать не предполагается. Все остальные read+write команды доступны
-/// LLM как MCP-tools 1:1 с CLI ((#364) docs/DocsWalker.yml).
+/// MCP её вызывать не предполагается.
 /// <para>
 /// Для tool'ов с динамическими параметрами (см. <see cref="CommandSpec.DynamicParams"/>) —
 /// сейчас это только <c>create-node</c> — при наличии загруженной проектной Схемы
@@ -19,10 +18,9 @@ namespace DocsWalker.Kernel;
 /// отдаётся с базовой схемой, сгенерированной из статических <see cref="CommandSpec.Params"/>.
 /// </para>
 /// <para>
-/// Жильё в DocsWalker.Kernel: с stg-0011 (code-mcp-project-split) MCP-сервер
-/// живёт в kernel'е (RpcDispatcher.HandleListTools/HandleCallToolAsync), а
-/// DocsWalker.Mcp.exe — лишь stdio↔HTTP bridge. Соответственно генератор
-/// tool-манифеста переехал из Cli в Kernel — туда, где реально используется.
+/// Жильё в DocsWalker.Kernel: MCP-сервер живёт в kernel'е
+/// (RpcDispatcher.HandleListTools/HandleCallToolAsync), а DocsWalker.Mcp.exe —
+/// лишь stdio↔HTTP bridge.
 /// </para>
 /// </summary>
 internal static class CommandsToTools
@@ -44,8 +42,7 @@ internal static class CommandsToTools
         foreach (var spec in Commands.All)
         {
             if (spec.KebabName == "run") continue;
-            // mcp-server вынесен в отдельный exe (DocsWalker.Mcp.exe) — здесь
-            // отсутствует как CLI-команда, защитный фильтр уже не нужен.
+            if (spec.KebabName == "repl") continue;
 
             var parameters = new List<McpToolParam>(spec.Params.Count);
             foreach (var p in spec.Params)
@@ -55,7 +52,7 @@ internal static class CommandsToTools
                     Name: p.KebabName,
                     JsonType: jsonType,
                     Required: p.Required,
-                    Description: p.Description,
+                    Description: NormalizeMcpText(p.Description),
                     ItemsJsonType: itemsType));
             }
 
@@ -71,11 +68,7 @@ internal static class CommandsToTools
                     Description: "true → не записывать на FS, вернуть applied=false. По умолчанию false."));
             }
 
-            var description = spec.Description ?? $"CLI-команда {spec.KebabName}.";
-            if (spec.Examples is { Count: > 0 })
-            {
-                description += "\n\nПримеры CLI:\n" + string.Join("\n", spec.Examples);
-            }
+            var description = NormalizeMcpText(spec.Description) ?? $"MCP tool {spec.KebabName}.";
 
             JsonObject? rawSchema = null;
             if (spec.KebabName == "create-node" && schema is not null)
@@ -124,6 +117,30 @@ internal static class CommandsToTools
         ParamType.Boolean => ("boolean", null),
         _ => ("string", null),
     };
+
+    private static string? NormalizeMcpText(string? text)
+    {
+        if (text is null) return null;
+
+        return text
+            .Replace("--<имя_связи>=<id|csv>", "одноимённый relation argument")
+            .Replace("--command=<kebab-name>", "argument command=<kebab-name>")
+            .Replace("--fields=<csv>", "argument fields=<csv>")
+            .Replace("--ids=", "argument ids=")
+            .Replace("--from-subtree", "argument from-subtree")
+            .Replace("--dry-run", "argument dry-run")
+            .Replace("--version", "version")
+            .Replace("--compact", "argument compact")
+            .Replace("--max-tokens", "argument max-tokens")
+            .Replace("--from", "argument from")
+            .Replace("--root", "root")
+            .Replace("--path", "argument path")
+            .Replace("--tree", "argument tree")
+            .Replace("--under", "argument under")
+            .Replace("--regex", "argument regex")
+            .Replace("--unlink", "argument unlink")
+            .Replace("--help", "help");
+    }
 
     /// <summary>
     /// Строит inputSchema для <c>create-node</c> по проектной Схеме.

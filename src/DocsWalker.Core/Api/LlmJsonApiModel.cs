@@ -335,6 +335,7 @@ public static class LlmJsonApiParser
 
     private static LlmSelector ParseSelector(JsonObject obj, string path)
     {
+        EnsureOnlyFields(obj, path, "path", "coordinates", "expect");
         var selectorPath = ReadOptionalString(obj, "path", $"{path}.path");
         var coordinates = ParseCoordinates(
             ReadOptionalObject(obj, "coordinates", $"{path}.coordinates"),
@@ -523,6 +524,21 @@ public static class LlmJsonApiParser
 
     private static JsonNode? ReadOptionalNode(JsonObject obj, string field) =>
         obj.TryGetPropertyValue(field, out var node) ? node : null;
+
+    private static void EnsureOnlyFields(JsonObject obj, string path, params string[] allowed)
+    {
+        var allowedSet = new HashSet<string>(allowed, StringComparer.Ordinal);
+        foreach (var prop in obj)
+        {
+            if (allowedSet.Contains(prop.Key))
+                continue;
+
+            throw Error(
+                "invalid_request",
+                $"{path}.{prop.Key}",
+                $"Поле {path}.{prop.Key} не поддерживается.");
+        }
+    }
 
     private static JsonObject ReadRequiredObject(JsonObject obj, string field, string path)
     {
