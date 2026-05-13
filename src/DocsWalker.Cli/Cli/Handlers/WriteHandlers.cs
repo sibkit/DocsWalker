@@ -47,7 +47,7 @@ internal static class WriteHandlers
                     "Ожидается id или список id через запятую (например, --path=1 или --rel=2,3).");
                 return 1;
             }
-            refs[key] = ids;
+            refs[key.Replace('-', '_')] = ids;
         }
 
         var op = new CreateNodeOp(
@@ -61,7 +61,7 @@ internal static class WriteHandlers
     public static int UpdateNode(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var newTitle = args.TryGetValue("title", out var t) ? t : null;
-        var newText  = args.TryGetValue("text",  out var x) ? x : null;
+        var newText = args.TryGetValue("text", out var x) ? x : null;
         if (newTitle is null && newText is null)
         {
             Output.WriteError(

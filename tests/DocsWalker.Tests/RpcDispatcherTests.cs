@@ -56,6 +56,10 @@ public class RpcDispatcherTests
         Assert.Contains("hit", names);
         Assert.Contains("query", names);
         Assert.Contains("tx", names);
+        Assert.Contains("brief", names);
+        Assert.Contains("checkpoint", names);
+        Assert.Contains("resume", names);
+        Assert.Contains("context-check", names);
         Assert.DoesNotContain("repl", names);
         Assert.DoesNotContain("Примеры CLI", resp);
 
@@ -66,6 +70,451 @@ public class RpcDispatcherTests
         Assert.Equal("object", ops.GetProperty("items").GetProperty("type").GetString());
         Assert.Contains(schema.GetProperty("required").EnumerateArray(),
             item => item.GetString() == "ops");
+        Assert.True(schema.GetProperty("properties").TryGetProperty("session_id", out _));
+
+        var txTool = tools.First(t => t.GetProperty("name").GetString() == "tx");
+        var txProperties = txTool.GetProperty("inputSchema").GetProperty("properties");
+        Assert.True(txProperties.TryGetProperty("session_id", out _));
+        Assert.True(txProperties.TryGetProperty("intent", out _));
+        Assert.True(txProperties.TryGetProperty("mode", out _));
+    }
+
+    [Fact]
+    public async Task ToolsCall_SessionLifecycle_PersistsAndChecksWorkset()
+    {
+        using var env = new WriteTestEnvironment();
+        using var registry = NewRegistry(("main", env.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var checkpoint = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 30,
+              "method": "tools/call",
+              "params": {
+                "name": "checkpoint",
+                "arguments": {
+                  "session_id": "test-session",
+                  "summary": "read node 1",
+                  "touched_nodes": [1],
+                  "decisions": ["session tools persist state"]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(checkpoint);
+        using (var rpcDoc = JsonDocument.Parse(checkpoint))
+        using (var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc)))
+        {
+            Assert.True(envelope.RootElement.GetProperty("ok").GetBoolean());
+            Assert.Equal("checkpoint", envelope.RootElement.GetProperty("method").GetString());
+        }
+
+        var resume = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 31,
+              "method": "tools/call",
+              "params": {
+                "name": "resume",
+                "arguments": { "session_id": "test-session" }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(resume);
+        using (var rpcDoc = JsonDocument.Parse(resume))
+        using (var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc)))
+        {
+            Assert.True(envelope.RootElement.GetProperty("ok").GetBoolean());
+            Assert.Equal("read node 1", envelope.RootElement
+                .GetProperty("session")
+                .GetProperty("summary")
+                .GetString());
+        }
+
+        var okCheck = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 32,
+              "method": "tools/call",
+              "params": {
+                "name": "context-check",
+                "arguments": {
+                  "session_id": "test-session",
+                  "intent": "update node already in workset",
+                  "write": { "ops": [{ "op": "update", "id": 1, "set": { "text": "..." } }] }
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(okCheck);
+        using (var rpcDoc = JsonDocument.Parse(okCheck))
+        using (var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc)))
+        {
+            Assert.True(envelope.RootElement.GetProperty("ok").GetBoolean());
+            Assert.Empty(envelope.RootElement.GetProperty("blockers").EnumerateArray());
+        }
+
+        var blockedCheck = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 33,
+              "method": "tools/call",
+              "params": {
+                "name": "context-check",
+                "arguments": {
+                  "session_id": "test-session",
+                  "intent": "update unread node",
+                  "write": { "ops": [{ "op": "update", "id": 2, "set": { "text": "..." } }] }
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(blockedCheck);
+        using (var rpcDoc = JsonDocument.Parse(blockedCheck))
+        {
+            Assert.True(rpcDoc.RootElement
+                .GetProperty("result")
+                .GetProperty("isError")
+                .GetBoolean());
+            using var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc));
+            Assert.False(envelope.RootElement.GetProperty("ok").GetBoolean());
+            Assert.Contains(envelope.RootElement.GetProperty("blockers").EnumerateArray(),
+                item => item.GetString() == "unread_target:2");
+        }
+    }
+
+    [Fact]
+    public async Task ToolsCall_Brief_ReturnsContextPack()
+    {
+        using var registry = NewRegistry(("main", TestPaths.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var resp = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 34,
+              "method": "tools/call",
+              "params": {
+                "name": "brief",
+                "arguments": { "goal": "LLM work session context guard", "max_tokens": 1000 }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(resp);
+        using var rpcDoc = JsonDocument.Parse(resp);
+        using var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc));
+        Assert.True(envelope.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal("brief", envelope.RootElement.GetProperty("method").GetString());
+        Assert.True(envelope.RootElement
+            .GetProperty("pack")
+            .GetProperty("relevant_nodes")
+            .GetArrayLength() > 0);
+    }
+
+    [Fact]
+    public async Task ToolsCall_QueryWithSessionId_AddsReturnedNodesToReadWorkset()
+    {
+        using var env = new WriteTestEnvironment();
+        using var registry = NewRegistry(("main", env.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var query = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 36,
+              "method": "tools/call",
+              "params": {
+                "name": "query",
+                "arguments": {
+                  "session_id": "query-workset",
+                  "ops": [
+                    {
+                      "op": "select",
+                      "select": { "path": "DocsWalker-LLM JSON API" },
+                      "include": ["text"],
+                      "max_tokens": 500
+                    }
+                  ]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(query);
+        int nodeId;
+        using (var rpcDoc = JsonDocument.Parse(query))
+        using (var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc)))
+        {
+            Assert.True(envelope.RootElement.GetProperty("ok").GetBoolean());
+            nodeId = envelope.RootElement
+                .GetProperty("results")[0]
+                .GetProperty("data")
+                .GetProperty("nodes")[0]
+                .GetProperty("id")
+                .GetInt32();
+            Assert.True(envelope.RootElement
+                .GetProperty("session")
+                .GetProperty("persisted")
+                .GetBoolean());
+        }
+
+        var resume = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 37,
+              "method": "tools/call",
+              "params": {
+                "name": "resume",
+                "arguments": { "session_id": "query-workset" }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(resume);
+        using (var rpcDoc = JsonDocument.Parse(resume))
+        using (var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc)))
+        {
+            Assert.Contains(
+                envelope.RootElement
+                    .GetProperty("session")
+                    .GetProperty("read_workset")
+                    .EnumerateArray(),
+                item => item.GetInt32() == nodeId);
+        }
+    }
+
+    [Fact]
+    public async Task ToolsCall_TxApplyIfSafe_BlocksUnreadTarget()
+    {
+        using var env = new WriteTestEnvironment();
+        using var registry = NewRegistry(("main", env.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+        var targetId = await QueryLlmJsonApiDocumentId(dispatcher);
+
+        await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 38,
+              "method": "tools/call",
+              "params": {
+                "name": "checkpoint",
+                "arguments": {
+                  "session_id": "tx-block",
+                  "summary": "empty workset",
+                  "read_workset": [0]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        var tx = await dispatcher.HandleMessageAsync(
+            $$"""
+            {
+              "jsonrpc": "2.0",
+              "id": 39,
+              "method": "tools/call",
+              "params": {
+                "name": "tx",
+                "arguments": {
+                  "session_id": "tx-block",
+                  "intent": "test blocked write",
+                  "mode": "apply_if_safe",
+                  "ops": [
+                    { "op": "update", "id": {{targetId}}, "set": { "text": "blocked" } }
+                  ]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(tx);
+        using var rpcDoc = JsonDocument.Parse(tx);
+        Assert.True(rpcDoc.RootElement
+            .GetProperty("result")
+            .GetProperty("isError")
+            .GetBoolean());
+        using var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc));
+        Assert.False(envelope.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal("tx", envelope.RootElement.GetProperty("method").GetString());
+        Assert.Equal("session_guard_failed", envelope.RootElement.GetProperty("code").GetString());
+        Assert.Contains(
+            envelope.RootElement
+                .GetProperty("details")
+                .GetProperty("blockers")
+                .EnumerateArray(),
+            item => item.GetString() == $"unread_target:{targetId}");
+    }
+
+    [Fact]
+    public async Task ToolsCall_TxApplyIfSafe_AllowsReadTargetAndUpdatesSession()
+    {
+        using var env = new WriteTestEnvironment();
+        using var registry = NewRegistry(("main", env.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+        var targetId = await QueryLlmJsonApiDocumentId(dispatcher);
+
+        await dispatcher.HandleMessageAsync(
+            $$"""
+            {
+              "jsonrpc": "2.0",
+              "id": 40,
+              "method": "tools/call",
+              "params": {
+                "name": "checkpoint",
+                "arguments": {
+                  "session_id": "tx-allow",
+                  "summary": "read target",
+                  "read_workset": [{{targetId}}]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        var tx = await dispatcher.HandleMessageAsync(
+            $$"""
+            {
+              "jsonrpc": "2.0",
+              "id": 41,
+              "method": "tools/call",
+              "params": {
+                "name": "tx",
+                "arguments": {
+                  "session_id": "tx-allow",
+                  "intent": "test allowed write",
+                  "mode": "apply_if_safe",
+                  "ops": [
+                    { "op": "update", "id": {{targetId}}, "set": { "text": "tx guard smoke" } }
+                  ]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(tx);
+        using var rpcDoc = JsonDocument.Parse(tx);
+        Assert.False(rpcDoc.RootElement.GetProperty("result").TryGetProperty("isError", out _));
+        using var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc));
+        Assert.True(envelope.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal("tx", envelope.RootElement.GetProperty("method").GetString());
+        Assert.True(envelope.RootElement
+            .GetProperty("session")
+            .GetProperty("persisted")
+            .GetBoolean());
+    }
+
+    [Fact]
+    public async Task ToolsCall_TxPreview_UsesHitWithoutSessionGuard()
+    {
+        using var registry = NewRegistry(("main", TestPaths.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var tx = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 42,
+              "method": "tools/call",
+              "params": {
+                "name": "tx",
+                "arguments": {
+                  "mode": "preview",
+                  "ops": [
+                    {
+                      "op": "select",
+                      "select": { "path": "DocsWalker-LLM JSON API" }
+                    }
+                  ]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(tx);
+        using var rpcDoc = JsonDocument.Parse(tx);
+        Assert.False(rpcDoc.RootElement.GetProperty("result").TryGetProperty("isError", out _));
+        using var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc));
+        Assert.True(envelope.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal("tx", envelope.RootElement.GetProperty("method").GetString());
+        Assert.Equal("preview", envelope.RootElement.GetProperty("mode").GetString());
+        Assert.Equal("hit", envelope.RootElement.GetProperty("validated_by").GetString());
+    }
+
+    [Fact]
+    public async Task ToolsCall_CreateNode_AcceptsSnakeCaseClassifierRefFromMcp()
+    {
+        using var env = new WriteTestEnvironment();
+        using var registry = NewRegistry(("main", env.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var resp = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 35,
+              "method": "tools/call",
+              "params": {
+                "name": "create-node",
+                "arguments": {
+                  "type": "example",
+                  "title": "mcp snake classifier smoke",
+                  "text": "smoke",
+                  "path": 445,
+                  "subject": 419,
+                  "subsystem": 427,
+                  "audience": 435,
+                  "csharp_structure": 437,
+                  "dry-run": true
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(resp);
+        using var rpcDoc = JsonDocument.Parse(resp);
+        Assert.False(rpcDoc.RootElement.GetProperty("result").TryGetProperty("isError", out _));
+        var text = ExtractToolText(rpcDoc);
+        Assert.Contains("\"applied\":false", text);
+        Assert.DoesNotContain("missing_required_ref", text);
     }
 
     [Fact]
@@ -278,6 +727,42 @@ public class RpcDispatcherTests
             .GetProperty("content")[0]
             .GetProperty("text")
             .GetString()!;
+
+    private static async Task<int> QueryLlmJsonApiDocumentId(RpcDispatcher dispatcher)
+    {
+        var resp = await dispatcher.HandleMessageAsync(
+            """
+            {
+              "jsonrpc": "2.0",
+              "id": 1001,
+              "method": "tools/call",
+              "params": {
+                "name": "query",
+                "arguments": {
+                  "ops": [
+                    {
+                      "op": "select",
+                      "select": { "path": "DocsWalker-LLM JSON API" },
+                      "max_tokens": 500
+                    }
+                  ]
+                }
+              }
+            }
+            """,
+            graphName: "main",
+            default);
+
+        Assert.NotNull(resp);
+        using var rpcDoc = JsonDocument.Parse(resp);
+        using var envelope = JsonDocument.Parse(ExtractToolText(rpcDoc));
+        return envelope.RootElement
+            .GetProperty("results")[0]
+            .GetProperty("data")
+            .GetProperty("nodes")[0]
+            .GetProperty("id")
+            .GetInt32();
+    }
 
     /// <summary>
     /// Минимальная заглушка <see cref="IHostApplicationLifetime"/>:

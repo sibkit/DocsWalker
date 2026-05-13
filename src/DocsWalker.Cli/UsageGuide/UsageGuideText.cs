@@ -14,11 +14,13 @@ internal static class UsageGuideText
 
         Основной LLM-канал — MCP: клиент вызывает tools/list и tools/call, wrapper читает .dw/client.json (kernel host/port + graph-name) поиском вверх от cwd и пересылает вызов в /<graph>. Auto-spawn отсутствует: если kernel не отвечает, клиент получает kernel_unreachable.
 
+        Для долгих задач не полагайся на память диалога: начни с brief или resume, читай через query(session_id=...), сохраняй решения через checkpoint, а запись делай через tx mode=apply_if_safe. Work_session живёт как явный kernel/MCP state и нужен для восстановления после compact/reset.
+
         Контракт kernel/MCP:
         - JSON-RPC request: {"jsonrpc":"2.0","id":<id>,"method":"tools/call","params":{"name":"<tool>","arguments":{...}}}.
         - Успех: JSON-RPC result с MCP content; внутри text лежит JSON-результат конкретного tool.
         - Ошибка JSON-RPC: error {code,message}. Ошибка DocsWalker tool: JSON с машинным code, message, path?, hint?, describe_type?.
-        - Для LLM-facing batch-записи используй tool tx: он возвращает единый envelope с ok/method/base_revision/results.
+        - Для LLM-facing batch-записи используй tool tx с session_id, intent и mode=apply_if_safe: он сам запускает preview/guard и возвращает единый envelope с ok/method/base_revision/results.
 
         Связи объявлены в Схеме у типа узла-источника: имя, target_types, cardinality, required. Часть связей объединена в named-tree (tree-scope): path для физического размещения в хранилище и доменные классификаторы. Tree-связи всегда cardinality=one + required=true.
 
@@ -27,11 +29,13 @@ internal static class UsageGuideText
         Корень графа — id=0, type=root. Обход всего хранилища: tools/call get-tree с arguments {"id":0,"tree":"path"}.
 
         Порядок работы перед записью:
-        1. check-integrity — убедиться, что граф валиден.
-        2. get-tree / get-refs — прочитать актуальное состояние затронутого участка.
-        3. describe-type — уточнить контракт типа, если он незнаком.
-        4. hit — проверить selectors/write-ops без записи.
-        5. tx — атомарно применить ожидаемые изменения.
+        1. brief или resume — восстановить work_session и workset задачи.
+        2. check-integrity — убедиться, что граф валиден.
+        3. query(session_id=...) или get-tree / get-refs — прочитать актуальное состояние затронутого участка; query автоматически пополняет read_workset сессии.
+        4. describe-type — уточнить контракт типа, если он незнаком.
+        5. hit — опционально проверить selectors/write-ops без записи, если нужна отдельная preview-картина.
+        6. tx mode=apply_if_safe — атомарно применить ожидаемые изменения; kernel сам сверит intent, session graph_revision и затронутые ids с read_workset.
+        7. context-check — отдельная диагностическая проверка будущей записи, когда нужно явно увидеть blockers до tx.
 
         Удаление — только delete-nodes явным списком ids; авто-каскада нет. Набор собирает LLM через get-tree по нужному tree-scope и path-children каждого узла. Ошибки path_orphans_left и dangling_refs перечисляют недостающее.
 

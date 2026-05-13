@@ -34,10 +34,47 @@ internal static class CommandsToTools
                 "LLM-facing JSON API: безопасная проверка selector-ов и будущих write-ops без записи. Принимает defaults и ops[]."),
             BuildLlmJsonApiTool(
                 "query",
-                "LLM-facing JSON API: чтение данных по select- и grep-операциям. Принимает defaults и ops[]."),
+                "LLM-facing JSON API: чтение данных по select- и grep-операциям. С session_id автоматически пополняет read_workset."),
             BuildLlmJsonApiTool(
                 "tx",
-                "LLM-facing JSON API: атомарное внесение изменений. Принимает defaults и ops[]."),
+                "LLM-facing JSON API: атомарное внесение изменений. По умолчанию mode=apply_if_safe с preview/guard на стороне kernel."),
+            BuildSessionTool(
+                "brief",
+                "Session lifecycle: собрать compact context pack по goal перед началом или возобновлением задачи.",
+                [
+                    new McpToolParam("goal", "string", true, "Цель задачи естественным языком."),
+                    new McpToolParam("session_id", "string", false, "Опциональный id work_session."),
+                    new McpToolParam("scope", "object", false, "Опциональная область задачи; первая итерация возвращает её как hint."),
+                    new McpToolParam("max_tokens", "integer", false, "Желаемый бюджет ответа. Первая итерация ограничивает search hits.")
+                ]),
+            BuildSessionTool(
+                "checkpoint",
+                "Session lifecycle: сохранить явный handoff work_session для последующего resume.",
+                [
+                    new McpToolParam("session_id", "string", true, "Стабильный id work_session."),
+                    new McpToolParam("summary", "string", true, "Краткое состояние работы."),
+                    new McpToolParam("touched_nodes", "array", false, "Node ids, которые задача читала или меняла.", "integer"),
+                    new McpToolParam("read_workset", "array", false, "Node ids, входящие в текущий read workset.", "integer"),
+                    new McpToolParam("decisions", "array", false, "Принятые решения.", "string"),
+                    new McpToolParam("assumptions", "array", false, "Активные допущения.", "string"),
+                    new McpToolParam("pending", "array", false, "Оставшиеся шаги или проверки.", "string"),
+                    new McpToolParam("next_step", "string", false, "Следующее действие.")
+                ]),
+            BuildSessionTool(
+                "resume",
+                "Session lifecycle: вернуть сохраненный handoff work_session по session_id.",
+                [
+                    new McpToolParam("session_id", "string", true, "Id work_session."),
+                    new McpToolParam("max_tokens", "integer", false, "Желаемый бюджет ответа.")
+                ]),
+            BuildSessionTool(
+                "context-check",
+                "Session lifecycle: проверить будущую запись против session workset и graph revision.",
+                [
+                    new McpToolParam("session_id", "string", true, "Id work_session."),
+                    new McpToolParam("intent", "string", false, "Зачем нужна будущая запись."),
+                    new McpToolParam("write", "object", true, "Будущий write payload, обычно tx arguments с ops[].")
+                ]),
         };
         foreach (var spec in Commands.All)
         {
@@ -85,24 +122,59 @@ internal static class CommandsToTools
         return list;
     }
 
-    private static McpToolDescriptor BuildLlmJsonApiTool(string name, string description) =>
+    private static McpToolDescriptor BuildLlmJsonApiTool(string name, string description)
+    {
+        var parameters = new List<McpToolParam>
+        {
+            new(
+                Name: "defaults",
+                JsonType: "object",
+                Required: false,
+                Description: "Опциональные defaults LLM JSON API: path_parent и coordinates."),
+            new(
+                Name: "ops",
+                JsonType: "array",
+                Required: true,
+                Description: "Массив операций LLM JSON API. Метод задается именем MCP tool.",
+                ItemsJsonType: "object"),
+        };
+
+        if (name is "query" or "tx")
+        {
+            parameters.Add(new McpToolParam(
+                Name: "session_id",
+                JsonType: "string",
+                Required: false,
+                Description: "Id work_session. query пополняет read_workset; tx использует session guard."));
+        }
+        if (name == "tx")
+        {
+            parameters.Add(new McpToolParam(
+                Name: "intent",
+                JsonType: "string",
+                Required: false,
+                Description: "Зачем нужна запись. Обязательно для mode=apply_if_safe/apply."));
+            parameters.Add(new McpToolParam(
+                Name: "mode",
+                JsonType: "string",
+                Required: false,
+                Description: "preview | apply_if_safe | apply. По умолчанию apply_if_safe."));
+        }
+
+        return new(
+            Name: name,
+            Description: description,
+            Params: parameters);
+    }
+
+    private static McpToolDescriptor BuildSessionTool(
+        string name,
+        string description,
+        IReadOnlyList<McpToolParam> parameters) =>
         new(
             Name: name,
             Description: description,
-            Params:
-            [
-                new McpToolParam(
-                    Name: "defaults",
-                    JsonType: "object",
-                    Required: false,
-                    Description: "Опциональные defaults LLM JSON API: path_parent и coordinates."),
-                new McpToolParam(
-                    Name: "ops",
-                    JsonType: "array",
-                    Required: true,
-                    Description: "Массив операций LLM JSON API. Метод задается именем MCP tool.",
-                    ItemsJsonType: "object"),
-            ]);
+            Params: parameters);
 
     private static (string JsonType, string? ItemsType) MapParamType(ParamType type) => type switch
     {

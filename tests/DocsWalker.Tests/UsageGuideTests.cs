@@ -91,6 +91,10 @@ public class UsageGuideTests
         Assert.Contains("hit", names);
         Assert.Contains("query", names);
         Assert.Contains("tx", names);
+        Assert.Contains("brief", names);
+        Assert.Contains("checkpoint", names);
+        Assert.Contains("resume", names);
+        Assert.Contains("context-check", names);
         Assert.DoesNotContain("transaction", names);
         Assert.False(doc.RootElement.TryGetProperty("transaction_operations", out _));
     }
