@@ -13,7 +13,7 @@ using Microsoft.Extensions.Hosting;
 namespace DocsWalker.Kernel;
 
 /// <summary>
-/// JSON-RPC 2.0 endpoint ядра DocsWalker. Принимает <c>POST /db/{graph}/rpc</c>,
+/// JSON-RPC 2.0 endpoint ядра DocsWalker. Принимает canonical <c>POST /{graph}</c>,
 /// диспатчит <c>initialize</c> / <c>tools/list</c> / <c>tools/call</c> /
 /// <c>shutdown</c>.
 /// <para>
@@ -67,7 +67,7 @@ internal sealed class RpcDispatcher
     }
 
     /// <summary>
-    /// Точка входа для <c>MapPost("/db/{graph}/rpc", ...)</c>. Читает body,
+    /// Точка входа для <c>MapPost("/{graph}", ...)</c>. Читает body,
     /// дёргает <see cref="HandleMessageAsync"/>, пишет ответ как application/json.
     /// </summary>
     public async Task HandleAsync(HttpContext ctx, string graphName)
@@ -165,18 +165,15 @@ internal sealed class RpcDispatcher
 
     /// <summary>
     /// <c>tools/list</c> — грузим Схему графа по имени из URL для динамической
-    /// inputSchema у <c>create-node</c>. Если граф неизвестен или Схемы нет —
-    /// отдаём базовую схему (без oneOf-веток по типам); это диагностический
-    /// сценарий, обычно MCP-клиент уже знает корректный URL.
+    /// inputSchema у <c>create-node</c>. Неизвестный граф падает сразу, чтобы
+    /// неверный endpoint не выглядел рабочим до первого <c>tools/call</c>.
     /// </summary>
     private JsonRpcResponse HandleListTools(JsonRpcRequest request, string graphName)
     {
-        SchemaDocument? schema = null;
-        if (_registry.TryGet(graphName, out var entry))
-        {
-            schema = TryLoadSchema(entry.StoragePath);
-        }
+        if (!_registry.TryGet(graphName, out var entry))
+            return MakeUnknownGraphError(request.Id, graphName);
 
+        var schema = TryLoadSchema(entry.StoragePath);
         var descriptors = CommandsToTools.Build(schema);
         var tools = new List<McpTool>(descriptors.Count);
         foreach (var d in descriptors)
@@ -214,10 +211,7 @@ internal sealed class RpcDispatcher
 
         // Routing по имени графа из URL. Неизвестный граф → unknown_graph.
         if (!_registry.TryGet(graphName, out var entry))
-        {
-            return MakeError(request.Id, JsonRpcErrorCodes.InvalidParams,
-                $"unknown_graph: '{graphName}' (kernel-config содержит только статически зарегистрированные графы)");
-        }
+            return MakeUnknownGraphError(request.Id, graphName);
 
         if (IsLlmJsonApiTool(callParams.Name))
         {
@@ -540,6 +534,10 @@ internal sealed class RpcDispatcher
     private static JsonRpcResponse MakeError(JsonElement? id, int code, string message) =>
         new("2.0", id ?? JsonDocument.Parse("null").RootElement, null,
             new JsonRpcError(code, message, null));
+
+    private static JsonRpcResponse MakeUnknownGraphError(JsonElement? id, string graphName) =>
+        MakeError(id, JsonRpcErrorCodes.InvalidParams,
+            $"unknown_graph: '{graphName}' (kernel-config содержит только статически зарегистрированные графы)");
 
     private static JsonRpcResponse EmptyOk(JsonElement? id) =>
         MakeOk(id, JsonDocument.Parse("{}").RootElement);

@@ -80,6 +80,21 @@ public class ClientConfigTests
     }
 
     [Fact]
+    public void Read_ReservedApiGraphName_ThrowsClientConfigInvalid()
+    {
+        using var f = new TempFile();
+        f.WriteAllText(
+            "{\n" +
+            "  \"kernel\": { \"host\": \"127.0.0.1\", \"port\": 12345 },\n" +
+            "  \"graph\": \"api\"\n" +
+            "}");
+
+        var ex = Assert.Throws<ClientConfigException>(() => ClientConfig.Read(f.Path));
+        Assert.Equal("client_config_invalid", ex.Code);
+        Assert.Contains("зарезервирован", ex.Message);
+    }
+
+    [Fact]
     public void FindConfigPath_LooksUpwardFromStartDir()
     {
         var temp = Path.Combine(Path.GetTempPath(), "dw-client-search-" + Guid.NewGuid().ToString("N"));

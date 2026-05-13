@@ -444,7 +444,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#210) Двух файлов":
-        - text: Если transaction правит два YAML-файла и второй упал — первый тоже не сохраняется.
+        - text: Если tx включает несколько write-операций и любая из них не проходит resolve, schema constraints или финальную validation-проверку, ни одно изменение из запроса не сохраняется.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -458,7 +458,7 @@ sections:
   - "(#17) Операции чтения":
     - rules:
       - "(#406) Truncation-протокол":
-        - text: 'Read-команды get-tree и get-nodes принимают max_tokens — бюджет токенов на ответ; default 50000. При превышении ответ обрезается BFS по depth: верхние уровни сериализуются целиком, нижние — пока влезают. Дополнительные top-level поля ответа: truncated (bool), stopped_at (массив {parent_id, remaining_children, next_offset} — точки обрыва BFS; для get-nodes — единственная запись с parent_id=0 как маркер плоского списка), tokens_used (int — фактически потраченный бюджет), tokens_budget (int — переданный max_tokens, явно эхо-возвращается). При truncated=false поля stopped_at, tokens_used, tokens_budget опускаются (правило #301). Для дочитывания недочитанной части — повторный вызов с id=parent_id и offset=next_offset (или иной механизм per-команды).'
+        - text: 'Read-??????? get-tree, get-by-path ? get-nodes ????????? max_tokens - ?????? ??????? ?? ?????; default 50000. ??? ?????????? ????? ?????????? BFS ?? depth: ??????? ?????? ????????????? ???????, ?????? - ???? ???????. ?????????????? top-level ???? ??????: truncated (bool), stopped_at (?????? {parent_id, remaining_children, next_offset} - ????? ?????? BFS; ??? get-nodes - ???????????? ?????? ? parent_id=0 ??? ?????? ???????? ??????), tokens_used (int - ?????????? ??????????? ??????), tokens_budget (int - ?????????? max_tokens, ???? ???-????????????). ??? truncated=false ???? stopped_at, tokens_used, tokens_budget ?????????? (??????? #301). ??? ??????????? ???????????? ????? - ????????? ????? ? id=parent_id ? offset=next_offset (??? ???? ???????? per-???????).'
         - examples: [405]
         - subject: [425]
         - subsystem: [433]
@@ -490,7 +490,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#23) get_by_path":
-        - text: Полное поддерево узла по человекочитаемому пути. Параметр — path (строка вида "Документ" или "Документ/Раздел/Подраздел", разделитель "/"). Если path указывает на документ — возвращает полное содержимое YAML-файла в структурированной форме. Иначе — поддерево узла со всеми вложенными узлами. Используется для глубокого анализа без множества вызовов get_nodes.
+        - text: '????????? ???? ?? ????????????????? ????. ????????? - path (?????? ???? "????????" ??? "????????/??????/?????????", ??????????? "/"), tree (???., addressable tree), depth (???., ???????? ???????: 0 - ?????? ????????? ????, 1 - ????????? ???? ? ???? ???????), fields (???., whitelist id,type,title,text,out_refs,tokens,subtree_tokens), compact (???., alias ??? fields=id,type,title), max_tokens (???., ?????? ???????; default 50000). ?????????? {tree, root, truncated?, stopped_at?, tokens_used?, tokens_budget?}. ???????????? ??? ????????? ??????? ?? ??????????? ????; ??? ??????? ?????????? LLM ?????? ???????? compact/depth/max_tokens, ????? ?? ???????? ?????????? ?????.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -538,7 +538,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#298) get_usage_guide":
-        - text: 'Manifest для LLM в начале сессии: ментальная модель + перечень tree-scope''ов (из Схемы) + manifest всех команд (имя, kind=read|write, описание, параметры с типами и описаниями, примеры) + слепок графа (total_nodes, root_children — id/type/title детей root, schema_types_count). Без параметров. Зови один раз перед цепочкой задач.'
+        - text: 'Manifest для LLM в начале сессии: ментальная модель + перечень tree-scope''ов (из Схемы) + manifest команд graph plane (имя, kind=read|write, описание, параметры с типами и описаниями, примеры) + слепок графа (total_nodes, root_children — id/type/title детей root, schema_types_count). Без параметров возвращает полный guide. Опциональный fields — whitelist секций mental_model,trees,commands,graph_snapshot; опциональный command — kebab-имя одной команды в commands[]. Для дешёвых точечных запросов используй fields=commands --command=<name> или fields=trees. Сведения о kernel/control plane живут в `/api/v0.4` и не смешиваются с project graph data.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -623,8 +623,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#34) transaction":
-        - text: 'Атомарная пачка операций записи. Параметр — список операций любых из перечисленных выше (create_node, update_node, delete_node, move_node, create_ref, delete_ref). Применяется целиком или не применяется. Используется для составных изменений — переименование с одновременной правкой связанных узлов, перенос узла в одной транзакции с правкой полей, массовая правка. Контракт передачи operations: в CLI — JSON-строка одной --operations=[{...},{...}], в MCP — arguments.operations как array-of-object напрямую (inputSchema: type=array, items.type=object); серверный конвертер передаёт raw JSON-массив со скобками в CLI-вызов.'
+      - "(#34) tx":
+        - text: tx — LLM-facing JSON API method для атомарного внесения изменений в граф DocsWalker. Запрос принимает ops[] с create, update, delete, move, link, unlink и select для объявления alias; kernel резолвит path, coordinates и relations, проверяет constraints Схемы, запускает validator и применяет все изменения целиком или не применяет ничего. Публичное имя write-batch API — только tx.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -697,8 +697,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#162) transaction-result":
-        - text: Команда transaction возвращает в stdout массив объектов в исходном порядке операций (без обёртки), по одному на каждую операцию входа. Каждый элемент имеет форму {op, ...поля результата операции, applied}. Поле op отличает шейп элемента от одиночного write-результата; applied повторяется в каждом элементе (значение одинаковое — transaction атомарна).
+      - "(#162) tx-result":
+        - text: 'Метод tx возвращает единый LLM JSON API envelope. Успех: {"ok":true,"method":"tx","base_revision":N,"summary":"...","results":[...]}. Ошибка: {"ok":false,"method":"tx","code":"...","message":"...","details":{...}}. Результаты ops[] идут в исходном порядке; при ошибке tx не применяет ни одной write-операции.'
         - examples: [220]
         - subject: [425]
         - subsystem: [433]
@@ -726,7 +726,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#269) dry-run":
-        - text: Общий флаг --dry-run=true прогоняет write-команду до валидации включительно, но не пишет файлы и не обновляет sequence.txt. Возвращает обычный success-результат с полем applied=false на верхнем уровне (для transaction — applied=false в каждом элементе массива). На ошибку валидации — обычная ошибка validation_failed. Read-команды флаг не принимают (отвергают как unknown_parameter).
+        - text: 'Общий флаг --dry-run=true относится к низкоуровневым write-командам: команда проходит валидацию, но не пишет файлы и не обновляет sequence.txt; ответ содержит applied=false. В LLM JSON API preview делается методом hit, а запись выполняется методом tx без dry-run-флага. Read-команды dry-run не принимают.'
         - examples: [268]
         - subject: [425]
         - subsystem: [433]
@@ -813,8 +813,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#220) Массив transaction":
-        - text: '[{"op":"create-node","id":188,"title":"foo","applied":true},{"op":"create-ref","applied":true}] в stdout — порядок исходных операций; applied в каждом элементе.'
+      - "(#220) tx envelope":
+        - text: '{"ok":true,"method":"tx","base_revision":506,"summary":"tx: применено операций 2.","results":[{"index":0,"op":"create","alias":"new_rule","data":{"applied":true}},{"index":1,"op":"link","alias":null,"data":{"applied":true}}]} — порядок соответствует входному ops[].'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -850,7 +850,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#299) get-usage-guide на старте сессии":
-        - text: 'get-usage-guide {} → один JSON со всем нужным: mental_model, trees[], commands[] (с примерами), graph_snapshot. После него LLM не нужны list-документов, get-schema или ручной разбор Commands.cs.'
+        - text: 'get-usage-guide {} → полный JSON для graph plane: mental_model, trees[], commands[] (с примерами), graph_snapshot. get-usage-guide --fields=commands --command=get-tree → только описание одной команды без mental_model/trees/snapshot. get-usage-guide --fields=trees → только перечень tree-scope''ов. Kernel/API-level сведения доступны отдельно через `/api/v0.4`.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -886,7 +886,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#401) search в поддереве":
-        - text: "Ограничить поиск поддеревом узла в указанном tree-scope. Параметр under — id корня поддерева, tree — имя дерева (default path).\n\nsearch {\"query\": \"transaction\", \"tree\": \"path\", \"under\": 35}\n\nНайдёт упоминания «transaction» только в поддереве узла id=35 (section CLI-интерфейс) по path-дереву. Без under поиск глобальный по всему графу."
+        - text: "Ограничить поиск поддеревом узла в указанном tree-scope. Параметр under — id корня поддерева, tree — имя дерева (default path).\n\nsearch {\"query\": \"tx\", \"tree\": \"path\", \"under\": 438}\n\nНайдёт упоминания «tx» только в поддереве документа DocsWalker-LLM JSON API по path-дереву. Без under поиск глобальный по всему графу."
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -906,7 +906,7 @@ sections:
   - "(#44) MCP-интерфейс":
     - statements:
       - "(#166) MCP-wrapper над kernel":
-        - text: 'MCP-сервер реализуется как тонкий stdio↔HTTP мост поверх kernel-а: принимает JSON-RPC tools/call по stdin от LLM-клиента, конвертирует в HTTP POST `/db/<graph>/rpc` к kernel-у, проксирует ответ в stdout. MCP-wrapper не парсит docs/ и не держит граф — вся семантика на kernel-е. Endpoint и graph-name берёт из `.dw/client.json` (см. (#160)).'
+        - text: 'MCP-сервер реализуется как тонкий stdio↔HTTP мост поверх kernel-а: принимает JSON-RPC tools/call по stdin от LLM-клиента, конвертирует в HTTP POST `/<graph>` к kernel-у, проксирует ответ в stdout. MCP-wrapper не парсит docs/ и не держит граф — вся семантика на kernel-е. Endpoint и graph-name берёт из `.dw/client.json` (см. (#160)).'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -942,7 +942,7 @@ sections:
         - csharp_structure: [437]
     - examples:
       - "(#365) tools/call":
-        - text: MCP-tool `get-nodes` принимает {"ids":[42]} через MCP tools/call → wrapper подставляет endpoint и graph-name из client-config, шлёт HTTP POST `/db/<graph>/rpc` с JSON-RPC `{name:"get-nodes",arguments:{ids:[42]}}` → ответ kernel-а маршалится в MCP-формат tools/call response (success-объект или MCP-error). Параметра root в MCP-tool нет.
+        - text: MCP-tool `get-nodes` принимает {"ids":[42]} через MCP tools/call → wrapper подставляет endpoint и graph-name из client-config, шлёт HTTP POST `/<graph>` с JSON-RPC `{name:"get-nodes",arguments:{ids:[42]}}` → ответ kernel-а маршалится в MCP-формат tools/call response (success-объект или MCP-error). Параметра root в MCP-tool нет.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -997,7 +997,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#173) JSON для всех транспортов":
-        - text: JSON используется для CLI stdout/stderr и для wire-протокола kernel-а (HTTP /rpc — JSON-RPC 2.0 body). YAML — только storage docs/. Сериализация — System.Text.Json с source-генераторами (JsonSerializerContext) для AOT-совместимости.
+        - text: JSON ???????????? ??? CLI stdout/stderr ? ??? wire-????????? kernel-? (HTTP POST `/<graph>` - JSON-RPC 2.0 body). YAML - ?????? storage docs/. ???????????? - System.Text.Json ? source-???????????? (JsonSerializerContext) ??? AOT-?????????????.
         - examples: [229]
         - subject: [425]
         - subsystem: [433]
@@ -1082,7 +1082,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#309) Multi-graph через named graphs":
-        - text: 'Один kernel-процесс обслуживает N графов, объявленных в kernel-config как именованный словарь `graphs: { "<name>": "<storage-path>" }`. Клиент адресует граф по имени через URL `/db/<name>/rpc`. Lazy-load: первый запрос на новый graph триггерит загрузку графа в RAM. Несколько workspace-ов = N инстансов клиента из N проектных папок (каждая со своим `.dw/client.json` — см. (#160)).'
+        - text: 'Один kernel-процесс обслуживает N графов, объявленных в kernel-config как именованный словарь `graphs: { "<name>": "<storage-path>" }`. Клиент адресует граф по имени через canonical URL `/<name>`. Имя `api` зарезервировано под `/api/v0.4` и не может быть graph-name. Lazy-load: первый запрос на новый graph триггерит загрузку графа в RAM. Несколько workspace-ов = N инстансов клиента из N проектных папок (каждая со своим `.dw/client.json` — см. (#160)).'
         - examples: [332]
         - subject: [425]
         - subsystem: [433]
@@ -1096,7 +1096,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#312) JSON-RPC 2.0 как контракт":
-        - text: Wire-протокол kernel-а — JSON-RPC 2.0 над HTTP POST `/db/<graph-name>/rpc`. Имя графа диспетчеризуется по URL вместо поля в JSON-payload. Версионирование — поле jsonrpc:"2.0" + поле api_version в params. Mismatch версии client/kernel → JSON-RPC error response с code=version_mismatch; клиент печатает stderr и выходит ненулевым кодом. Бинари kernel-а и клиента деплоятся одним артефактом — рассинхрон возможен только при ручном вмешательстве.
+        - text: Wire-???????? graph plane kernel-? - JSON-RPC 2.0 ??? HTTP POST `/<graph-name>`. ??? ????? ???????????????? ?? URL ?????? ???? ? JSON-payload. `/api/v0.4` - ????????? reserved namespace ??? API/control plane DocsWalker; graph-name `api` ????????. ??????????????? wire/API ??????????? ? API namespace; mismatch ?????? client/kernel ? JSON-RPC error response ? code=version_mismatch; ?????? ???????? stderr ? ??????? ????????? ?????.
         - examples: [330]
         - subject: [425]
         - subsystem: [433]
@@ -1124,7 +1124,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#316) Коды ошибок lifecycle":
-        - text: 'Коды ошибок клиента: kernel_unreachable (TCP-соединение с kernel-ом не установилось — kernel offline или неверный endpoint в `.dw/client.json`), client_config_not_found (`.dw/client.json` не найден от cwd до filesystem-root), client_config_invalid (JSON не парсится / отсутствуют обязательные поля), version_mismatch (api_version в JSON-RPC ответе не совпадает с клиентским). Коды ошибок kernel-а: port_bind_failed (Kestrel не смог взять порт), graph_load_failed (storage недоступен или невалидный YAML — kernel шлёт JSON-RPC error на запрос с этим graph), graph_not_found (URL `/db/<name>/rpc` для graph, не объявленного в kernel-config). Все ошибки — exit ≠ 0 у клиента; форма stderr — стандартная плоская из (#164).'
+        - text: 'Коды ошибок клиента: kernel_unreachable (TCP-соединение с kernel-ом не установилось — kernel offline или неверный endpoint в `.dw/client.json`), client_config_not_found (`.dw/client.json` не найден от cwd до filesystem-root), client_config_invalid (JSON не парсится / отсутствуют обязательные поля), version_mismatch (api_version в JSON-RPC ответе не совпадает с клиентским). Коды ошибок kernel-а: port_bind_failed (Kestrel не смог взять порт), graph_load_failed (storage недоступен или невалидный YAML — kernel шлёт JSON-RPC error на запрос с этим graph), graph_not_found (URL `/<name>` для graph, не объявленного в kernel-config). Конфигурационная ошибка reserved_graph_name возникает при graph-name `api`, потому что `/api/v0.4` зарезервирован под API/control plane. Все ошибки — exit ≠ 0 у клиента; форма stderr — стандартная плоская из (#164).'
         - examples: [379]
         - subject: [425]
         - subsystem: [433]
@@ -1139,25 +1139,25 @@ sections:
         - csharp_structure: [437]
     - definitions:
       - "(#317) kernel":
-        - text: Standalone HTTP-сервис DocsWalker.Kernel.exe, запускаемый командой `DocsWalker.Kernel.exe --config=<path>`. Слушает HTTP на bind:port из kernel-config; держит N графов в памяти (multi-graph через named); диспетчеризует JSON-RPC tools/call по graph-name из URL `/db/<name>/rpc`. Завершается по SIGINT/SIGTERM/Ctrl+C; графы выгружаются по per-graph idle eviction (#314). Не привязан к OS-пользователю — может быть локальным, удалённым, в контейнере. Несколько kernel-инстансов на машине допустимо.
+        - text: Standalone HTTP-сервис DocsWalker.Kernel.exe, запускаемый командой `DocsWalker.Kernel.exe --config=<path>`. Слушает HTTP на bind:port из kernel-config; держит N графов в памяти (multi-graph через named); диспетчеризует JSON-RPC tools/call по graph-name из canonical URL `/<name>`. Namespace `/api/v0.4` зарезервирован для API/control plane DocsWalker. Завершается по SIGINT/SIGTERM/Ctrl+C; графы выгружаются по per-graph idle eviction (#314). Не привязан к OS-пользователю — может быть локальным, удалённым, в контейнере. Несколько kernel-инстансов на машине допустимо.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#318) клиент":
-        - text: 'Процесс DocsWalker, делающий HTTP/JSON-RPC к kernel-у. Виды: CLI (один запрос за вызов бинаря), REPL (TTY-сессия с серией запросов), MCP-wrapper (#372) — stdio↔HTTP мост для LLM-клиента. Алгоритм: читает `.dw/client.json` (поиск вверх от cwd до filesystem-root), берёт endpoint host:port и graph-name, шлёт JSON-RPC tools/call к URL `/db/<graph-name>/rpc`, читает ответ, проксирует в свой stdout/stderr. Если `.dw/client.json` не найден — `client_config_not_found`. Если kernel offline — `kernel_unreachable`. Auto-spawn-а kernel-а нет: запуск kernel — отдельная задача оператора. Никакого парсинга docs/ или валидации не делает.'
+        - text: 'Процесс DocsWalker, делающий HTTP/JSON-RPC к kernel-у. Виды: CLI (один запрос за вызов бинаря), REPL (TTY-сессия с серией запросов), MCP-wrapper (#372) — stdio↔HTTP мост для LLM-клиента. Алгоритм: читает `.dw/client.json` (поиск вверх от cwd до filesystem-root), берёт endpoint host:port и graph-name, шлёт JSON-RPC tools/call к canonical URL `/<graph-name>`, читает ответ, проксирует в свой stdout/stderr. Если `.dw/client.json` не найден — `client_config_not_found`. Если kernel offline — `kernel_unreachable`. Auto-spawn-а kernel-а нет: запуск kernel — отдельная задача оператора. Никакого парсинга docs/ или валидации не делает.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#321) HTTP-эндпоинт kernel-а":
-        - text: 'Локальный HTTP-сервер kernel-а на Kestrel (ASP.NET Core minimal API). Эндпоинты: GET `/health` — liveness, kernel-level (без graph), возвращает {ok, api_version, uptime_s}; GET `/db` — список объявленных в kernel-config graphs (массив {name, loaded, last_access}, без storage path); POST `/db/<graph-name>/rpc` — JSON-RPC 2.0 main channel для конкретного graph-а. Bind на host:port из kernel-config. Один эндпоинт обслуживает все graphs и всех клиентов одновременно — диспетчеризация по graph-name в URL.'
+        - text: '????????? HTTP-?????? kernel-? ?? Kestrel (ASP.NET Core minimal API). Canonical endpoints: GET `/health` - liveness kernel-? ??? graph; GET `/api/v0.4` - ????????????????? API/control namespace DocsWalker, ?????????? ???????? ? kernel API ? ??????????? graphs; POST `/<graph-name>` - JSON-RPC 2.0 main channel ??? ??????????? graph-?. ??? `api` ??????????????? ? ?? ????? ???? graph-name ? kernel-config.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#322) JSON-RPC request":
-        - text: 'JSON-RPC 2.0 запрос к kernel-у: POST `/db/<graph-name>/rpc` с JSON-объектом {jsonrpc, id, method=tools/call, params}. Параметра graph-а в params нет — диспетчеризация по URL. Тело params содержит фактические аргументы команды (`name`, `arguments`); форма зависит от method. Content-Type — application/json. Поле `root` или эквивалент в params не передаётся — клиент про FS не знает.'
+        - text: 'JSON-RPC 2.0 запрос к kernel-у: POST `/<graph-name>` с JSON-объектом {jsonrpc, id, method=tools/call, params}. Параметра graph-а в params нет — диспетчеризация по URL. Тело params содержит фактические аргументы команды (`name`, `arguments`); форма зависит от method. Content-Type — application/json. Поле `root` или эквивалент в params не передаётся — клиент про FS не знает.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1182,7 +1182,7 @@ sections:
         - csharp_structure: [437]
     - examples:
       - "(#325) Запуск REPL":
-        - text: REPL — длинноживущий процесс, HTTP-клиент к kernel-у; читает `.dw/client.json` (поиск вверх от cwd); получает endpoint host:port + graph-name; проверяет /health kernel-а; открывает prompt `dw> ` с баннером `graph=<name>, kernel=<host>:<port>`; ввод argv-команды (без префикса) шлётся в kernel POST /db/<graph>/rpc → ответ печатается; ввод `:quit` / `:exit` или EOF (Ctrl+D / Ctrl+Z) — выход REPL (kernel остаётся работать); одиночный Ctrl+C — отмена текущей строки, prompt перерисовывается.
+        - text: REPL — длинноживущий процесс, HTTP-клиент к kernel-у; читает `.dw/client.json` (поиск вверх от cwd); получает endpoint host:port + graph-name; проверяет /health kernel-а; открывает prompt `dw> ` с баннером `graph=<name>, kernel=<host>:<port>`; ввод argv-команды (без префикса) шлётся в kernel POST /<graph> → ответ печатается; ввод `:quit` / `:exit` или EOF (Ctrl+D / Ctrl+Z) — выход REPL (kernel остаётся работать); одиночный Ctrl+C — отмена текущей строки, prompt перерисовывается.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1194,7 +1194,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#330) Кадры запроса/ответа":
-        - text: 'Запрос: POST /db/docswalker/rpc HTTP/1.1; Host: 127.0.0.1:8080; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-nodes","arguments":{"ids":[42]}}}. Ответ: HTTP/1.1 200 OK; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"result":[{...}]}. Имя графа (`docswalker`) идёт в URL, не в JSON.'
+        - text: 'Запрос: POST /docswalker HTTP/1.1; Host: 127.0.0.1:8080; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-nodes","arguments":{"ids":[42]}}}. Ответ: HTTP/1.1 200 OK; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"result":[{...}]}. Имя графа (`docswalker`) идёт в URL, не в JSON.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1236,13 +1236,13 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#381) kernel-config — multi-graph":
-        - text: 'Минимальный kernel-config для двух баз знаний: {"bind":"127.0.0.1","port":8080,"graphs":{"docswalker":"/srv/projects/docswalker/docs","another":"/data/another/docs"},"graph_idle_timeout":"10m"}. Запуск: DocsWalker.Kernel.exe --config=/etc/docswalker/kernel-config.json. URL для запросов: http://127.0.0.1:8080/db/docswalker/rpc и http://127.0.0.1:8080/db/another/rpc. /health и /db — общие, без graph-name.'
+        - text: 'Минимальный kernel-config для двух баз знаний: {"bind":"127.0.0.1","port":8080,"graphs":{"docswalker":"/srv/projects/docswalker/docs","another":"/data/another/docs"},"graph_idle_timeout":"10m"}. Запуск: DocsWalker.Kernel.exe --config=/etc/docswalker/kernel-config.json. Canonical URL для graph-запросов: http://127.0.0.1:8080/docswalker и http://127.0.0.1:8080/another. /health и /api/v0.4 — общие, без graph-name. Имя graph `api` запрещено.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#382) client-config — поиск .dw/":
-        - text: 'Содержимое /path/to/project/.dw/client.json: {"kernel":{"host":"127.0.0.1","port":8080},"graph":"docswalker"}. Клиент, запущенный из /path/to/project/sub/dir, поднимается вверх (sub/dir → sub → project → ...) до первого .dw/client.json — находит наш файл. URL HTTP-запроса: http://127.0.0.1:8080/db/docswalker/rpc. Если поиск дошёл до filesystem-root и .dw/client.json не найден — `client_config_not_found` с подсказкой `создай .dw/client.json в корне проекта`.'
+        - text: 'Содержимое /path/to/project/.dw/client.json: {"kernel":{"host":"127.0.0.1","port":8080},"graph":"docswalker"}. Клиент, запущенный из /path/to/project/sub/dir, поднимается вверх (sub/dir → sub → project → ...) до первого .dw/client.json — находит наш файл. Canonical URL HTTP-запроса: http://127.0.0.1:8080/docswalker. Если поиск дошёл до filesystem-root и .dw/client.json не найден — `client_config_not_found` с подсказкой `создай .dw/client.json в корне проекта`.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1414,7 +1414,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#288) dangling_refs — redirect-refs или delete-ref":
-        - text: Ошибка dangling_refs от delete-nodes означает, что на узлы из набора есть входящие cross-refs от узлов снаружи. Реши через redirect-refs (массово переподшить на другой узел) или серию delete-ref в transaction'е. Только после этого ретрай delete-nodes.
+        - text: Ошибка dangling_refs от delete-nodes означает, что на узлы из набора есть входящие cross-refs от узлов снаружи. Реши через redirect-refs (массово переподшить на другой узел) или через несколько unlink-операций внутри tx. Только после этого ретрай delete-nodes.
         - examples: [287]
         - subject: [425]
         - subsystem: [433]

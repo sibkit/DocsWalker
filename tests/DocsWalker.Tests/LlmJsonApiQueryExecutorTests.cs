@@ -131,6 +131,7 @@ public class LlmJsonApiQueryExecutorTests
         Assert.True(data["truncated"]!.GetValue<bool>());
         Assert.False(data["within_budget"]!.GetValue<bool>());
         Assert.Equal(30, data["stopped_at"]!.GetValue<int>());
+        Assert.Equal(2, data["omitted_count"]!.GetValue<int>());
         Assert.Empty(data["nodes"]!.AsArray());
     }
 
@@ -257,6 +258,7 @@ public class LlmJsonApiQueryExecutorTests
         Assert.True(data["truncated"]!.GetValue<bool>());
         Assert.False(data["within_budget"]!.GetValue<bool>());
         Assert.Equal(31, data["stopped_at"]!.GetValue<int>());
+        Assert.Equal(2, data["omitted_count"]!.GetValue<int>());
     }
 
     [Fact]
@@ -286,6 +288,7 @@ public class LlmJsonApiQueryExecutorTests
         Assert.Equal(0, data["returned"]!.GetValue<int>());
         Assert.True(data["truncated"]!.GetValue<bool>());
         Assert.Equal(30, data["stopped_at"]!.GetValue<int>());
+        Assert.Equal(4, data["omitted_count"]!.GetValue<int>());
         Assert.Empty(data["matches"]!.AsArray());
     }
 

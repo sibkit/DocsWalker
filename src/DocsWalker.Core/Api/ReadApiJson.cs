@@ -458,16 +458,11 @@ public static class ReadApiJson
             });
         }
 
-        var transactionOps = new JsonArray();
-        foreach (var op in u.TransactionOperations)
-            transactionOps.Add((JsonNode?)TransactionOpToJson(op));
-
         return new JsonObject
         {
             ["mental_model"] = u.MentalModel,
             ["trees"] = trees,
             ["commands"] = commands,
-            ["transaction_operations"] = transactionOps,
             ["graph_snapshot"] = new JsonObject
             {
                 ["total_nodes"] = u.Snapshot.TotalNodes,
@@ -475,36 +470,6 @@ public static class ReadApiJson
                 ["schema_types_count"] = u.Snapshot.SchemaTypesCount,
             },
         };
-    }
-
-    /// <summary>
-    /// Сериализация одной операции <c>transaction</c> для get-usage-guide. Поля
-    /// идут в порядке: op → cli_command → description → fields[]; каждое поле —
-    /// json_key/json_type/required + опциональные cli_flag/description.
-    /// </summary>
-    private static JsonObject TransactionOpToJson(UsageGuideTransactionOp op)
-    {
-        var fields = new JsonArray();
-        foreach (var f in op.Fields)
-        {
-            var fobj = new JsonObject
-            {
-                ["json_key"] = f.JsonKey,
-                ["json_type"] = f.JsonType,
-                ["required"] = f.Required,
-            };
-            if (f.CliFlag is not null)     fobj["cli_flag"] = f.CliFlag;
-            if (f.Description is not null) fobj["description"] = f.Description;
-            fields.Add((JsonNode?)fobj);
-        }
-        var obj = new JsonObject
-        {
-            ["op"] = op.Op,
-            ["cli_command"] = op.CliCommand,
-        };
-        if (op.Description is not null) obj["description"] = op.Description;
-        obj["fields"] = fields;
-        return obj;
     }
 
     private static JsonObject CommandToJson(UsageGuideCommand c)

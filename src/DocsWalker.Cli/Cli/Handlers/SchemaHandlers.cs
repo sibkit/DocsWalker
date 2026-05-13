@@ -2,11 +2,20 @@ using DocsWalker.Cli.UsageGuide;
 using DocsWalker.Core.Api;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
+using System.Text.Json.Nodes;
 
 namespace DocsWalker.Cli.Cli.Handlers;
 
 internal static class SchemaHandlers
 {
+    private static readonly string[] UsageGuideFieldNames =
+    [
+        "mental_model",
+        "trees",
+        "commands",
+        "graph_snapshot"
+    ];
+
     public static int GetMetaSchema(string storagePath)
     {
         var path = Path.Combine(storagePath, ".docswalker", "meta-schema.yml");
@@ -76,7 +85,7 @@ internal static class SchemaHandlers
     /// trees, snapshot) остаются. Невалидное имя — exit 1 с <c>unknown_command</c>.
     /// </para>
     /// </summary>
-    public static int GetUsageGuide(string storagePath, string? commandFilter = null)
+    public static int GetUsageGuide(string storagePath, string? commandFilter = null, string? fieldsFilter = null)
     {
         var schemaPath = Path.Combine(storagePath, "Схема.yml");
 
@@ -110,10 +119,47 @@ internal static class SchemaHandlers
                     "Сверь kebab-имя через get-usage-guide без --command=.");
                 return 1;
             }
-            dto = new UsageGuideResponse(dto.MentalModel, dto.Trees, filtered, dto.Snapshot, dto.TransactionOperations);
+            dto = new UsageGuideResponse(dto.MentalModel, dto.Trees, filtered, dto.Snapshot);
         }
 
-        Output.WriteSuccess(ReadApiJson.UsageGuideToJson(dto));
+        var json = ReadApiJson.UsageGuideToJson(dto);
+        if (!ApplyUsageGuideFields(json, fieldsFilter))
+            return 1;
+
+        Output.WriteSuccess(json);
         return 0;
+    }
+
+    private static bool ApplyUsageGuideFields(JsonObject json, string? fieldsFilter)
+    {
+        if (string.IsNullOrWhiteSpace(fieldsFilter))
+            return true;
+
+        var requested = fieldsFilter
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (requested.Count == 0)
+            return true;
+
+        var allowed = UsageGuideFieldNames.ToHashSet(StringComparer.Ordinal);
+        var unknown = requested.Where(field => !allowed.Contains(field)).Order(StringComparer.Ordinal).ToList();
+        if (unknown.Count > 0)
+        {
+            Output.WriteError(
+                "invalid_parameter",
+                path: null,
+                $"Неизвестные секции get-usage-guide fields: {string.Join(", ", unknown)}.",
+                $"Допустимые секции: {string.Join(", ", UsageGuideFieldNames)}.");
+            return false;
+        }
+
+        foreach (var field in UsageGuideFieldNames)
+        {
+            if (!requested.Contains(field))
+                json.Remove(field);
+        }
+
+        return true;
     }
 }

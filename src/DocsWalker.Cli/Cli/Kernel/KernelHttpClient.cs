@@ -10,7 +10,7 @@ namespace DocsWalker.Cli.Cli.Kernel;
 
 /// <summary>
 /// Клиентский путь CLI поверх HTTP+JSON-RPC. Все non-server CLI команды идут через
-/// <c>POST /db/{graph}/rpc</c> kernel'а, заранее запущенного пользователем (kernel-config'ом).
+/// canonical <c>POST /{graph}</c> kernel'а, заранее запущенного пользователем (kernel-config'ом).
 /// Auto-spawn убран в stg-0010 step-04.
 /// <para>
 /// Алгоритм:
@@ -19,7 +19,7 @@ namespace DocsWalker.Cli.Cli.Kernel;
 ///   <item><see cref="ArgParser.Parse"/> — argv → command + params dict.</item>
 ///   <item>Сборка JSON-RPC <c>tools/call</c>: <c>name</c> = command, <c>arguments</c> =
 ///   params (без <c>root</c> / <c>storage_path</c> — kernel сам знает по graph-name).</item>
-///   <item>POST на <c>/db/{graph}/rpc</c>; разбор <see cref="JsonRpcResponse"/>.</item>
+///   <item>POST на <c>/{graph}</c>; разбор <see cref="JsonRpcResponse"/>.</item>
 ///   <item>Печать <c>content[0].text</c> в stdout (или stderr при <c>isError</c>) +
 ///   exit-code 0/1.</item>
 /// </list>
@@ -27,7 +27,7 @@ namespace DocsWalker.Cli.Cli.Kernel;
 internal static class KernelHttpClient
 {
     /// <summary>
-    /// CLI-запросы могут быть длительными (большая transaction, search по большому
+    /// CLI-запросы могут быть длительными (большой search по
     /// docs/), но не бесконечными. 5 минут — комфортный потолок без surprise-зависаний.
     /// </summary>
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
@@ -70,7 +70,8 @@ internal static class KernelHttpClient
         };
         var requestJson = requestObj.ToJsonString();
 
-        var rpcUrl = $"http://{config.KernelHost}:{config.KernelPort}/db/{config.Graph}/rpc";
+        var graphSegment = Uri.EscapeDataString(config.Graph);
+        var rpcUrl = $"http://{config.KernelHost}:{config.KernelPort}/{graphSegment}";
 
         HttpResponseMessage httpResp;
         try

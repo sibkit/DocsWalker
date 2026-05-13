@@ -10,7 +10,7 @@ namespace DocsWalker.Core.Store;
 public sealed record AtomicWriteTarget(string AbsolutePath, string Content);
 
 /// <summary>
-/// Базовый тип FS-операций, применяемых в составе атомарной транзакции записи
+/// Базовый тип FS-операций, применяемых в составе атомарной пачки записи
 /// (см. <see cref="AtomicWriter.WriteAndApply"/>). Поддержаны: создание каталога,
 /// удаление пустого каталога, перенос (rename/move) каталога. Этого достаточно
 /// для create/delete/rename/move folder.

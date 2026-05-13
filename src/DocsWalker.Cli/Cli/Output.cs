@@ -47,9 +47,7 @@ internal static class Output
     /// Перегрузка для одиночных write-команд: подмешивает поле <c>applied</c> в сам
     /// result-объект (true — реально записано, false — dry-run). Требует
     /// <see cref="JsonObject"/>: applied — top-level-поле результата, для массива/скаляра
-    /// места нет. Для <c>transaction</c>, у которой результат — top-level массив, эта
-    /// перегрузка не используется: handler сам впечатывает <c>applied</c> в каждый
-    /// элемент массива и зовёт single-arg <see cref="WriteSuccess(JsonNode?)"/>.
+    /// места нет.
     /// </summary>
     public static void WriteSuccess(JsonNode? result, bool applied)
     {

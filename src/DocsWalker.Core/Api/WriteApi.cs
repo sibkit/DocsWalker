@@ -54,7 +54,7 @@ public sealed class WriteValidationException : Exception
 }
 
 /// <summary>
-/// Описание одной операции в составе транзакции под refs-модель. Перечисление имён
+/// Описание одной операции в составе атомарной пачки под refs-модель. Перечисление имён
 /// (<see cref="Type"/>) — стабильный контракт CLI/MCP.
 /// </summary>
 public abstract record WriteOp(string Type);
@@ -200,7 +200,7 @@ public sealed class WriteApi
 {
     /// <summary>
     /// Таймаут ожидания межпроцессного lock'а (см. <see cref="CrossProcessLock"/>).
-    /// 30 секунд достаточно, чтобы пропустить чужую большую транзакцию, и не настолько
+    /// 30 секунд достаточно, чтобы пропустить чужую большую write-пачку, и не настолько
     /// долго, чтобы LLM решила, что процесс завис.
     /// </summary>
     public static readonly TimeSpan CrossProcessLockTimeout = TimeSpan.FromSeconds(30);
@@ -226,7 +226,7 @@ public sealed class WriteApi
         ArgumentNullException.ThrowIfNull(ops);
         if (ops.Count == 0)
             throw new WriteApiException(
-                "empty_transaction",
+                "empty_write_ops",
                 "Список операций пуст — пачка должна содержать хотя бы одну операцию.");
 
         // Двухуровневая сериализация:
@@ -235,7 +235,7 @@ public sealed class WriteApi
         //   2) cross-process lock на docs/.docswalker/.lock — упорядочивает между
         //      разными процессами DocsWalker над одним docs/. Lock берётся и при
         //      dry-run: read-снимок графа должен быть консистентным относительно
-        //      чужих параллельных транзакций.
+        //      чужих параллельных write-пачек.
         lock (_processLock)
         {
             var lockPath = Path.Combine(_ctx.DocsRoot, ".docswalker", ".lock");

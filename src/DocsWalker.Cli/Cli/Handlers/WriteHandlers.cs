@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using DocsWalker.Core.Api;
 using DocsWalker.Core.Graph;
@@ -242,30 +241,6 @@ internal static class WriteHandlers
         return Run(storagePath, op, dryRun);
     }
 
-    public static int Transaction(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
-    {
-        IReadOnlyList<WriteOp> ops;
-        try
-        {
-            var node = JsonNode.Parse(args["operations"]);
-            ops = TransactionParser.Parse(node);
-        }
-        catch (WriteApiException ex)
-        {
-            Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
-            return 1;
-        }
-        catch (JsonException ex)
-        {
-            Output.WriteError("invalid_parameter", path: null, $"operations: {ex.Message}");
-            return 1;
-        }
-
-        var force = args.TryGetValue("force", out var rawForce)
-            && string.Equals(rawForce, "true", StringComparison.OrdinalIgnoreCase);
-        return RunMany(storagePath, ops, dryRun, force);
-    }
-
     public static int UpdateSchema(string storagePath, IReadOnlyDictionary<string, string> args, bool dryRun)
     {
         var yamlText = args["yaml-text"];
@@ -311,12 +286,9 @@ internal static class WriteHandlers
     }
 
     private static int Run(string storagePath, WriteOp op, bool dryRun) =>
-        RunCore(storagePath, new[] { op }, transaction: false, dryRun, force: false);
+        RunCore(storagePath, new[] { op }, dryRun, force: false);
 
-    private static int RunMany(string storagePath, IReadOnlyList<WriteOp> ops, bool dryRun, bool force = false) =>
-        RunCore(storagePath, ops, transaction: true, dryRun, force);
-
-    private static int RunCore(string storagePath, IReadOnlyList<WriteOp> ops, bool transaction, bool dryRun, bool force)
+    private static int RunCore(string storagePath, IReadOnlyList<WriteOp> ops, bool dryRun, bool force)
     {
         try
         {
@@ -324,14 +296,7 @@ internal static class WriteHandlers
             var api = new WriteApi(ctx);
             var result = api.Apply(ops, dryRun, force);
 
-            if (transaction)
-            {
-                Output.WriteSuccess(TransactionResultToJson(result));
-            }
-            else
-            {
-                Output.WriteSuccess(SingleResultToJson(result), applied: result.Applied);
-            }
+            Output.WriteSuccess(SingleResultToJson(result), applied: result.Applied);
             return 0;
         }
         catch (WriteValidationException ex)
@@ -420,20 +385,6 @@ internal static class WriteHandlers
             throw new InvalidOperationException(
                 $"Single-result handler ожидает ровно 1 операцию, получено {result.OpResults.Count}.");
         return result.OpResults[0].Data.DeepClone();
-    }
-
-    private static JsonNode TransactionResultToJson(WriteResult result)
-    {
-        var arr = new JsonArray();
-        foreach (var op in result.OpResults)
-        {
-            var flat = new JsonObject { ["op"] = op.Type };
-            foreach (var kv in op.Data)
-                flat[kv.Key] = kv.Value?.DeepClone();
-            flat["applied"] = JsonValue.Create(result.Applied);
-            arr.Add((JsonNode?)flat);
-        }
-        return arr;
     }
 
     private static string FormatValidationMessage(IReadOnlyList<ValidationError> errors)

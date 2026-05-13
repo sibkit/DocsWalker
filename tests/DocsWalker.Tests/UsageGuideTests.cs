@@ -14,14 +14,14 @@ namespace DocsWalker.Tests;
 [Collection("ConsoleRedirect")]
 public class UsageGuideTests
 {
-    private static JsonDocument CaptureGuide(string? commandFilter)
+    private static JsonDocument CaptureGuide(string? commandFilter, string? fieldsFilter = null)
     {
         var oldOut = Console.Out;
         var sw = new StringWriter();
         Console.SetOut(sw);
         try
         {
-            var exit = SchemaHandlers.GetUsageGuide(TestPaths.DocsRoot, commandFilter);
+            var exit = SchemaHandlers.GetUsageGuide(TestPaths.DocsRoot, commandFilter, fieldsFilter);
             Assert.Equal(0, exit);
         }
         finally { Console.SetOut(oldOut); }
@@ -54,55 +54,57 @@ public class UsageGuideTests
     }
 
     [Fact]
-    public void TransactionOperations_ContainsAllSevenOps()
+    public void Fields_CommandsWithKnownCommand_ReturnsOnlySingleCommandSection()
+    {
+        using var doc = CaptureGuide("get-tree", "commands");
+        var root = doc.RootElement;
+        var commands = root.GetProperty("commands").EnumerateArray().ToList();
+
+        Assert.Single(commands);
+        Assert.Equal("get-tree", commands[0].GetProperty("name").GetString());
+        Assert.False(root.TryGetProperty("mental_model", out _));
+        Assert.False(root.TryGetProperty("trees", out _));
+        Assert.False(root.TryGetProperty("graph_snapshot", out _));
+    }
+
+    [Fact]
+    public void Fields_Trees_ReturnsOnlyTreesSection()
+    {
+        using var doc = CaptureGuide(commandFilter: null, fieldsFilter: "trees");
+        var root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("trees", out var trees));
+        Assert.True(trees.GetArrayLength() > 0);
+        Assert.False(root.TryGetProperty("mental_model", out _));
+        Assert.False(root.TryGetProperty("commands", out _));
+        Assert.False(root.TryGetProperty("graph_snapshot", out _));
+    }
+
+    [Fact]
+    public void NoFilter_IncludesLlmJsonApiToolsAndNoTransactionSurface()
     {
         using var doc = CaptureGuide(null);
-        var ops = doc.RootElement.GetProperty("transaction_operations").EnumerateArray()
-            .Select(o => o.GetProperty("op").GetString())
+        var names = doc.RootElement.GetProperty("commands").EnumerateArray()
+            .Select(c => c.GetProperty("name").GetString())
             .ToHashSet();
 
-        // 7 операций в TransactionParser: create-node, update-node, delete-nodes,
-        // move-node, create-ref, delete-ref, redirect-refs.
-        Assert.Contains("create-node", ops);
-        Assert.Contains("update-node", ops);
-        Assert.Contains("delete-nodes", ops);
-        Assert.Contains("move-node", ops);
-        Assert.Contains("create-ref", ops);
-        Assert.Contains("delete-ref", ops);
-        Assert.Contains("redirect-refs", ops);
-        Assert.Equal(7, ops.Count);
+        Assert.Contains("hit", names);
+        Assert.Contains("query", names);
+        Assert.Contains("tx", names);
+        Assert.DoesNotContain("transaction", names);
+        Assert.False(doc.RootElement.TryGetProperty("transaction_operations", out _));
     }
 
     [Fact]
-    public void TransactionOperations_RedirectRefs_DocumentsFromIdsAsRequiredArrayWithCliMapping()
+    public void Filter_Tx_ReturnsLlmJsonApiTool()
     {
-        using var doc = CaptureGuide(null);
-        var redirect = doc.RootElement.GetProperty("transaction_operations").EnumerateArray()
-            .First(o => o.GetProperty("op").GetString() == "redirect-refs");
+        using var doc = CaptureGuide("tx");
+        var commands = doc.RootElement.GetProperty("commands").EnumerateArray().ToList();
 
-        var fields = redirect.GetProperty("fields").EnumerateArray().ToList();
-        var fromIds = fields.First(f => f.GetProperty("json_key").GetString() == "from_ids");
-
-        // Главный фокус под-задачи: from_ids — массив, required, маппится на --from / --from-subtree.
-        Assert.Equal("integer[]", fromIds.GetProperty("json_type").GetString());
-        Assert.True(fromIds.GetProperty("required").GetBoolean());
-        var cliFlag = fromIds.GetProperty("cli_flag").GetString();
-        Assert.Contains("--from", cliFlag);
-    }
-
-    [Fact]
-    public void TransactionOperations_MoveNode_NewParentIdJsonKey_MapsToCliFlagTo()
-    {
-        using var doc = CaptureGuide(null);
-        var moveNode = doc.RootElement.GetProperty("transaction_operations").EnumerateArray()
-            .First(o => o.GetProperty("op").GetString() == "move-node");
-
-        var fields = moveNode.GetProperty("fields").EnumerateArray().ToList();
-        var newParent = fields.First(f => f.GetProperty("json_key").GetString() == "new_parent_id");
-
-        // JSON-ключ — new_parent_id, CLI-флаг — --to. LLM должна видеть рассинхрон.
-        Assert.Equal("--to", newParent.GetProperty("cli_flag").GetString());
-        Assert.True(newParent.GetProperty("required").GetBoolean());
+        Assert.Single(commands);
+        Assert.Equal("tx", commands[0].GetProperty("name").GetString());
+        Assert.Equal("write", commands[0].GetProperty("kind").GetString());
+        Assert.Contains("LLM-facing JSON API", commands[0].GetProperty("description").GetString());
     }
 
     [Fact]
@@ -127,5 +129,27 @@ public class UsageGuideTests
         // Парсим error envelope из stderr: {"code":"unknown_command", ...}
         using var doc = JsonDocument.Parse(stderr);
         Assert.Equal("unknown_command", doc.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public void Fields_UnknownField_ReturnsExitOneWithInvalidParameter()
+    {
+        var oldOut = Console.Out;
+        var oldErr = Console.Error;
+        var sw = new StringWriter();
+        var sErr = new StringWriter();
+        Console.SetOut(sw);
+        Console.SetError(sErr);
+        int exit;
+        try { exit = SchemaHandlers.GetUsageGuide(TestPaths.DocsRoot, commandFilter: null, fieldsFilter: "commands,nope"); }
+        finally
+        {
+            Console.SetOut(oldOut);
+            Console.SetError(oldErr);
+        }
+
+        Assert.Equal(1, exit);
+        using var doc = JsonDocument.Parse(sErr.ToString());
+        Assert.Equal("invalid_parameter", doc.RootElement.GetProperty("code").GetString());
     }
 }

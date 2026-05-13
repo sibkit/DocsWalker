@@ -78,7 +78,7 @@ public sealed class LlmJsonApiQueryExecutor
             throw new LlmJsonApiResolveException(
                 "invalid_op",
                 $"{jsonPath}.op",
-                "query в v1 принимает только op='select'.");
+                "query в v1 принимает только op='select' или op='grep'.");
 
         var include = QueryInclude.Parse(select.Include, $"{jsonPath}.include");
         var nodes = _coordinateResolver.ResolveSelector(select.Select, defaults, _pathResolver, $"{jsonPath}.select");
@@ -146,7 +146,10 @@ public sealed class LlmJsonApiQueryExecutor
         if (maxTokens is int budgetValue)
             result["tokens_budget"] = budgetValue;
         if (stoppedAt is int stoppedId)
+        {
             result["stopped_at"] = stoppedId;
+            result["omitted_count"] = items.Length - resultNodes.Count;
+        }
 
         return result;
     }
@@ -174,7 +177,7 @@ public sealed class LlmJsonApiQueryExecutor
             throw new LlmJsonApiResolveException(
                 "invalid_grep_pattern",
                 $"{jsonPath}.pattern",
-                "grep.pattern РЅРµ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РїСѓСЃС‚С‹Рј.");
+                "grep.pattern не должен быть пустым.");
 
         var fields = GrepFields.Parse(grep.In, $"{jsonPath}.in");
         var limit = ValidateGrepLimit(grep.Limit, $"{jsonPath}.limit");
@@ -183,7 +186,7 @@ public sealed class LlmJsonApiQueryExecutor
             throw new LlmJsonApiResolveException(
                 "invalid_max_tokens",
                 $"{jsonPath}.max_tokens",
-                "max_tokens РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РїРѕР»РѕР¶РёС‚РµР»СЊРЅС‹Рј С†РµР»С‹Рј С‡РёСЃР»РѕРј.");
+                "max_tokens должен быть положительным целым числом.");
 
         var regex = grep.Regex ? BuildGrepRegex(grep, $"{jsonPath}.pattern") : null;
         var matches = new JsonArray();
@@ -233,7 +236,10 @@ public sealed class LlmJsonApiQueryExecutor
         if (grep.MaxTokens is int budgetValue)
             result["tokens_budget"] = budgetValue;
         if (stoppedAt is int stoppedId)
+        {
             result["stopped_at"] = stoppedId;
+            result["omitted_count"] = totalMatches - matches.Count;
+        }
 
         return result;
     }
@@ -246,7 +252,7 @@ public sealed class LlmJsonApiQueryExecutor
             throw new LlmJsonApiResolveException(
                 "invalid_limit",
                 jsonPath,
-                $"grep.limit РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РІ РґРёР°РїР°Р·РѕРЅРµ 1..{MaxGrepLimit}.");
+                $"grep.limit должен быть в диапазоне 1..{MaxGrepLimit}.");
         }
         return limit;
     }
@@ -259,7 +265,7 @@ public sealed class LlmJsonApiQueryExecutor
             throw new LlmJsonApiResolveException(
                 "invalid_context_chars",
                 jsonPath,
-                $"grep.context_chars РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РІ РґРёР°РїР°Р·РѕРЅРµ 0..{MaxGrepContextChars}.");
+                $"grep.context_chars должен быть в диапазоне 0..{MaxGrepContextChars}.");
         }
         return contextChars;
     }
@@ -690,7 +696,7 @@ public sealed class LlmJsonApiQueryExecutor
                 _ => throw new LlmJsonApiResolveException(
                     "invalid_grep_in",
                     jsonPath,
-                    $"grep.in СЃРѕРґРµСЂР¶РёС‚ РЅРµРёР·РІРµСЃС‚РЅРѕРµ Р·РЅР°С‡РµРЅРёРµ '{value}'.",
+                    $"grep.in содержит неизвестное значение '{value}'.",
                     new JsonObject { ["in"] = value }),
             };
     }

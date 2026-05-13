@@ -7,7 +7,7 @@ namespace DocsWalker.Tests;
 /// <summary>
 /// E2e write-path для addressable-tree collision (stg-0010 step-02 + step-05):
 /// <see cref="WriteApi.Apply"/> для <c>create-node</c>, <c>update-node</c>,
-/// <c>move-node</c> и transaction-батча должен бракоlocateть sibling-title-collision
+/// <c>move-node</c> и пакетной записи должен бракоlocateть sibling-title-collision
 /// в любом addressable tree через <see cref="WriteValidationException"/> с
 /// error-code <c>duplicate_sibling_title</c>.
 ///

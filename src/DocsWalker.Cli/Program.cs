@@ -27,7 +27,7 @@ if (cmd == "repl")
     return Dispatcher.Run(args);
 
 // Любая другая команда → клиент-режим: читаем .dw/client.json, форвардим
-// в /db/{graph}/rpc kernel'а. Auto-spawn убран в stg-0010 step-04 — kernel
+// в /{graph} kernel'а. Auto-spawn убран в stg-0010 step-04 — kernel
 // должен быть уже запущен пользователем.
 ClientConfig clientCfg;
 try { clientCfg = ClientConfig.Resolve(); }
@@ -96,12 +96,10 @@ internal static class Dispatcher
             "describe_type"   => SchemaHandlers.DescribeType(storagePath, parsed.Params["name"]),
             "get_usage_guide" => SchemaHandlers.GetUsageGuide(
                                     storagePath,
-                                    parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null),
+                                    parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null,
+                                    parsed.Params.TryGetValue("fields", out var fieldsFilter) ? fieldsFilter : null),
             "get_nodes"       => DispatchGetNodes(storagePath, parsed.Params),
-            "get_by_path"     => ReadHandlers.GetByPath(
-                                    storagePath,
-                                    parsed.Params["path"],
-                                    parsed.Params.TryGetValue("tree", out var gbpTree) ? gbpTree : null),
+            "get_by_path"     => DispatchGetByPath(storagePath, parsed.Params),
             "get_tree"        => DispatchGetTree(storagePath, parsed.Params),
             "get_ancestors"   => ReadHandlers.GetAncestors(
                                     storagePath,
@@ -126,7 +124,6 @@ internal static class Dispatcher
             "create_ref"      => WriteHandlers.CreateRef(storagePath, parsed.Params, dryRun),
             "delete_ref"      => WriteHandlers.DeleteRef(storagePath, parsed.Params, dryRun),
             "redirect_refs"   => WriteHandlers.RedirectRefs(storagePath, parsed.Params, dryRun),
-            "transaction"     => WriteHandlers.Transaction(storagePath, parsed.Params, dryRun),
             "update_schema"   => WriteHandlers.UpdateSchema(storagePath, parsed.Params, dryRun),
             _                 => NotImplemented(spec),
         };
@@ -164,6 +161,28 @@ internal static class Dispatcher
         }
 
         return ReadHandlers.GetTree(storagePath, id, tree, depth, fields, maxTokens);
+    }
+
+    private static int DispatchGetByPath(string storagePath, IReadOnlyDictionary<string, string> args)
+    {
+        var tree = args.TryGetValue("tree", out var ts) ? ts : null;
+        int? depth = args.TryGetValue("depth", out var ds)
+            ? int.Parse(ds, System.Globalization.CultureInfo.InvariantCulture)
+            : (int?)null;
+
+        if (!TryParseBoolOpt(args, "compact", out bool compact, out string? compactErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, compactErr!);
+            return 1;
+        }
+        var fields = ResolveFields(args, compact);
+        if (!TryParseMaxTokens(args, out int maxTokens, out string? mtErr))
+        {
+            Output.WriteError("invalid_parameter", path: null, mtErr!);
+            return 1;
+        }
+
+        return ReadHandlers.GetByPath(storagePath, args["path"], tree, depth, fields, maxTokens);
     }
 
     private static int DispatchGetNodes(string storagePath, IReadOnlyDictionary<string, string> args)
@@ -558,7 +577,7 @@ internal static class Dispatcher
             "missing_storage_path",
             Directory.GetCurrentDirectory(),
             "Параметр --storage-path=<path> обязателен; kernel инжектит его автоматически " +
-            "при обращении к /db/<graph>/rpc. Прямой вызов CLI с graph-командами без " +
+            "при обращении к /<graph>. Прямой вызов CLI с graph-командами без " +
             "--storage-path — ошибка контракта.");
         return false;
     }

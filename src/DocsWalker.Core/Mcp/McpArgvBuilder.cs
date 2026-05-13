@@ -16,7 +16,7 @@ namespace DocsWalker.Core.Mcp;
 /// <para>
 /// Filter <see cref="FilteredKeys"/>: только <c>storage_path</c> в
 /// user-input игнорируется. Storage-path задаётся kernel'ом из
-/// kernel-config'а (по имени графа из URL <c>/db/&lt;name&gt;/rpc</c>) и
+/// kernel-config'а (по имени графа из URL <c>/&lt;name&gt;</c>) и
 /// инжектится в argv в <see cref="DocsWalker.Kernel.RpcDispatcher"/> уже
 /// после этого билдера; clientside-инжекция перебила бы это, поэтому
 /// ключ режется тихо. <c>root</c> убран в stg-0010 step-06 — если LLM
@@ -71,7 +71,7 @@ public static class McpArgvBuilder
         JsonValueKind.True    => "true",
         JsonValueKind.False   => "false",
         JsonValueKind.Null    => string.Empty,
-        // Массив: array-of-object (например, transaction.operations) — отдаём raw JSON
+        // Массив: array-of-object — отдаём raw JSON
         // со скобками; CLI-парсер ждёт валидный JSON-массив. Иначе — CSV-id-list:
         // 1,2,3 (формат совпадает с CLI-сепаратором IdList).
         JsonValueKind.Array   => IsObjectArray(param)

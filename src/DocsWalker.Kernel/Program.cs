@@ -45,6 +45,7 @@ return RunKernel(options, config);
 static int RunKernel(KernelOptions options, KernelConfig config)
 {
     const string KernelVersion = "0.6.0-dev";
+    const string KernelApiVersion = "v0.4";
 
     var builder = WebApplication.CreateSlimBuilder();
     builder.Logging.ClearProviders();
@@ -66,10 +67,14 @@ static int RunKernel(KernelOptions options, KernelConfig config)
         ctx.Response.ContentType = "application/json; charset=utf-8";
         await ctx.Response.WriteAsync(json, Encoding.UTF8);
     };
-    RequestDelegate graphsHandler = async ctx =>
+    RequestDelegate apiHandler = async ctx =>
     {
-        var resp = new GraphsResponse(registry.Snapshot());
-        var json = JsonSerializer.Serialize(resp, KernelJsonContext.Default.GraphsResponse);
+        var resp = new KernelApiResponse(
+            ApiVersion: KernelApiVersion,
+            GraphEndpoint: "/{graph}",
+            ReservedGraphNames: new[] { KernelConfig.ReservedApiGraphName },
+            Graphs: registry.Snapshot());
+        var json = JsonSerializer.Serialize(resp, KernelJsonContext.Default.KernelApiResponse);
         ctx.Response.ContentType = "application/json; charset=utf-8";
         await ctx.Response.WriteAsync(json, Encoding.UTF8);
     };
@@ -80,8 +85,8 @@ static int RunKernel(KernelOptions options, KernelConfig config)
     };
 
     app.MapGet("/health", healthHandler);
-    app.MapGet("/db", graphsHandler);
-    app.MapPost("/db/{graph}/rpc", rpcHandler);
+    app.MapGet("/api/v0.4", apiHandler);
+    app.MapPost("/{graph}", rpcHandler);
 
     try
     {

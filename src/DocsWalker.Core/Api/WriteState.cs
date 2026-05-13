@@ -6,7 +6,7 @@ using GraphModel = DocsWalker.Core.Graph.Graph;
 namespace DocsWalker.Core.Api;
 
 /// <summary>
-/// Изменяемый снимок состояния DocsWalker для одной транзакции записи под refs-модель.
+/// Изменяемый снимок состояния DocsWalker для одной атомарной пачки записи под refs-модель.
 /// Хранит:
 ///   - словарь узлов (мутируется по операциям);
 ///   - актуальную Схему (read-only — Схема правится только вручную, см.
@@ -14,7 +14,7 @@ namespace DocsWalker.Core.Api;
 ///   - резервирование sequence-id (через <see cref="ReserveId"/>);
 ///   - множество id-документов, чьи YAML-файлы должны быть перезаписаны.
 ///
-/// На входе в транзакцию состояние клонируется из исходного <see cref="GraphModel"/>;
+/// На входе в write-пачку состояние клонируется из исходного <see cref="GraphModel"/>;
 /// на выходе <see cref="BuildGraph"/> воссоздаёт обычный <see cref="GraphModel"/>
 /// для прогона валидатора и эмиттера.
 /// </summary>

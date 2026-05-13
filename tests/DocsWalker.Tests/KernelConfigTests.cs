@@ -72,6 +72,21 @@ public class KernelConfigTests
     }
 
     [Fact]
+    public void Read_ReservedApiGraphName_ThrowsKernelConfigException()
+    {
+        using var f = new TempFile();
+        var docsPath = TestPaths.DocsRoot.Replace("\\", "\\\\");
+        f.WriteAllText(
+            "{\n" +
+            $"  \"graphs\": {{ \"api\": \"{docsPath}\" }}\n" +
+            "}");
+
+        var ex = Assert.Throws<KernelConfigException>(() => KernelConfig.Read(f.Path));
+        Assert.Contains("api", ex.Message);
+        Assert.Contains("зарезервирован", ex.Message);
+    }
+
+    [Fact]
     public void Read_FileNotFound_ThrowsKernelConfigException()
     {
         var path = Path.Combine(Path.GetTempPath(), "no-such-kernel-config-" + Guid.NewGuid().ToString("N") + ".json");

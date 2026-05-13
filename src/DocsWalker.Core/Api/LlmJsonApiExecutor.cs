@@ -223,7 +223,7 @@ public sealed class LlmJsonApiExecutor
     }
 
     private static bool RequiresTopLevelValidationFailure(LlmJsonApiMethod method) =>
-        method is LlmJsonApiMethod.Query or LlmJsonApiMethod.Tx;
+        method is LlmJsonApiMethod.Hit or LlmJsonApiMethod.Query or LlmJsonApiMethod.Tx;
 
     private static string BuildSummary(
         LlmJsonApiMethod method,

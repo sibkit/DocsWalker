@@ -12,7 +12,7 @@ namespace DocsWalker.Mcp;
 /// <summary>
 /// Handler команды <c>mcp-server</c> в новой архитектуре stg-0010: тонкий
 /// stdio↔HTTP bridge между Claude Code (stdio JSON-RPC 2.0) и ядром
-/// <c>DocsWalker.Kernel.exe</c> (<c>POST /db/{graph}/rpc</c>).
+/// <c>DocsWalker.Kernel.exe</c> (<c>POST /{graph}</c>).
 /// <para>
 /// Никакой бизнес-логики:
 /// </para>
@@ -20,7 +20,7 @@ namespace DocsWalker.Mcp;
 ///   <item>Чтение <see cref="ClientConfig"/> поиском <c>.dw/client.json</c>
 ///   вверх от cwd.</item>
 ///   <item>Read frame из stdin → парс JSON-RPC envelope.</item>
-///   <item>POST на <c>/db/{config.Graph}/rpc</c> ядра — пишем ответ в stdout
+///   <item>POST на <c>/{config.Graph}</c> ядра — пишем ответ в stdout
 ///   как-есть. Никакой инъекции <c>root</c> в arguments — сервер сам знает
 ///   по graph-name из URL.</item>
 /// </list>
@@ -50,7 +50,8 @@ internal static class McpWrapperHandler
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-        var rpcUrl = $"http://{cfg.KernelHost}:{cfg.KernelPort}/db/{cfg.Graph}/rpc";
+        var graphSegment = Uri.EscapeDataString(cfg.Graph);
+        var rpcUrl = $"http://{cfg.KernelHost}:{cfg.KernelPort}/{graphSegment}";
 
         if (!quiet)
         {

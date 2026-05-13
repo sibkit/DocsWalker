@@ -13,9 +13,10 @@ namespace DocsWalker.Cli.Cli.Kernel;
 /// <list type="bullet">
 ///   <item><see cref="KernelHost"/>, <see cref="KernelPort"/> — куда отправлять
 ///   JSON-RPC запросы.</item>
-///   <item><see cref="Graph"/> — имя графа в URL <c>/db/&lt;name&gt;/rpc</c>.
+///   <item><see cref="Graph"/> — имя графа в canonical URL <c>/&lt;name&gt;</c>.
 ///   Имена graph'ов определены kernel'ом в kernel-config'е; клиент должен
-///   передать существующее имя.</item>
+///   передать существующее имя. Имя <c>api</c> зарезервировано под
+///   <c>/api/v0.4</c>.</item>
 /// </list>
 /// </summary>
 public sealed record ClientConfig(
@@ -23,6 +24,8 @@ public sealed record ClientConfig(
     int KernelPort,
     string Graph)
 {
+    public const string ReservedApiGraphName = "api";
+
     /// <summary>
     /// Стандартное имя папки клиентского config'а. Аналог <c>.git/</c> —
     /// проектная маркер-папка, не предназначенная к коммиту чужих секретов.
@@ -131,6 +134,10 @@ public sealed record ClientConfig(
             throw new ClientConfigException(
                 "client_config_invalid",
                 $"client-config '{configPath}': graph обязательное поле");
+        if (string.Equals(raw.Graph, ReservedApiGraphName, StringComparison.OrdinalIgnoreCase))
+            throw new ClientConfigException(
+                "client_config_invalid",
+                $"client-config '{configPath}': graph 'api' зарезервирован под /api/v0.4");
 
         return new ClientConfig(host, port, raw.Graph!);
     }

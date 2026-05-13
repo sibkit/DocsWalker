@@ -14,8 +14,8 @@ public sealed record HealthResponse(
     [property: JsonPropertyName("started_at")] DateTimeOffset StartedAt);
 
 /// <summary>
-/// Информация об одном графе в kernel'е. Используется в ответе
-/// <c>GET /db</c>: имя, путь к storage-папке и метка последнего запроса.
+/// Информация об одном графе в kernel'е. Используется в ответах API/control
+/// namespace: имя, путь к storage-папке и метка последнего запроса.
 /// </summary>
 public sealed record GraphInfo(
     [property: JsonPropertyName("name")] string Name,
@@ -23,10 +23,13 @@ public sealed record GraphInfo(
     [property: JsonPropertyName("last_used")] DateTimeOffset LastUsed);
 
 /// <summary>
-/// Ответ <c>GET /db</c> — список графов, известных kernel'у из
-/// kernel-config'а.
+/// Ответ <c>GET /api/v0.4</c>: kernel/control plane DocsWalker, отдельный от
+/// graph plane <c>POST /&lt;graph&gt;</c>.
 /// </summary>
-public sealed record GraphsResponse(
+public sealed record KernelApiResponse(
+    [property: JsonPropertyName("api_version")] string ApiVersion,
+    [property: JsonPropertyName("graph_endpoint")] string GraphEndpoint,
+    [property: JsonPropertyName("reserved_graph_names")] IReadOnlyList<string> ReservedGraphNames,
     [property: JsonPropertyName("graphs")] IReadOnlyList<GraphInfo> Graphs);
 
 /// <summary>
@@ -39,7 +42,7 @@ public sealed record GraphsResponse(
     WriteIndented = false)]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(GraphInfo))]
-[JsonSerializable(typeof(GraphsResponse))]
+[JsonSerializable(typeof(KernelApiResponse))]
 public partial class KernelJsonContext : JsonSerializerContext
 {
 }

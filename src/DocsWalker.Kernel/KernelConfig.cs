@@ -16,9 +16,9 @@ namespace DocsWalker.Kernel;
 ///   умолчанию <c>127.0.0.1</c>, local-only).</item>
 ///   <item><c>port</c> — TCP-порт. <c>0</c> = динамический.</item>
 ///   <item><c>graphs</c> — обязательный словарь <c>graph_name → storage_path</c>.
-///   Каждый <c>graph_name</c> присутствует в URL <c>/db/&lt;name&gt;/rpc</c>;
-///   <c>storage_path</c> указывает на папку <c>docs/</c> графа (не на
-///   корень репозитория).</item>
+///   Каждый <c>graph_name</c> присутствует в canonical URL <c>/&lt;name&gt;</c>;
+///   имя <c>api</c> зарезервировано под <c>/api/v0.4</c>. <c>storage_path</c>
+///   указывает на папку <c>docs/</c> графа (не на корень репозитория).</item>
 ///   <item><c>graph_idle_timeout</c> — duration; зарезервировано для
 ///   будущего per-graph cache-eviction (сейчас не используется).</item>
 /// </list>
@@ -31,6 +31,7 @@ internal sealed record KernelConfig(
 {
     public const string DefaultBind = "127.0.0.1";
     public const int DefaultPort = 0;
+    public const string ReservedApiGraphName = "api";
     public static readonly TimeSpan DefaultGraphIdleTimeout = TimeSpan.FromMinutes(10);
 
     public static KernelConfig Read(string configPath)
@@ -90,12 +91,15 @@ internal sealed record KernelConfig(
                 $"kernel config '{configPath}': graphs обязательное поле, минимум 1 граф");
 
         var graphs = new List<KernelGraphConfig>(raw.Graphs.Count);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var kvp in raw.Graphs)
         {
             if (string.IsNullOrWhiteSpace(kvp.Key))
                 throw new KernelConfigException(
                     $"kernel config '{configPath}': graph_name пустой");
+            if (string.Equals(kvp.Key, ReservedApiGraphName, StringComparison.OrdinalIgnoreCase))
+                throw new KernelConfigException(
+                    $"kernel config '{configPath}': graph_name 'api' зарезервирован под /api/v0.4");
             if (!seen.Add(kvp.Key))
                 throw new KernelConfigException(
                     $"kernel config '{configPath}': graph_name '{kvp.Key}' встречается дважды");

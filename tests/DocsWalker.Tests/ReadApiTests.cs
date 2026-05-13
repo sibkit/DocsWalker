@@ -55,6 +55,24 @@ public class ReadApiTests
     }
 
     [Fact]
+    public void GetByPath_DepthZero_ReturnsResolvedNodeOnly()
+    {
+        var api = BuildApi();
+        var subtree = api.GetByPath("DocsWalker", tree: Node.PathRefName, depth: 0);
+        Assert.Equal(1, subtree.Node.Id);
+        Assert.Empty(subtree.Children);
+    }
+
+    [Fact]
+    public void GetByPath_NegativeDepth_Throws_InvalidParameter()
+    {
+        var api = BuildApi();
+        var ex = Assert.Throws<ReadApiException>(() =>
+            api.GetByPath("DocsWalker", tree: Node.PathRefName, depth: -1));
+        Assert.Equal("invalid_parameter", ex.Code);
+    }
+
+    [Fact]
     public void GetByPath_UnknownPath_Throws()
     {
         var api = BuildApi();

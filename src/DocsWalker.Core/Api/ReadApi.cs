@@ -247,10 +247,15 @@ public sealed class ReadApi
     /// запрос дерева, не объявленного в Схеме → <c>unknown_tree_scope</c>.
     /// </para>
     /// </summary>
-    public NodeSubtree GetByPath(string path, string? tree = null)
+    public NodeSubtree GetByPath(string path, string? tree = null, int? depth = null)
     {
         if (string.IsNullOrEmpty(path))
             throw new ReadApiException("invalid_path", "Путь не должен быть пустым.");
+        if (depth is < 0)
+            throw new ReadApiException(
+                "invalid_parameter",
+                "Параметр 'depth' не может быть отрицательным.",
+                "0 — только найденный узел без детей; 1 — найденный узел + один уровень; опусти параметр для неограниченного обхода.");
 
         var resolvedTree = ResolveAddressableTree(tree);
         var segments = path.Split('/');
@@ -337,8 +342,11 @@ public sealed class ReadApi
             current = next;
         }
 
-        return isPathTree ? BuildSubtree(current) : BuildSubtreeByScope(current, resolvedTree, remainingDepth: null);
+        return BuildSubtreeByScope(current, resolvedTree, remainingDepth: depth);
     }
+
+    public string ResolveAddressableTreeName(string? tree = null) =>
+        ResolveAddressableTree(tree);
 
     /// <summary>
     /// Резолвит имя addressable дерева для <see cref="GetByPath"/>:
@@ -1112,8 +1120,7 @@ public sealed class ReadApi
             MentalModel: source.GetMentalModel(),
             Trees: schema.Trees,
             Commands: source.GetCommands(),
-            Snapshot: snapshot,
-            TransactionOperations: source.GetTransactionOperations());
+            Snapshot: snapshot);
     }
 
     /// <summary>

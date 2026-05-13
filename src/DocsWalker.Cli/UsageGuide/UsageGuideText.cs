@@ -11,13 +11,13 @@ internal static class UsageGuideText
         """
         DocsWalker представляет docs/ как граф: узлы (units of meaning) + направленные именованные связи (out_refs). LLM работает только с узлами и связями через CLI/MCP — имена файлов и каталогов наружу не торчат.
 
-        Архитектура процессов: DocsWalker.Kernel.exe — фоновое ядро, HTTP+JSON-RPC 2.0 на 127.0.0.1:<port>, держит N графов в RAM (multi-graph). Все CLI-команды и MCP-вызовы идут к ядру; routing — через graph-name в URL: POST /db/<graph>/rpc. Имена графов и storage-paths объявлены в kernel-config.json (на стороне ядра, путь передаётся ему как DocsWalker.Kernel.exe --config=<path>). CLI/REPL/MCP-wrapper читают .dw/client.json (kernel host/port + graph-name) поиском вверх по родителям от cwd, как .git/. Auto-spawn убран: ядро запускается пользователем заранее; если ядро не отвечает — клиент возвращает kernel_unreachable.
+        Архитектура процессов: DocsWalker.Kernel.exe — фоновое ядро, HTTP+JSON-RPC 2.0 на 127.0.0.1:<port>, держит N графов в RAM (multi-graph). Все CLI-команды и MCP-вызовы идут к ядру; routing — через graph-name в canonical URL: POST /<graph>. Namespace /api/v0.4 зарезервирован под API/control plane DocsWalker, поэтому graph-name api запрещён. Имена графов и storage-paths объявлены в kernel-config.json (на стороне ядра, путь передаётся ему как DocsWalker.Kernel.exe --config=<path>). CLI/REPL/MCP-wrapper читают .dw/client.json (kernel host/port + graph-name) поиском вверх по родителям от cwd, как .git/. Auto-spawn убран: ядро запускается пользователем заранее; если ядро не отвечает — клиент возвращает kernel_unreachable.
 
         Контракт CLI (envelope-free):
         - Успех — exit 0, stdout — JSON-результат команды напрямую, без обёртки. Шейп — специфика команды (объект или массив).
         - Ошибка — exit ≠ 0, stderr — плоский JSON {code, message, path?, hint?, describe_type?}. stdout при ошибке пустой.
         - Дискриминатор — exit-code и поток (stdout vs stderr).
-        - Для write-команд applied: true|false — top-level поле результата (true — записано на FS, false — dry-run). Для transaction — top-level массив, applied в каждом элементе.
+        - Для низкоуровневых write-команд applied: true|false — top-level поле результата (true — записано на FS, false — dry-run). Для LLM-facing batch-записи используй MCP tool tx с единым envelope.
 
         Связи объявлены в Схеме у типа узла-источника (имя, target_types, cardinality, required). Часть связей объединена в named-tree (tree-scope) — например, дерево 'path' (физическое размещение в FS, единственное материализованное) или доменное 'strategic'. Tree-связи всегда cardinality=one + required=true.
 
@@ -29,8 +29,8 @@ internal static class UsageGuideText
         1. check-integrity — убедиться, что граф валиден.
         2. get-tree / get-refs — прочитать актуальное состояние затронутого участка.
         3. describe-type --name=<type> — уточнить контракт типа (если незнакомый).
-        4. На незнакомой задаче — write-команда с --dry-run=true (applied=false, без записи в FS).
-        5. Если ответ ожидаемый — повтор без --dry-run.
+        4. На незнакомой задаче — hit для проверки selector/write-ops или низкоуровневая write-команда с --dry-run=true.
+        5. Если ответ ожидаемый — tx для атомарной записи или повтор низкоуровневой команды без --dry-run.
 
         Удаление — только delete-nodes --ids= (явный список, без авто-каскада). Набор LLM собирает сама: get-tree по нужному tree-scope + path-children каждого узла. Ошибки path_orphans_left и dangling_refs — обучающий сигнал, перечисляют недостающее.
 
@@ -42,10 +42,10 @@ internal static class UsageGuideText
         - move-node без --tree, если намерение — переподшить в доменном дереве: запустится реструктуризация хранилища.
 
         Команды по сценариям:
-        - Одноразовый CLI-вызов: docswalker <команда> — читает .dw/client.json (вверх от cwd), форвардит в /db/<graph>/rpc ядра. Никакого --root в команде.
+        - Одноразовый CLI-вызов: docswalker <команда> — читает .dw/client.json (вверх от cwd), форвардит в /<graph> ядра. Никакого --root в команде.
         - Интерактивный REPL: docswalker repl (HTTP-клиент к ядру; команды без префикса 'docswalker'; выход — :quit/:exit/Ctrl+D).
         - MCP-канал для Claude Code: docswalker mcp-server (тонкий stdio↔HTTP wrapper; обычно вызывается через .mcp.json, не вручную).
-        - Запуск ядра: DocsWalker.Kernel.exe --config=<path-to-kernel-config.json> — отдельный exe (не подкоманда CLI). Слушает /db/<graph>/rpc для каждого графа из config'а.
+        - Запуск ядра: DocsWalker.Kernel.exe --config=<path-to-kernel-config.json> — отдельный exe (не подкоманда CLI). Слушает /<graph> для каждого графа из config'а и /api/v0.4 для API/control plane.
         Per-graph idle eviction = graph_idle_timeout (default 10m, configurable в kernel-config.json): если граф не запрашивался дольше — выгружается из RAM, при следующем обращении re-load с диска.
         """;
 }

@@ -67,6 +67,23 @@ public class RpcDispatcherTests
     }
 
     [Fact]
+    public async Task ToolsList_UnknownGraph_ReturnsInvalidParams()
+    {
+        using var registry = NewRegistry(("main", TestPaths.DocsRoot));
+        var dispatcher = new RpcDispatcher(registry, new TestLifetime(), Dispatcher.Run);
+
+        var resp = await dispatcher.HandleMessageAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""",
+            graphName: "no-such-graph",
+            default);
+
+        Assert.NotNull(resp);
+        Assert.Contains("\"error\"", resp);
+        Assert.Contains("unknown_graph", resp);
+        Assert.Contains("no-such-graph", resp);
+    }
+
+    [Fact]
     public async Task ToolsCall_Query_RoutesThroughLlmJsonApiExecutor()
     {
         using var registry = NewRegistry(("main", TestPaths.DocsRoot));

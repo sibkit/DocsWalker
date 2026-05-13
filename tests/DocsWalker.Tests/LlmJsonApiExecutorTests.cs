@@ -97,7 +97,7 @@ public class LlmJsonApiExecutorTests
     }
 
     [Fact]
-    public void Execute_HitValidationFailure_RemainsSuccessfulPreview()
+    public void Execute_HitValidationFailure_ReturnsTopLevelError()
     {
         var executor = BuildExecutor(out _);
 
@@ -119,13 +119,11 @@ public class LlmJsonApiExecutorTests
             }
             """);
 
-        Assert.True(response["ok"]!.GetValue<bool>());
+        Assert.False(response["ok"]!.GetValue<bool>());
         Assert.Equal("hit", response["method"]!.GetValue<string>());
-
-        var result = Assert.Single(response["results"]!.AsArray())!.AsObject();
-        var validation = result["data"]!["validation"]!.AsObject();
-        Assert.False(validation["ok"]!.GetValue<bool>());
-        Assert.Equal("count_mismatch", validation["code"]!.GetValue<string>());
+        Assert.Equal("count_mismatch", response["code"]!.GetValue<string>());
+        Assert.Equal(0, response["details"]!["operation_index"]!.GetValue<int>());
+        Assert.Equal("update", response["details"]!["op"]!.GetValue<string>());
     }
 
     [Fact]

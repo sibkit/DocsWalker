@@ -52,9 +52,9 @@ public class McpArgvBuilderTests
         // Object-параметр (JsonValueKind.Object): сырой JSON всегда передаётся как есть.
         using var doc = JsonDocument.Parse(
             @"{""payload"":{""op"":""create-node"",""type"":""section""}}");
-        var argv = McpArgvBuilder.BuildArgvFromArguments("transaction", doc.RootElement);
+        var argv = McpArgvBuilder.BuildArgvFromArguments("query", doc.RootElement);
         Assert.Equal(2, argv.Length);
-        Assert.Equal("transaction", argv[0]);
+        Assert.Equal("query", argv[0]);
         Assert.StartsWith("--payload=", argv[1]);
         Assert.Contains("\"op\":\"create-node\"", argv[1]);
         Assert.Contains("{", argv[1]);
@@ -62,38 +62,38 @@ public class McpArgvBuilderTests
     }
 
     [Fact]
-    public void BuildArgv_TransactionOperationsArray_WithDescriptor_PassedAsRawJsonWithBrackets()
+    public void BuildArgv_LlmJsonApiOpsArray_WithDescriptor_PassedAsRawJsonWithBrackets()
     {
-        // transaction.operations объявлен в Schema как array-of-object — серверный
+        // LLM JSON API ops объявлен как array-of-object — серверный
         // конвертер должен передать raw JSON-массив со скобками [{...},{...}], чтобы
         // CLI получил валидный JSON. Без скобок CLI-парсер падает на 'invalid_parameter'.
         var tools = CommandsToTools.Build();
-        var transactionTool = tools.First(t => t.Name == "transaction");
-        var paramByName = transactionTool.Params.ToDictionary(p => p.Name, StringComparer.Ordinal);
+        var txTool = tools.First(t => t.Name == "tx");
+        var paramByName = txTool.Params.ToDictionary(p => p.Name, StringComparer.Ordinal);
 
         using var doc = JsonDocument.Parse(
-            @"{""operations"":[{""op"":""create-node"",""type"":""section""},{""op"":""create-ref"",""from_id"":1}]}");
-        var argv = McpArgvBuilder.BuildArgvFromArguments("transaction", doc.RootElement, paramByName);
+            @"{""ops"":[{""op"":""create"",""path"":""x""},{""op"":""link"",""from"":1}]}");
+        var argv = McpArgvBuilder.BuildArgvFromArguments("tx", doc.RootElement, paramByName);
 
         Assert.Equal(2, argv.Length);
-        Assert.Equal("transaction", argv[0]);
-        Assert.StartsWith("--operations=[", argv[1]);
+        Assert.Equal("tx", argv[0]);
+        Assert.StartsWith("--ops=[", argv[1]);
         Assert.EndsWith("]", argv[1]);
-        Assert.Contains("\"op\":\"create-node\"", argv[1]);
-        Assert.Contains("\"op\":\"create-ref\"", argv[1]);
+        Assert.Contains("\"op\":\"create\"", argv[1]);
+        Assert.Contains("\"op\":\"link\"", argv[1]);
     }
 
     [Fact]
-    public void BuildArgv_TransactionInputSchema_DeclaresOperationsAsArrayOfObject()
+    public void BuildArgv_LlmJsonApiInputSchema_DeclaresOpsAsArrayOfObject()
     {
-        // Контракт MCP-схемы: transaction.operations объявлен как array+items=object,
+        // Контракт MCP-схемы: tx.ops объявлен как array+items=object,
         // не как object. Иначе LLM не пошлёт массив через arguments напрямую.
         var tools = CommandsToTools.Build();
-        var transactionTool = tools.First(t => t.Name == "transaction");
-        var operationsParam = transactionTool.Params.First(p => p.Name == "operations");
-        Assert.Equal("array", operationsParam.JsonType);
-        Assert.Equal("object", operationsParam.ItemsJsonType);
-        Assert.True(operationsParam.Required);
+        var txTool = tools.First(t => t.Name == "tx");
+        var opsParam = txTool.Params.First(p => p.Name == "ops");
+        Assert.Equal("array", opsParam.JsonType);
+        Assert.Equal("object", opsParam.ItemsJsonType);
+        Assert.True(opsParam.Required);
     }
 
     [Fact]

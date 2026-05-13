@@ -66,6 +66,42 @@ public class CompactAndTokensTests
     }
 
     [Fact]
+    public async Task GetByPath_CompactDepth_DropsTextAndOutRefs()
+    {
+        var raw = await McpTestFixture.CallToolAsync(
+            "get-by-path",
+            ("path", "DocsWalker"),
+            ("tree", "path"),
+            ("depth", 1),
+            ("compact", true));
+        var obj = McpTestFixture.ParseSuccessObject(raw);
+        Assert.Equal("path", obj.GetProperty("tree").GetString());
+
+        var root = obj.GetProperty("root");
+        Assert.False(root.TryGetProperty("text", out _));
+        Assert.False(root.TryGetProperty("out_refs", out _));
+        Assert.True(root.TryGetProperty("children", out var children));
+        Assert.True(children.GetArrayLength() > 0);
+        foreach (var child in children.EnumerateArray())
+            Assert.False(child.TryGetProperty("children", out _));
+    }
+
+    [Fact]
+    public async Task GetByPath_LowMaxTokens_TriggersTruncationProtocol()
+    {
+        var raw = await McpTestFixture.CallToolAsync(
+            "get-by-path",
+            ("path", "DocsWalker"),
+            ("tree", "path"),
+            ("max_tokens", 200));
+        var obj = McpTestFixture.ParseSuccessObject(raw);
+        Assert.True(obj.GetProperty("truncated").GetBoolean());
+        Assert.True(obj.GetProperty("stopped_at").GetArrayLength() > 0);
+        Assert.True(obj.GetProperty("tokens_used").GetInt32() <= 200);
+        Assert.Equal(200, obj.GetProperty("tokens_budget").GetInt32());
+    }
+
+    [Fact]
     public async Task GetNodes_Compact_DropsTextAndOutRefs()
     {
         var raw = await McpTestFixture.CallToolAsync(

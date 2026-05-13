@@ -13,9 +13,8 @@ internal enum ParamType
     /// <summary>
     /// JSON-массив объектов, передаётся CLI как raw JSON-текст (со скобками <c>[{...},...]</c>).
     /// В MCP-схеме маппится в <c>type=array, items.type=object</c>. Используется для
-    /// transaction.operations: контракт явно требует массив операций (см.
-    /// docs/DocsWalker.yml/«(#34) transaction»), и MCP-клиент должен иметь возможность
-    /// прислать array через arguments напрямую без escape-string-обхода.
+    /// публичных tool-параметров, которым нужен JSON-массив объектов через MCP
+    /// arguments напрямую без escape-string-обхода.
     /// </summary>
     JsonArray,
     /// <summary>
@@ -103,14 +102,19 @@ internal static class Commands
                 Opt("compact",    ParamType.Boolean, "true → alias для fields=id,type,title; default false. Явные fields имеют приоритет."),
                 Opt("max_tokens", ParamType.Integer, "Бюджет токенов на ответ; default 50000. См. truncation-протокол #406.")),
             Read("get_by_path",
-                desc: "Полное поддерево узла по человекочитаемому пути 'Документ/Раздел/...' в указанном addressable дереве. По умолчанию tree берётся из schema.default_addressable_tree, либо автоматически если в Схеме ровно один addressable tree.",
+                desc: "Поддерево узла по человекочитаемому пути 'Документ/Раздел/...' в указанном addressable дереве с теми же ограничителями depth/fields/compact/max_tokens, что у get-tree. По умолчанию tree берётся из schema.default_addressable_tree, либо автоматически если в Схеме ровно один addressable tree.",
                 examples: new[]
                 {
                     "docswalker get-by-path --path=\"DocsWalker/Операции чтения\"",
                     "docswalker get-by-path --path=\"DocsWalker/Операции чтения\" --tree=path",
+                    "docswalker get-by-path --path=\"DocsWalker\" --tree=path --depth=1 --compact=true",
                 },
                 Req("path", ParamType.String, "Путь, разделитель '/'."),
-                Opt("tree", ParamType.String, "Имя addressable дерева. По умолчанию — default_addressable_tree из Схемы либо единственный addressable tree.")),
+                Opt("tree",       ParamType.String,  "Имя addressable дерева. По умолчанию — default_addressable_tree из Схемы либо единственный addressable tree."),
+                Opt("depth",      ParamType.Integer, "Максимальная глубина обхода: 0 — только найденный узел, 1 — найденный узел + один уровень. Без параметра — без ограничения."),
+                Opt("fields",     ParamType.String,  "Whitelist полей через запятую: id,type,title,text,out_refs,tokens,subtree_tokens. Без параметра — все поля. id всегда."),
+                Opt("compact",    ParamType.Boolean, "true → alias для fields=id,type,title; default false. Явные fields имеют приоритет."),
+                Opt("max_tokens", ParamType.Integer, "Бюджет токенов на ответ; default 50000. См. truncation-протокол #406.")),
             Read("get_tree",
                 desc: "Поддерево узла в указанном tree-scope с бюджетом токенов. По умолчанию tree=path, depth — без ограничения, fields — все поля, max_tokens=50000. Каждый узел несёт tokens / subtree_tokens. При превышении max_tokens — BFS-усечение; ответ дополняется полями truncated/stopped_at/tokens_used/tokens_budget (правило #301, #406).",
                 examples: new[]
@@ -179,19 +183,22 @@ internal static class Commands
                 desc: "Глобальный snapshot хранилища: total_nodes, max_depth, total_tokens, trees, schema.types_count/top_types_by_count, root_children, hot_spots (largest_nodes по tokens — кандидаты на разбиение; most_connected_nodes по числу cross-refs, in+out без tree-refs). Зови первым в сессии — оценить размер и центры графа.",
                 examples: new[] { "docswalker get-overview" }),
             Read("get_usage_guide",
-                desc: "Manifest всех команд + ментальная модель + перечень tree-scope'ов + слепок графа. Зови в начале сессии. Опциональный --command=<kebab-name> отдаёт описание одной команды (mental_model/trees/snapshot остаются).",
+                desc: "Manifest команд + ментальная модель + перечень tree-scope'ов + слепок графа. Зови в начале сессии. Опциональный --command=<kebab-name> отдаёт описание одной команды, --fields=<csv> оставляет только нужные секции.",
                 examples: new[]
                 {
                     "docswalker get-usage-guide",
                     "docswalker get-usage-guide --command=get-nodes",
+                    "docswalker get-usage-guide --fields=commands --command=get-tree",
+                    "docswalker get-usage-guide --fields=trees",
                 },
-                Opt("command", ParamType.String, "Kebab-имя команды для targeted-выдачи. Без параметра — манифест всех команд.")),
+                Opt("command", ParamType.String, "Kebab-имя команды для targeted-выдачи. Без параметра — манифест всех команд."),
+                Opt("fields", ParamType.String, "Whitelist секций ответа через запятую: mental_model,trees,commands,graph_snapshot. Без параметра — все секции.")),
 
             // REPL поверх ядра — интерактивный HTTP-клиент к DocsWalker.Kernel.exe.
             // Читает .dw/client.json (kernel host/port + graph) поиском вверх от cwd.
-            // Каждая введённая команда уходит как tools/call на /db/{graph}/rpc.
+            // Каждая введённая команда уходит как tools/call на /{graph}.
             Read("repl",
-                desc: "Интерактивный REPL-клиент DocsWalker. Читает .dw/client.json (host/port/graph kernel'а) поиском вверх от cwd. Каждая введённая команда (без префикса 'docswalker') уходит в kernel /db/{graph}/rpc как tools/call. Kernel должен быть запущен заранее (auto-spawn убран в stg-0010).",
+                desc: "Интерактивный REPL-клиент DocsWalker. Читает .dw/client.json (host/port/graph kernel'а) поиском вверх от cwd. Каждая введённая команда (без префикса 'docswalker') уходит в kernel /{graph} как tools/call. Kernel должен быть запущен заранее (auto-spawn убран в stg-0010).",
                 examples: new[]
                 {
                     "docswalker repl",
@@ -256,11 +263,6 @@ internal static class Commands
                 },
                 Req("yaml_text", ParamType.String, "Полный YAML-текст новой Схемы (заменяет содержимое файла целиком)."),
                 Opt("force", ParamType.String, "true → пропустить Validator на текущем графе (admin-knob для миграций). По умолчанию false; meta-schema всегда валидируется.")),
-            Write("transaction",
-                desc: "Атомарная пачка write-операций. Применяется целиком; результат — массив элементов {op, ...поля}. force=true пропускает финальный Validator на новом графе (admin-knob для миграций); per-op проверки в ApplyOp выполняются всегда.",
-                examples: new[] { "docswalker transaction --operations='[{\"op\":\"create-node\",...},{\"op\":\"create-ref\",...}]'" },
-                Req("operations", ParamType.JsonArray, "JSON-массив операций (см. формат в TransactionParser). Принимается через MCP arguments напрямую (array of object) — серверный конвертер передаст raw JSON со скобками в CLI."),
-                Opt("force", ParamType.String, "true → пропустить финальный Validator (admin-knob для миграций). По умолчанию false.")),
         };
     }
 

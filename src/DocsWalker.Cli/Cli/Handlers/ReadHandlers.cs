@@ -42,16 +42,22 @@ internal static class ReadHandlers
         });
     }
 
-    public static int GetByPath(string storagePath, string path, string? tree)
+    public static int GetByPath(
+        string storagePath,
+        string path,
+        string? tree,
+        int? depth,
+        IReadOnlyCollection<string>? fields,
+        int maxTokens)
     {
         return WithApi(storagePath, api =>
         {
             try
             {
-                var subtree = api.ReadApi.GetByPath(path, tree);
+                var scope = api.ReadApi.ResolveAddressableTreeName(tree);
+                var subtree = api.ReadApi.GetByPath(path, scope, depth);
                 var autoIncludes = api.ReadApi.CollectAutoIncludes(subtree);
-                var json = ReadApiJson.SubtreeToJsonWithAutoIncludes(
-                    subtree, fields: null, autoIncludes);
+                var json = ReadApiJson.SubtreeToJson(subtree, scope, fields, autoIncludes, maxTokens);
                 Output.WriteSuccess(json);
                 return 0;
             }

@@ -5,7 +5,7 @@ namespace DocsWalker.Kernel;
 /// <summary>
 /// Per-graph state ядра: <see cref="SemaphoreSlim"/> сериализует обращения
 /// к одному графу (а не к процессу целиком), <see cref="LastUsed"/> —
-/// метка для <c>/db</c> snapshot. <see cref="StoragePath"/> — путь к
+/// метка для API/control snapshot. <see cref="StoragePath"/> — путь к
 /// папке <c>docs/</c>, по которому handlers читают/пишут граф; передаётся
 /// клиентским argv-командам через инжект <c>--storage-path=</c> в
 /// <see cref="RpcDispatcher"/>.
@@ -33,7 +33,7 @@ internal sealed class GraphEntry : IDisposable
 /// <summary>
 /// Реестр графов ядра, известных из <see cref="KernelConfig"/>. Графы
 /// статически заданы в конфиге — динамической регистрации нет: если
-/// клиент дёргает URL <c>/db/&lt;unknown&gt;/rpc</c>, ядро отдаёт
+/// клиент дёргает URL <c>/&lt;unknown&gt;</c>, ядро отдаёт
 /// <c>unknown_graph</c>.
 /// <para>
 /// Per-graph semaphore разрешает параллелизм запросов между графами и
