@@ -22,23 +22,6 @@ public static class ReadApiJson
     public static readonly IReadOnlyCollection<string> AllNodeFields =
         new[] { "id", "type", "title", "text", "out_refs", "tokens", "subtree_tokens" };
 
-    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes) =>
-        NodesToJson(nodes, autoIncludes: null);
-
-    /// <summary>
-    /// Сериализация get-nodes. Прямо запрошенные id идут первыми; auto-include-цели
-    /// (#340) дописываются после них в порядке BFS-открытия. Все узлы — полные.
-    /// </summary>
-    public static JsonArray NodesToJson(IReadOnlyList<Node> nodes, IReadOnlyList<Node>? autoIncludes)
-    {
-        var arr = new JsonArray();
-        foreach (var n in nodes) arr.Add((JsonNode?)NodeToJson(n));
-        if (autoIncludes is null) return arr;
-        foreach (var n in autoIncludes)
-            arr.Add((JsonNode?)NodeToJson(n));
-        return arr;
-    }
-
     /// <summary>
     /// Узел в форме refs-модели: <c>id, type, title, text, out_refs</c> плюс метрика
     /// <c>tokens</c> (BPE-счёт самого узла). <c>out_refs</c> — объект <c>{name: [ids]}</c>,
@@ -286,48 +269,6 @@ public static class ReadApiJson
     }
 
     /// <summary>
-    /// Сериализация get-nodes с truncation-протоколом (см. docs/DocsWalker.yml/#406).
-    /// Прямо запрошенные id идут первыми и приоритизируются по бюджету; auto-include-цели
-    /// добавляются только если бюджет не исчерпан и они в него влезают. Шейп ответа —
-    /// всегда объект <c>{nodes: [...], truncated?, stopped_at?, tokens_used?, tokens_budget?}</c>.
-    /// </summary>
-    public static JsonObject NodesToJsonBudgeted(
-        IReadOnlyList<Node> nodes,
-        IReadOnlyList<Node>? autoIncludes,
-        IReadOnlyCollection<string>? fields,
-        int maxTokens)
-    {
-        var ctx = new TruncationContext(maxTokens);
-        var arr = new JsonArray();
-        bool stoppedOnDirect = false;
-        for (int i = 0; i < nodes.Count; i++)
-        {
-            int tokens = TokenCounter.CountNode(nodes[i]);
-            if (!ctx.TryConsume(tokens))
-            {
-                ctx.RecordStop(0, nodes.Count - i, i);
-                stoppedOnDirect = true;
-                break;
-            }
-            arr.Add((JsonNode?)NodeToJson(nodes[i], fields));
-        }
-        if (!stoppedOnDirect && autoIncludes is { Count: > 0 })
-        {
-            foreach (var n in autoIncludes)
-            {
-                int tokens = TokenCounter.CountNode(n);
-                if (!ctx.TryConsume(tokens)) break;
-                arr.Add((JsonNode?)NodeToJson(n, fields));
-            }
-        }
-
-        var result = new JsonObject { ["nodes"] = arr };
-        if (ctx.Truncated)
-            AppendTruncationFields(result, ctx);
-        return result;
-    }
-
-    /// <summary>
     /// Дописывает к <paramref name="result"/> top-level поля truncation-протокола
     /// в фиксированном порядке: truncated, stopped_at, tokens_used, tokens_budget.
     /// Вызывается только когда <paramref name="ctx"/>.Truncated=true.
@@ -402,7 +343,7 @@ public static class ReadApiJson
     }
 
     /// <summary>
-    /// Сериализация результата check-integrity. Для LLM ключевая часть — массив errors,
+    /// Сериализация результата check-integrity. Ключевая часть — массив errors,
     /// и флаг ok=true (=> errors пуст). Структура каждой ошибки совпадает с error-body
     /// CLI, за исключением того, что лежит в success-result, а не в error-envelope.
     /// </summary>
@@ -481,7 +422,7 @@ public static class ReadApiJson
         };
         if (c.Description is not null) obj["description"] = c.Description;
         // parameters/examples опускаются, если коллекция пуста: у команд без параметров
-        // (get-meta-schema, get-schema, check-integrity, get-usage-guide) поле
+        // (get-meta-schema, get-schema, get-usage-guide) поле
         // не выводится; то же для команд без примеров.
         if (c.Parameters.Count > 0)
         {
@@ -549,11 +490,6 @@ public static class ReadApiJson
     };
 
     /// <summary>
-    /// Сериализация search v2: каждый hit — объект {id, type, title, score, snippet}.
-    /// score округляется до 4 знаков для компактности; snippet опускается,
-    /// если null (правило #301).
-    /// </summary>
-    /// <summary>
     /// Сериализация <see cref="ReadApi.Find"/>. <paramref name="compact"/>=true →
     /// whitelist полей {id, type, title} (без text и out_refs), для экономии токенов
     /// в больших структурных выборках.
@@ -565,24 +501,6 @@ public static class ReadApiJson
         foreach (var n in nodes)
         {
             arr.Add((JsonNode?)NodeToJson(n, fields));
-        }
-        return arr;
-    }
-
-    public static JsonArray SearchToJson(IReadOnlyList<SearchHit> hits)
-    {
-        var arr = new JsonArray();
-        foreach (var h in hits)
-        {
-            var obj = new JsonObject
-            {
-                ["id"] = h.Id,
-                ["type"] = h.TypeName,
-                ["title"] = h.Title,
-                ["score"] = Math.Round(h.Score, 4),
-            };
-            if (h.Snippet is not null) obj["snippet"] = h.Snippet;
-            arr.Add((JsonNode?)obj);
         }
         return arr;
     }

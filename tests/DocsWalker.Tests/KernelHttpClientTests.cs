@@ -32,7 +32,7 @@ public class KernelHttpClientTests
         try
         {
             exitCode = await KernelHttpClient.SendCommandAsync(
-                new[] { "get-nodes", "--ids=1" }, config);
+                new[] { "get-overview" }, config);
         }
         finally
         {

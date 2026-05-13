@@ -1,17 +1,16 @@
 namespace DocsWalker.Core.Api;
 
 /// <summary>
-/// Точка обрыва BFS в truncation-протоколе read-команд (см. docs/DocsWalker.yml/#406).
-/// <see cref="ParentId"/> — id узла, чьи children не дочитаны (для get-nodes —
-/// синтетический маркер 0 плоского списка). <see cref="RemainingChildren"/> — сколько
-/// ещё не включено. <see cref="NextOffset"/> — индекс первого недочитанного child'а
-/// в исходном списке.
+/// Точка обрыва BFS в truncation-протоколе read-команд.
+/// <see cref="ParentId"/> — id узла, чьи children не дочитаны.
+/// <see cref="RemainingChildren"/> — сколько ещё не включено.
+/// <see cref="NextOffset"/> — индекс первого недочитанного child'а в исходном списке.
 /// </summary>
 public sealed record TruncationPoint(int ParentId, int RemainingChildren, int NextOffset);
 
 /// <summary>
-/// Accumulator для BFS-усечения read-ответов под бюджет токенов. Один экземпляр на
-/// один call get-tree/get-nodes. Не thread-safe (нужен только в одном вызове).
+/// Accumulator для BFS-усечения read-ответов под бюджет токенов. Один экземпляр на один read-call.
+/// Не thread-safe.
 /// </summary>
 internal sealed class TruncationContext
 {
@@ -26,8 +25,7 @@ internal sealed class TruncationContext
     }
 
     /// <summary>
-    /// Пытается «потратить» <paramref name="tokens"/> из бюджета. true → потрачено
-    /// (TokensUsed увеличен); false → не хватило (ничего не потрачено).
+    /// Пытается потратить <paramref name="tokens"/> из бюджета.
     /// </summary>
     public bool TryConsume(int tokens)
     {
@@ -37,9 +35,7 @@ internal sealed class TruncationContext
     }
 
     /// <summary>
-    /// Принудительно засчитывает <paramref name="tokens"/>, даже если выходит за
-    /// бюджет — используется для «минимума» (корень в compact-форме), который мы
-    /// возвращаем даже когда сам корень больше бюджета.
+    /// Принудительно засчитывает <paramref name="tokens"/>, даже если выходит за бюджет.
     /// </summary>
     public void ForceConsume(int tokens)
     {

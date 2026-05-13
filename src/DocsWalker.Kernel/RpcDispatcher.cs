@@ -36,14 +36,6 @@ internal sealed class RpcDispatcher
         "tx",
     };
 
-    private static readonly HashSet<string> SessionToolNames = new(StringComparer.Ordinal)
-    {
-        "brief",
-        "checkpoint",
-        "resume",
-        "context-check",
-    };
-
     private static readonly UTF8Encoding StrictUtf8NoBom = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -191,17 +183,16 @@ internal sealed class RpcDispatcher
     }
 
     /// <summary>
-    /// <c>tools/list</c> — грузим Схему графа по имени из URL для динамической
-    /// inputSchema у <c>create-node</c>. Неизвестный граф падает сразу, чтобы
-    /// неверный endpoint не выглядел рабочим до первого <c>tools/call</c>.
+    /// <c>tools/list</c> — возвращаем компактную LLM-facing surface. Неизвестный
+    /// граф падает сразу, чтобы неверный endpoint не выглядел рабочим до первого
+    /// <c>tools/call</c>.
     /// </summary>
     private JsonRpcResponse HandleListTools(JsonRpcRequest request, string graphName)
     {
         if (!_registry.TryGet(graphName, out var entry))
             return MakeUnknownGraphError(request.Id, graphName);
 
-        var schema = TryLoadSchema(entry.StoragePath);
-        var descriptors = CommandsToTools.Build(schema);
+        var descriptors = CommandsToTools.Build();
         var tools = new List<McpTool>(descriptors.Count);
         foreach (var d in descriptors)
             tools.Add(new McpTool(d.Name, d.Description, BuildInputSchema(d)));
@@ -250,20 +241,10 @@ internal sealed class RpcDispatcher
                 ct);
         }
 
-        if (IsSessionTool(callParams.Name))
-        {
-            return await HandleSessionToolAsync(
-                request.Id,
-                entry,
-                callParams.Name,
-                callParams.Arguments,
-                ct);
-        }
-
-        // Schema для динамических tool'ов (create-node) грузим лениво на каждый
-        // вызов (handlers — sole-writer контракт, переключаются на reload).
-        var schema = TryLoadSchema(entry.StoragePath);
-        var descriptors = CommandsToTools.Build(schema);
+        // Direct tools/call принимает тот же компактный MCP surface, что и
+        // tools/list. Старый legacy command set не остаётся скрытым callable
+        // слоем за именами вроде create-node/get-tree.
+        var descriptors = CommandsToTools.Build();
         var toolByName = descriptors.ToDictionary(d => d.Name, StringComparer.Ordinal);
         if (!toolByName.TryGetValue(callParams.Name, out var tool))
         {
@@ -326,22 +307,6 @@ internal sealed class RpcDispatcher
                 var executeMethod = toolName;
                 var txMode = string.Empty;
 
-                if (toolName == "query" &&
-                    TryGetString(args, "session_id", out var querySessionId) &&
-                    !string.IsNullOrWhiteSpace(querySessionId) &&
-                    !IsSafeSessionId(querySessionId))
-                {
-                    envelope = BuildLlmJsonApiInfrastructureError(
-                        toolName,
-                        "invalid_session_id",
-                        "session_id may contain only letters, digits, '.', '_' and '-'.",
-                        null);
-                    return MakeToolTextResponse(
-                        requestId,
-                        envelope.ToJsonString(RelaxedCtx.Options),
-                        isError: true);
-                }
-
                 var ctx = WriteContext.FromStoragePath(entry.StoragePath);
                 var schema = SchemaLoader.LoadSchema(ctx.SchemaPath);
                 var loaded = DocumentLoader.Load(ctx.DocsRoot, schema);
@@ -382,12 +347,7 @@ internal sealed class RpcDispatcher
                                 isError: true);
                         }
 
-                        var previewTargetIds = CollectIdsFromJson(hitEnvelope)
-                            .Where(id => id >= 0)
-                            .ToHashSet();
-                        foreach (var id in CollectIdsFromJson(CloneJson(args)).Where(id => id >= 0))
-                            previewTargetIds.Add(id);
-                        var guardError = BuildTxGuardError(entry, args, txMode, baseRevision, previewTargetIds);
+                        var guardError = BuildTxGuardError(args, txMode, baseRevision);
                         if (guardError is not null)
                         {
                             envelope = guardError;
@@ -403,10 +363,6 @@ internal sealed class RpcDispatcher
                 envelope = executor.Execute(request);
                 if (toolName == "tx" && txMode == "preview")
                     envelope = RewriteTxPreviewEnvelope(envelope, txMode);
-                if (toolName == "query" && !IsLlmJsonApiError(envelope))
-                    TryUpdateQuerySession(entry, args, envelope, baseRevision);
-                if (toolName == "tx" && txMode is "apply_if_safe" or "apply" && !IsLlmJsonApiError(envelope))
-                    TryUpdateTxSession(entry, args, envelope, ctx);
             }
             catch (ArgumentException ex)
             {
@@ -458,9 +414,6 @@ internal sealed class RpcDispatcher
 
     private static bool IsLlmJsonApiTool(string name) =>
         LlmJsonApiToolNames.Contains(name);
-
-    private static bool IsSessionTool(string name) =>
-        SessionToolNames.Contains(name);
 
     private static JsonObject BuildLlmJsonApiRequest(
         string method,
@@ -523,66 +476,12 @@ internal sealed class RpcDispatcher
         return result;
     }
 
-    private static JsonObject? BuildTxGuardError(
-        GraphEntry entry,
-        JsonElement args,
-        string mode,
-        long baseRevision,
-        HashSet<int> targetIds)
+    private static JsonObject? BuildTxGuardError(JsonElement args, string mode, long baseRevision)
     {
         var blockers = new JsonArray();
-        var worksetCount = 0;
 
         if (!TryGetString(args, "intent", out var intent) || string.IsNullOrWhiteSpace(intent))
             blockers.Add((JsonNode?)JsonValue.Create("missing_intent"));
-
-        if (mode == "apply_if_safe")
-        {
-            if (!TryGetString(args, "session_id", out var sessionId) || string.IsNullOrWhiteSpace(sessionId))
-            {
-                blockers.Add((JsonNode?)JsonValue.Create("missing_session_id"));
-            }
-            else if (!IsSafeSessionId(sessionId))
-            {
-                blockers.Add((JsonNode?)JsonValue.Create("invalid_session_id"));
-            }
-            else
-            {
-                var path = GetSessionFilePath(entry, sessionId, createDirectory: false);
-                if (!File.Exists(path))
-                {
-                    blockers.Add((JsonNode?)JsonValue.Create("session_not_found"));
-                }
-                else if (!TryReadSession(path, out var session))
-                {
-                    blockers.Add((JsonNode?)JsonValue.Create("malformed_session"));
-                }
-                else
-                {
-                    var workset = CollectSessionNodeIds(session);
-                    worksetCount = workset.Count;
-                    if (TryGetLong(session, "graph_revision", out var sessionRevision) &&
-                        sessionRevision < baseRevision)
-                    {
-                        blockers.Add((JsonNode?)JsonValue.Create("stale_revision"));
-                    }
-
-                    foreach (var id in targetIds
-                                 .Where(id => id != Node.RootId && !workset.Contains(id))
-                                 .Distinct()
-                                 .OrderBy(id => id))
-                    {
-                        blockers.Add((JsonNode?)JsonValue.Create($"unread_target:{id}"));
-                    }
-                }
-            }
-        }
-        else if (TryGetString(args, "session_id", out var optionalSessionId) &&
-                 !string.IsNullOrWhiteSpace(optionalSessionId) &&
-                 !IsSafeSessionId(optionalSessionId))
-        {
-            blockers.Add((JsonNode?)JsonValue.Create("invalid_session_id"));
-        }
 
         if (blockers.Count == 0)
             return null;
@@ -591,204 +490,16 @@ internal sealed class RpcDispatcher
         {
             ["ok"] = false,
             ["method"] = "tx",
-            ["code"] = "session_guard_failed",
-            ["message"] = "tx session guard blocked write.",
+            ["code"] = "tx_guard_failed",
+            ["message"] = "tx guard blocked write.",
             ["details"] = new JsonObject
             {
                 ["mode"] = mode,
                 ["base_revision"] = baseRevision,
-                ["target_ids"] = BuildIdArray(targetIds),
-                ["workset_node_count"] = worksetCount,
                 ["blockers"] = blockers,
             },
         };
     }
-
-    private static void TryUpdateQuerySession(
-        GraphEntry entry,
-        JsonElement args,
-        JsonObject envelope,
-        long baseRevision)
-    {
-        if (!TryGetString(args, "session_id", out var sessionId) || string.IsNullOrWhiteSpace(sessionId))
-            return;
-
-        try
-        {
-            var ids = CollectIdsFromJson(envelope).Where(id => id >= 0).ToArray();
-            var session = LoadOrCreateSession(entry, sessionId, baseRevision, "auto-created by query");
-            var added = AddUniqueIds(session, "read_workset", ids);
-            TouchSession(session, baseRevision);
-            session["last_query_at"] = DateTimeOffset.UtcNow.ToString("O");
-            SaveSession(entry, sessionId, session);
-
-            envelope["session"] = new JsonObject
-            {
-                ["session_id"] = sessionId,
-                ["read_workset_added"] = added,
-                ["read_workset_count"] = CollectSessionNodeIds(session).Count,
-                ["graph_revision"] = baseRevision,
-                ["persisted"] = true,
-            };
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            envelope["session"] = BuildSessionWarning(sessionId, ex);
-        }
-    }
-
-    private static void TryUpdateTxSession(
-        GraphEntry entry,
-        JsonElement args,
-        JsonObject envelope,
-        WriteContext ctx)
-    {
-        if (!TryGetString(args, "session_id", out var sessionId) || string.IsNullOrWhiteSpace(sessionId))
-            return;
-
-        try
-        {
-            var revision = new SequenceCounter(ctx.SequencePath).Read();
-            var ids = CollectIdsFromJson(envelope).Where(id => id >= 0).ToArray();
-            var session = LoadOrCreateSession(entry, sessionId, revision, "auto-created by tx");
-            var added = AddUniqueIds(session, "touched_nodes", ids);
-            TouchSession(session, revision);
-            if (TryGetString(args, "intent", out var intent) && !string.IsNullOrWhiteSpace(intent))
-                session["last_intent"] = intent;
-            session["last_tx_at"] = DateTimeOffset.UtcNow.ToString("O");
-            SaveSession(entry, sessionId, session);
-
-            envelope["session"] = new JsonObject
-            {
-                ["session_id"] = sessionId,
-                ["touched_added"] = added,
-                ["touched_count"] = CollectSessionNodeIds(session).Count,
-                ["graph_revision"] = revision,
-                ["persisted"] = true,
-            };
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            envelope["session"] = BuildSessionWarning(sessionId, ex);
-        }
-    }
-
-    private static JsonObject BuildSessionWarning(string sessionId, Exception ex) =>
-        new()
-        {
-            ["session_id"] = sessionId,
-            ["persisted"] = false,
-            ["warning"] = "session_update_failed",
-            ["message"] = ex.Message,
-        };
-
-    private static JsonObject LoadOrCreateSession(
-        GraphEntry entry,
-        string sessionId,
-        long baseRevision,
-        string summary)
-    {
-        var path = GetSessionFilePath(entry, sessionId, createDirectory: true);
-        var session = File.Exists(path) && TryReadSession(path, out var existing)
-            ? existing
-            : new JsonObject();
-
-        session["schema_version"] = 1;
-        session["graph"] = entry.Name;
-        session["session_id"] = sessionId;
-        if (!session.TryGetPropertyValue("summary", out _))
-            session["summary"] = summary;
-        TouchSession(session, baseRevision);
-        return session;
-    }
-
-    private static bool TryReadSession(string path, out JsonObject session)
-    {
-        try
-        {
-            session = JsonNode.Parse(File.ReadAllText(path, StrictUtf8NoBom)) as JsonObject
-                ?? new JsonObject();
-            return true;
-        }
-        catch (JsonException)
-        {
-            session = new JsonObject();
-            return false;
-        }
-    }
-
-    private static void SaveSession(GraphEntry entry, string sessionId, JsonObject session)
-    {
-        var path = GetSessionFilePath(entry, sessionId, createDirectory: true);
-        File.WriteAllText(path, session.ToJsonString(), StrictUtf8NoBom);
-    }
-
-    private static void TouchSession(JsonObject session, long baseRevision)
-    {
-        session["graph_revision"] = baseRevision;
-        session["updated_at"] = DateTimeOffset.UtcNow.ToString("O");
-    }
-
-    private static int AddUniqueIds(JsonObject session, string propertyName, IEnumerable<int> ids)
-    {
-        var unique = new HashSet<int>();
-        AddIds(session[propertyName], unique);
-        var before = unique.Count;
-        foreach (var id in ids.Where(id => id >= 0))
-            unique.Add(id);
-
-        session[propertyName] = BuildIdArray(unique);
-        return unique.Count - before;
-    }
-
-    private static JsonArray BuildIdArray(IEnumerable<int> ids)
-    {
-        var array = new JsonArray();
-        foreach (var id in ids.Distinct().OrderBy(id => id))
-            array.Add((JsonNode?)JsonValue.Create(id));
-        return array;
-    }
-
-    private static HashSet<int> CollectIdsFromJson(JsonNode? node)
-    {
-        var ids = new HashSet<int>();
-        CollectIdsFromJson(node, propertyName: null, ids);
-        return ids;
-    }
-
-    private static void CollectIdsFromJson(JsonNode? node, string? propertyName, HashSet<int> ids)
-    {
-        switch (node)
-        {
-            case JsonObject obj:
-                foreach (var prop in obj)
-                    CollectIdsFromJson(prop.Value, prop.Key, ids);
-                break;
-
-            case JsonArray array:
-                if (IsIdArrayProperty(propertyName))
-                {
-                    foreach (var item in array)
-                    {
-                        if (item is JsonValue itemValue && itemValue.TryGetValue<int>(out var itemId))
-                            ids.Add(itemId);
-                    }
-                }
-                foreach (var item in array)
-                    CollectIdsFromJson(item, propertyName: null, ids);
-                break;
-
-            case JsonValue value when IsIdScalarProperty(propertyName) && value.TryGetValue<int>(out var id):
-                ids.Add(id);
-                break;
-        }
-    }
-
-    private static bool IsIdScalarProperty(string? propertyName) =>
-        propertyName is "id" || (propertyName?.EndsWith("_id", StringComparison.Ordinal) == true);
-
-    private static bool IsIdArrayProperty(string? propertyName) =>
-        propertyName is "ids" || (propertyName?.EndsWith("_ids", StringComparison.Ordinal) == true);
 
     private static JsonObject BuildLlmJsonApiInfrastructureError(
         string method,
@@ -841,212 +552,6 @@ internal sealed class RpcDispatcher
         return MakeOk(id, JsonSerializer.SerializeToElement(result, RelaxedCtx.CallToolResult));
     }
 
-    private async Task<JsonRpcResponse> HandleSessionToolAsync(
-        JsonElement? requestId,
-        GraphEntry entry,
-        string toolName,
-        JsonElement? arguments,
-        CancellationToken ct)
-    {
-        if (arguments.HasValue &&
-            arguments.Value.ValueKind is not JsonValueKind.Object and not JsonValueKind.Null and not JsonValueKind.Undefined)
-        {
-            return MakeError(requestId, JsonRpcErrorCodes.InvalidParams,
-                "arguments must be an object");
-        }
-
-        JsonObject envelope;
-        await entry.Semaphore.WaitAsync(ct);
-        try
-        {
-            _registry.Touch(entry);
-            envelope = toolName switch
-            {
-                "brief" => HandleBrief(entry, arguments),
-                "checkpoint" => HandleCheckpoint(entry, arguments),
-                "resume" => HandleResume(entry, arguments),
-                "context-check" => HandleContextCheck(entry, arguments),
-                _ => BuildSessionError(toolName, "unknown_tool", $"unknown session tool: {toolName}")
-            };
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            envelope = BuildSessionError(toolName, "internal_error", ex.Message);
-        }
-        finally
-        {
-            entry.Semaphore.Release();
-        }
-
-        var ok = envelope["ok"]?.GetValue<bool>() == true;
-        return MakeToolTextResponse(requestId, envelope.ToJsonString(), isError: !ok);
-    }
-
-    private static JsonObject HandleBrief(GraphEntry entry, JsonElement? arguments)
-    {
-        var args = NormalizeArguments(arguments);
-        if (!TryGetString(args, "goal", out var goal) || string.IsNullOrWhiteSpace(goal))
-            return BuildSessionError("brief", "missing_goal", "brief requires non-empty goal.");
-
-        var (api, baseRevision) = LoadReadApi(entry);
-        var hits = ReadApiJson.SearchToJson(api.Search(goal, limit: 8, compact: true));
-        var overview = ReadApiJson.OverviewToJson(api.GetOverview());
-
-        var pack = new JsonObject
-        {
-            ["overview"] = overview,
-            ["relevant_nodes"] = hits,
-            ["must_read"] = JsonStringArray("get-usage-guide", "get-overview"),
-            ["suggested_next"] = JsonStringArray(
-                "query/get-nodes для дочитывания relevant_nodes",
-                "checkpoint после первого устойчивого решения",
-                "context-check перед tx")
-        };
-
-        var response = new JsonObject
-        {
-            ["ok"] = true,
-            ["method"] = "brief",
-            ["graph"] = entry.Name,
-            ["base_revision"] = baseRevision,
-            ["goal"] = goal,
-            ["pack"] = pack
-        };
-        if (TryGetString(args, "session_id", out var sessionId) && !string.IsNullOrWhiteSpace(sessionId))
-            response["session_id"] = sessionId;
-        if (args.TryGetProperty("scope", out var scope))
-            response["scope"] = CloneJson(scope);
-
-        return response;
-    }
-
-    private static JsonObject HandleCheckpoint(GraphEntry entry, JsonElement? arguments)
-    {
-        var args = NormalizeArguments(arguments);
-        if (!TryGetString(args, "session_id", out var sessionId) || string.IsNullOrWhiteSpace(sessionId))
-            return BuildSessionError("checkpoint", "missing_session_id", "checkpoint requires session_id.");
-        if (!IsSafeSessionId(sessionId))
-            return BuildSessionError("checkpoint", "invalid_session_id", "session_id may contain only letters, digits, '.', '_' and '-'.");
-        if (!TryGetString(args, "summary", out var summary) || string.IsNullOrWhiteSpace(summary))
-            return BuildSessionError("checkpoint", "missing_summary", "checkpoint requires non-empty summary.");
-
-        var (_, baseRevision) = LoadReadApi(entry);
-        var session = new JsonObject
-        {
-            ["schema_version"] = 1,
-            ["graph"] = entry.Name,
-            ["session_id"] = sessionId,
-            ["summary"] = summary,
-            ["graph_revision"] = baseRevision,
-            ["updated_at"] = DateTimeOffset.UtcNow.ToString("O")
-        };
-
-        foreach (var prop in args.EnumerateObject())
-        {
-            if (prop.Name is "session_id" or "summary") continue;
-            session[prop.Name] = CloneJson(prop.Value);
-        }
-
-        var path = GetSessionFilePath(entry, sessionId, createDirectory: true);
-        File.WriteAllText(path, session.ToJsonString(), StrictUtf8NoBom);
-
-        return new JsonObject
-        {
-            ["ok"] = true,
-            ["method"] = "checkpoint",
-            ["graph"] = entry.Name,
-            ["session_id"] = sessionId,
-            ["graph_revision"] = baseRevision,
-            ["persisted"] = true
-        };
-    }
-
-    private static JsonObject HandleResume(GraphEntry entry, JsonElement? arguments)
-    {
-        var args = NormalizeArguments(arguments);
-        if (!TryGetString(args, "session_id", out var sessionId) || string.IsNullOrWhiteSpace(sessionId))
-            return BuildSessionError("resume", "missing_session_id", "resume requires session_id.");
-        if (!IsSafeSessionId(sessionId))
-            return BuildSessionError("resume", "invalid_session_id", "session_id may contain only letters, digits, '.', '_' and '-'.");
-
-        var path = GetSessionFilePath(entry, sessionId, createDirectory: false);
-        if (!File.Exists(path))
-            return BuildSessionError("resume", "session_not_found", $"work_session '{sessionId}' not found.");
-
-        var session = JsonNode.Parse(File.ReadAllText(path, StrictUtf8NoBom)) as JsonObject
-            ?? new JsonObject();
-        var (_, baseRevision) = LoadReadApi(entry);
-
-        return new JsonObject
-        {
-            ["ok"] = true,
-            ["method"] = "resume",
-            ["graph"] = entry.Name,
-            ["session_id"] = sessionId,
-            ["base_revision"] = baseRevision,
-            ["session"] = session
-        };
-    }
-
-    private static JsonObject HandleContextCheck(GraphEntry entry, JsonElement? arguments)
-    {
-        var args = NormalizeArguments(arguments);
-        if (!TryGetString(args, "session_id", out var sessionId) || string.IsNullOrWhiteSpace(sessionId))
-            return BuildSessionError("context-check", "missing_session_id", "context-check requires session_id.");
-        if (!IsSafeSessionId(sessionId))
-            return BuildSessionError("context-check", "invalid_session_id", "session_id may contain only letters, digits, '.', '_' and '-'.");
-        if (!args.TryGetProperty("write", out var write) || write.ValueKind != JsonValueKind.Object)
-            return BuildSessionError("context-check", "missing_write", "context-check requires write object.");
-
-        var path = GetSessionFilePath(entry, sessionId, createDirectory: false);
-        if (!File.Exists(path))
-            return BuildSessionError("context-check", "session_not_found", $"work_session '{sessionId}' not found.");
-
-        var session = JsonNode.Parse(File.ReadAllText(path, StrictUtf8NoBom)) as JsonObject
-            ?? new JsonObject();
-        var (_, baseRevision) = LoadReadApi(entry);
-        var workset = CollectSessionNodeIds(session);
-        var (targetIds, hasSelector, hasMissingExpectedCount) = CollectWriteTargets(write);
-        var blockers = new JsonArray();
-
-        if (!TryGetString(args, "intent", out var intent) || string.IsNullOrWhiteSpace(intent))
-            blockers.Add((JsonNode?)JsonValue.Create("missing_intent"));
-        if (TryGetLong(session, "graph_revision", out var sessionRevision) && sessionRevision < baseRevision)
-            blockers.Add((JsonNode?)JsonValue.Create("stale_revision"));
-        foreach (var id in targetIds.Where(id => !workset.Contains(id)).Distinct().OrderBy(id => id))
-            blockers.Add((JsonNode?)JsonValue.Create($"unread_target:{id}"));
-        if (hasSelector)
-            blockers.Add((JsonNode?)JsonValue.Create("selector_requires_hit"));
-        if (hasMissingExpectedCount)
-            blockers.Add((JsonNode?)JsonValue.Create("missing_expected_count"));
-
-        var idsJson = new JsonArray();
-        foreach (var id in targetIds.Distinct().OrderBy(id => id))
-            idsJson.Add((JsonNode?)JsonValue.Create(id));
-
-        var ok = blockers.Count == 0;
-        return new JsonObject
-        {
-            ["ok"] = ok,
-            ["method"] = "context-check",
-            ["graph"] = entry.Name,
-            ["session_id"] = sessionId,
-            ["base_revision"] = baseRevision,
-            ["target_ids"] = idsJson,
-            ["workset_node_count"] = workset.Count,
-            ["blockers"] = blockers
-        };
-    }
-
-    private static (ReadApi Api, long BaseRevision) LoadReadApi(GraphEntry entry)
-    {
-        var ctx = WriteContext.FromStoragePath(entry.StoragePath);
-        var schema = SchemaLoader.LoadSchema(ctx.SchemaPath);
-        var loaded = DocumentLoader.Load(ctx.DocsRoot, schema);
-        var baseRevision = new SequenceCounter(ctx.SequencePath).Read();
-        return (new ReadApi(loaded.Graph, schema), baseRevision);
-    }
-
     private static JsonElement NormalizeArguments(JsonElement? arguments)
     {
         if (!arguments.HasValue || arguments.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
@@ -1066,9 +571,6 @@ internal sealed class RpcDispatcher
         return true;
     }
 
-    private static JsonNode? CloneJson(JsonElement element) =>
-        JsonNode.Parse(element.GetRawText());
-
     private static JsonArray JsonStringArray(params string[] values)
     {
         var array = new JsonArray();
@@ -1076,133 +578,6 @@ internal sealed class RpcDispatcher
             array.Add((JsonNode?)JsonValue.Create(value));
         return array;
     }
-
-    private static bool IsSafeSessionId(string sessionId)
-    {
-        if (sessionId.Length is 0 or > 80) return false;
-        foreach (var ch in sessionId)
-        {
-            if (char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or '-')
-                continue;
-            return false;
-        }
-        return true;
-    }
-
-    private static string GetSessionFilePath(GraphEntry entry, string sessionId, bool createDirectory)
-    {
-        var docsRoot = Path.GetFullPath(entry.StoragePath);
-        var workspaceRoot = Directory.GetParent(docsRoot)?.FullName ?? docsRoot;
-        var dir = Path.Combine(workspaceRoot, ".dw", "sessions", entry.Name);
-        if (createDirectory) Directory.CreateDirectory(dir);
-        return Path.Combine(dir, sessionId + ".json");
-    }
-
-    private static HashSet<int> CollectSessionNodeIds(JsonObject session)
-    {
-        var ids = new HashSet<int>();
-        AddIds(session["touched_nodes"], ids);
-        AddIds(session["read_workset"], ids);
-        AddIds(session["node_ids"], ids);
-        if (session["read_workset"] is JsonObject workset)
-            AddIds(workset["node_ids"], ids);
-        return ids;
-    }
-
-    private static void AddIds(JsonNode? node, HashSet<int> ids)
-    {
-        if (node is JsonValue value && value.TryGetValue<int>(out var id))
-        {
-            ids.Add(id);
-            return;
-        }
-        if (node is not JsonArray array) return;
-        foreach (var item in array)
-        {
-            if (item is JsonValue itemValue && itemValue.TryGetValue<int>(out var itemId))
-                ids.Add(itemId);
-        }
-    }
-
-    private static (HashSet<int> TargetIds, bool HasSelector, bool HasMissingExpectedCount) CollectWriteTargets(JsonElement write)
-    {
-        var ids = new HashSet<int>();
-        var hasSelector = false;
-        var missingExpectedCount = false;
-
-        if (!write.TryGetProperty("ops", out var ops) || ops.ValueKind != JsonValueKind.Array)
-            return (ids, hasSelector, missingExpectedCount);
-
-        foreach (var op in ops.EnumerateArray())
-        {
-            if (op.ValueKind != JsonValueKind.Object) continue;
-            AddElementIds(op, "id", ids);
-            AddElementIds(op, "ids", ids);
-            AddTargetElementIds(op, "source", ids);
-            AddTargetElementIds(op, "from", ids);
-            AddTargetElementIds(op, "to", ids);
-            if (op.TryGetProperty("target", out var target) && target.ValueKind == JsonValueKind.Object)
-            {
-                AddElementIds(target, "id", ids);
-                AddElementIds(target, "ids", ids);
-            }
-            if (op.TryGetProperty("select", out var select) && select.ValueKind == JsonValueKind.Object)
-            {
-                hasSelector = true;
-                if (!op.TryGetProperty("expected_count", out _))
-                    missingExpectedCount = true;
-            }
-            if (op.TryGetProperty("path", out var path) &&
-                path.ValueKind == JsonValueKind.String &&
-                path.GetString() is { } rawPath &&
-                rawPath.Contains('*', StringComparison.Ordinal) &&
-                !op.TryGetProperty("expected_count", out _))
-            {
-                missingExpectedCount = true;
-            }
-        }
-
-        return (ids, hasSelector, missingExpectedCount);
-    }
-
-    private static void AddTargetElementIds(JsonElement obj, string propertyName, HashSet<int> ids)
-    {
-        if (!obj.TryGetProperty(propertyName, out var target) || target.ValueKind != JsonValueKind.Object)
-            return;
-        AddElementIds(target, "id", ids);
-        AddElementIds(target, "ids", ids);
-    }
-
-    private static void AddElementIds(JsonElement obj, string propertyName, HashSet<int> ids)
-    {
-        if (!obj.TryGetProperty(propertyName, out var prop)) return;
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var id))
-        {
-            ids.Add(id);
-            return;
-        }
-        if (prop.ValueKind != JsonValueKind.Array) return;
-        foreach (var item in prop.EnumerateArray())
-        {
-            if (item.ValueKind == JsonValueKind.Number && item.TryGetInt32(out var itemId))
-                ids.Add(itemId);
-        }
-    }
-
-    private static bool TryGetLong(JsonObject obj, string name, out long value)
-    {
-        value = 0;
-        return obj[name] is JsonValue jsonValue && jsonValue.TryGetValue(out value);
-    }
-
-    private static JsonObject BuildSessionError(string method, string code, string message) =>
-        new()
-        {
-            ["ok"] = false,
-            ["method"] = method,
-            ["code"] = code,
-            ["message"] = message
-        };
 
     private JsonRpcResponse HandleShutdown(JsonRpcRequest request)
     {
@@ -1264,14 +639,6 @@ internal sealed class RpcDispatcher
         }
     }
 
-    private static SchemaDocument? TryLoadSchema(string storagePath)
-    {
-        var schemaPath = Path.Combine(storagePath, "Схема.yml");
-        if (!File.Exists(schemaPath)) return null;
-        try { return SchemaLoader.LoadSchema(schemaPath); }
-        catch { return null; }
-    }
-
     /// <summary>
     /// Калька с <see cref="DocsWalker.Core.Mcp.McpServer.BuildInputSchema"/> —
     /// JSON-Schema для inputSchema MCP-tool. Скопировано (а не вынесено в общий
@@ -1280,9 +647,6 @@ internal sealed class RpcDispatcher
     /// </summary>
     private static JsonObject BuildInputSchema(McpToolDescriptor tool)
     {
-        if (tool.RawInputSchema is { } raw)
-            return (JsonObject)raw.DeepClone();
-
         var properties = new JsonObject();
         var required = new JsonArray();
         foreach (var p in tool.Params)

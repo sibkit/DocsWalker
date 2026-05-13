@@ -196,7 +196,7 @@ internal static class WriteHandlers
             throw new WriteApiException(
                 "node_not_found",
                 $"Узел id={rootId} (--from-subtree) не найден.",
-                "Сверь id через get-nodes.");
+                "Сверь id через query.");
 
         var result = new List<int>();
         var queue = new Queue<int>();

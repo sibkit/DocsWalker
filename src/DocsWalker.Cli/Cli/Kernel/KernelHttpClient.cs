@@ -27,7 +27,7 @@ namespace DocsWalker.Cli.Cli.Kernel;
 internal static class KernelHttpClient
 {
     /// <summary>
-    /// CLI-запросы могут быть длительными (большой search по
+    /// CLI-запросы могут быть длительными (большое чтение по
     /// docs/), но не бесконечными. 5 минут — комфортный потолок без surprise-зависаний.
     /// </summary>
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);

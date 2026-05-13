@@ -1,151 +1,24 @@
 using System.Text;
 using System.Text.Json;
 using DocsWalker.Cli.Cli;
+using DocsWalker.Core.Mcp;
 using DocsWalker.Kernel;
 using Microsoft.Extensions.Hosting;
 
 namespace DocsWalker.Tests;
 
-/// <summary>
-/// Покрытие search v2 (см. docs/DocsWalker.yml/#26) через JSON-RPC-канал kernel'а:
-/// BM25-ранжирование, фильтры (in/type/tree+under), regex-режим, snippet и score
-/// в ответе. Тесты идут через <see cref="RpcDispatcher.HandleMessageAsync"/> —
-/// тот же путь, что используют MCP-клиенты (Claude Code и т.п.).
-/// </summary>
 [Collection("ConsoleRedirect")]
 public class SearchV2Tests
 {
     [Fact]
-    public async Task Search_Bm25_RanksByScoreAndIncludesSnippet()
+    public async Task Search_RemovedFromMcpSurface_ReturnsUnknownTool()
     {
-        var hits = await CallSearchAsync(("query", "валидатор"));
-        Assert.NotEmpty(hits);
-        for (int i = 1; i < hits.Count; i++)
-        {
-            double prev = hits[i - 1].GetProperty("score").GetDouble();
-            double curr = hits[i].GetProperty("score").GetDouble();
-            Assert.True(prev >= curr,
-                $"hits[{i - 1}].score ({prev}) должен быть ≥ hits[{i}].score ({curr})");
-        }
-        foreach (var h in hits)
-        {
-            Assert.True(h.TryGetProperty("id", out _));
-            Assert.True(h.TryGetProperty("type", out _));
-            Assert.True(h.TryGetProperty("title", out _));
-            Assert.True(h.TryGetProperty("score", out _));
-        }
-    }
+        var raw = await McpTestFixture.CallToolAsync("search", ("query", "validator"));
 
-    [Fact]
-    public async Task Search_TitleBoost_RanksTitleMatchAbovePlainTextMatch()
-    {
-        // Title-boost ×3 в режиме in=both: hit с "search" в title должен идти
-        // строго выше любого hit'а с "search" только в text.
-        var hits = await CallSearchAsync(("query", "search"));
-        Assert.NotEmpty(hits);
-
-        double minTitleScore = double.PositiveInfinity;
-        double maxTextOnlyScore = 0;
-        bool hasTitleHit = false;
-        bool hasTextOnlyHit = false;
-        foreach (var h in hits)
-        {
-            var title = h.GetProperty("title").GetString() ?? string.Empty;
-            var score = h.GetProperty("score").GetDouble();
-            bool titleMatch = title.Contains("search", StringComparison.OrdinalIgnoreCase);
-            if (titleMatch)
-            {
-                hasTitleHit = true;
-                minTitleScore = Math.Min(minTitleScore, score);
-            }
-            else
-            {
-                hasTextOnlyHit = true;
-                maxTextOnlyScore = Math.Max(maxTextOnlyScore, score);
-            }
-        }
-        Assert.True(hasTitleHit, "В выдаче должен быть хотя бы один title-hit.");
-        if (hasTextOnlyHit)
-        {
-            Assert.True(minTitleScore > maxTextOnlyScore,
-                $"Title-hit (min score {minTitleScore}) должен ранжироваться выше text-only (max {maxTextOnlyScore}).");
-        }
-    }
-
-    [Fact]
-    public async Task Search_TypeFilter_ReturnsOnlyMatchingType()
-    {
-        var hits = await CallSearchAsync(
-            ("query", "поиск"),
-            ("type", "definition"));
-        Assert.NotEmpty(hits);
-        foreach (var h in hits)
-            Assert.Equal("definition", h.GetProperty("type").GetString());
-    }
-
-    [Fact]
-    public async Task Search_UnderFilter_LimitsToSubtree()
-    {
-        // section «Операции чтения» — id=17 в path-дереве.
-        var insideHits = await CallSearchAsync(
-            ("query", "узел"),
-            ("under", 17));
-        var insideIds = insideHits.Select(h => h.GetProperty("id").GetInt32()).ToHashSet();
-        Assert.NotEmpty(insideIds);
-        // id=8 — definition «узел» в section «Модель данных» (вне 17).
-        Assert.DoesNotContain(8, insideIds);
-    }
-
-    [Fact]
-    public async Task Search_RegexMode_NoScoreOrderedById()
-    {
-        var hits = await CallSearchAsync(
-            ("query", "^DocsWalker$"),
-            ("regex", true));
-        for (int i = 1; i < hits.Count; i++)
-        {
-            int prev = hits[i - 1].GetProperty("id").GetInt32();
-            int curr = hits[i].GetProperty("id").GetInt32();
-            Assert.True(prev < curr);
-        }
-        Assert.All(hits, h => Assert.Equal(0.0, h.GetProperty("score").GetDouble()));
-    }
-
-    [Fact]
-    public async Task Search_LimitParameter_HonoredInResponse()
-    {
-        var hits = await CallSearchAsync(
-            ("query", "узел"),
-            ("limit", 3));
-        Assert.True(hits.Count <= 3, $"expected ≤3 hits, got {hits.Count}");
-    }
-
-    [Fact]
-    public async Task Search_InTitleMode_OnlyTitleHits()
-    {
-        var hits = await CallSearchAsync(
-            ("query", "search"),
-            ("in", "title"));
-        Assert.NotEmpty(hits);
-        Assert.All(hits, h => Assert.Contains(
-            "search",
-            h.GetProperty("title").GetString() ?? string.Empty,
-            StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public async Task Search_EmptyQuery_ReturnsError()
-    {
-        var raw = await McpTestFixture.CallToolAsync("search", ("query", ""));
-        Assert.Contains("invalid_query", raw);
-        Assert.Contains("\"isError\":true", raw);
-    }
-
-    private static async Task<IReadOnlyList<JsonElement>> CallSearchAsync(
-        params (string Key, object Value)[] args)
-    {
-        var raw = await McpTestFixture.CallToolAsync("search", args);
-        return McpTestFixture.ParseSuccessArray(raw);
+        using var doc = JsonDocument.Parse(raw);
+        var error = doc.RootElement.GetProperty("error");
+        Assert.Equal(JsonRpcErrorCodes.InvalidParams, error.GetProperty("code").GetInt32());
+        Assert.Equal("unknown tool: search", error.GetProperty("message").GetString());
     }
 }
 

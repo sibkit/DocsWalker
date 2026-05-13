@@ -97,7 +97,7 @@ public class ClientConfigTests
     [Fact]
     public void FindConfigPath_LooksUpwardFromStartDir()
     {
-        var temp = Path.Combine(Path.GetTempPath(), "dw-client-search-" + Guid.NewGuid().ToString("N"));
+        var temp = Path.Combine(Path.GetTempPath(), "dw-client-probe-" + Guid.NewGuid().ToString("N"));
         try
         {
             var deepDir = Path.Combine(temp, "a", "b", "c");

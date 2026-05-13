@@ -3,22 +3,17 @@ using System.Text.Json;
 namespace DocsWalker.Tests;
 
 /// <summary>
-/// Точечное покрытие read-API v2: get-tree вместо get-subtree, get-overview как
-/// новая команда, get-map убран (unknown_command).
+/// Точечное покрытие MCP-facing read API: get-overview остаётся рабочей командой,
+/// старые tree/map tools убраны из MCP surface.
 /// </summary>
 [Collection("ConsoleRedirect")]
 public class ApiV2MiscTests
 {
     [Fact]
-    public async Task GetTree_RenamedFromSubtree_WorksAsExpected()
+    public async Task GetTree_RemovedFromMcpSurface_ReturnsUnknownTool()
     {
-        var raw = await McpTestFixture.CallToolAsync(
-            "get-tree",
-            ("id", 0),
-            ("depth", 0));
-        var obj = McpTestFixture.ParseSuccessObject(raw);
-        Assert.Equal("path", obj.GetProperty("tree").GetString());
-        Assert.Equal(0, obj.GetProperty("root").GetProperty("id").GetInt32());
+        var raw = await McpTestFixture.CallToolAsync("get-tree", ("id", 0));
+        Assert.Contains("unknown tool: get-tree", raw);
     }
 
     [Fact]

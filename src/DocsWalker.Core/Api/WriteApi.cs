@@ -459,7 +459,7 @@ public sealed class WriteApi
                 throw new WriteApiException(
                     "parent_not_found",
                     $"Родитель id={parentId} не найден.",
-                    "Сверь parent_id с актуальным графом через get-nodes.");
+                    "Сверь parent_id с актуальным графом через query.");
             // Тип родителя должен входить в path_targets создаваемого узла (root — особое имя).
             var parentTypeName = parentId == Node.RootId
                 ? Node.RootTypeName
@@ -809,7 +809,7 @@ public sealed class WriteApi
             ?? throw new WriteApiException(
                 "node_not_found",
                 $"Узел id={op.Id} не найден.",
-                "Сверь id через get-nodes.");
+                "Сверь id через query.");
 
         if (op.NewTitle is null && op.NewText is null)
             throw new WriteApiException(
@@ -965,7 +965,7 @@ public sealed class WriteApi
                 ?? throw new WriteApiException(
                     "node_not_found",
                     $"Узел id={id} не найден.",
-                    "Сверь id через get-nodes.");
+                    "Сверь id через query.");
             nodes.Add(n);
         }
 
@@ -1115,7 +1115,7 @@ public sealed class WriteApi
                 throw new WriteApiException(
                     "node_not_found",
                     $"Узел-цель id={toId} не найден.",
-                    "Сверь to_id через get-nodes.");
+                    "Сверь to_id через query.");
             if (fromSet.Contains(toId))
                 throw new WriteApiException(
                     "self_redirect",
@@ -1136,7 +1136,7 @@ public sealed class WriteApi
                 throw new WriteApiException(
                     "node_not_found",
                     $"Узел из набора FromIds id={id} не найден.",
-                    "Сверь from_id / from-subtree через get-nodes.");
+                    "Сверь from_id / from-subtree через query.");
         }
 
         // Собираем правки: для каждого узла-источника — новая копия OutRefs.
@@ -1283,7 +1283,7 @@ public sealed class WriteApi
             ?? throw new WriteApiException(
                 "node_not_found",
                 $"Узел id={op.Id} не найден.",
-                "Сверь id через get-nodes.");
+                "Сверь id через query.");
 
         // Не-path scope: атомарная правка одного scope-ref'а; никаких FS-операций.
         if (!string.Equals(op.Tree, Node.PathRefName, StringComparison.Ordinal))
@@ -1310,7 +1310,7 @@ public sealed class WriteApi
             throw new WriteApiException(
                 "parent_not_found",
                 $"Новый родитель id={op.NewParentId} не найден.",
-                "Сверь new_parent_id через get-nodes.");
+                "Сверь new_parent_id через query.");
 
         if (node.ParentId is not int oldParentId)
             throw new WriteApiException(
@@ -1388,13 +1388,13 @@ public sealed class WriteApi
             ?? throw new WriteApiException(
                 "node_not_found",
                 $"Узел-источник id={op.FromId} не найден.",
-                "Сверь from_id через get-nodes.");
+                "Сверь from_id через query.");
 
         if (op.ToId != Node.RootId && s.GetNode(op.ToId) is null)
             throw new WriteApiException(
                 "node_not_found",
                 $"Узел-цель id={op.ToId} не найден.",
-                "Сверь to_id через get-nodes.");
+                "Сверь to_id через query.");
 
         var srcType = s.ResolveType(src.TypeName);
         if (!srcType.OutRefs.Any(rd => string.Equals(rd.Name, op.Name, StringComparison.Ordinal)))
@@ -1456,7 +1456,7 @@ public sealed class WriteApi
             ?? throw new WriteApiException(
                 "node_not_found",
                 $"Узел-источник id={op.FromId} не найден.",
-                "Сверь from_id через get-nodes.");
+                "Сверь from_id через query.");
 
         if (!src.OutRefs.TryGetValue(op.Name, out var existing) || !existing.Contains(op.ToId))
             throw new WriteApiException(
@@ -1526,7 +1526,7 @@ public sealed class WriteApi
             throw new WriteApiException(
                 "parent_not_found",
                 $"Новый родитель id={op.NewParentId} не найден.",
-                "Сверь new_parent_id через get-nodes.");
+                "Сверь new_parent_id через query.");
 
         // Тип нового родителя должен входить в target_types scope-ref'а.
         var newParentTypeName = op.NewParentId == Node.RootId

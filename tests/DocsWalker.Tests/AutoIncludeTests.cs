@@ -83,32 +83,6 @@ public class AutoIncludeTests
     }
 
     [Fact]
-    public void NodesToJson_GetNodes_AppendsAutoIncludesAfterDirectIds()
-    {
-        var (api, graph, _) = Build();
-        var rule = FindFirstRuleWithExamples(graph);
-        var expectedAutoIds = rule.OutRefs["examples"].ToHashSet();
-
-        var nodes = api.GetNodes(new[] { rule.Id });
-        var autoIncludes = api.CollectAutoIncludes(nodes);
-        var json = ReadApiJson.NodesToJson(nodes, autoIncludes);
-
-        // Прямой id — первый, полный.
-        var first = (JsonObject)json[0]!;
-        Assert.Equal(rule.Id, (int)first["id"]!);
-        Assert.NotNull(first["title"]);
-
-        // После — auto-include-цели, тоже полные.
-        var rest = json.Skip(1).Cast<JsonObject>().ToList();
-        Assert.NotEmpty(rest);
-        foreach (var t in rest)
-        {
-            Assert.Contains((int)t["id"]!, expectedAutoIds);
-            Assert.NotNull(t["title"]);
-        }
-    }
-
-    [Fact]
     public void SubtreeToJson_GetByPath_AddsAutoIncludesField_WhenPresent()
     {
         var (api, graph, _) = Build();

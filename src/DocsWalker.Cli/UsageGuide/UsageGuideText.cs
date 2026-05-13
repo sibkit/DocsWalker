@@ -14,37 +14,34 @@ internal static class UsageGuideText
 
         Основной LLM-канал — MCP: клиент вызывает tools/list и tools/call, wrapper читает .dw/client.json (kernel host/port + graph-name) поиском вверх от cwd и пересылает вызов в /<graph>. Auto-spawn отсутствует: если kernel не отвечает, клиент получает kernel_unreachable.
 
-        Для долгих задач не полагайся на память диалога: начни с brief или resume, читай через query(session_id=...), сохраняй решения через checkpoint, а запись делай через tx mode=apply_if_safe. Work_session живёт как явный kernel/MCP state и нужен для восстановления после compact/reset.
+        tools/list и прямой tools/call ограничены компактной LLM-facing surface: hit, query, tx, get-overview, get-usage-guide, describe-type, get-schema. Остальные legacy read/write commands не являются MCP/kernel surface и должны возвращать unknown tool.
 
         Контракт kernel/MCP:
         - JSON-RPC request: {"jsonrpc":"2.0","id":<id>,"method":"tools/call","params":{"name":"<tool>","arguments":{...}}}.
         - Успех: JSON-RPC result с MCP content; внутри text лежит JSON-результат конкретного tool.
         - Ошибка JSON-RPC: error {code,message}. Ошибка DocsWalker tool: JSON с машинным code, message, path?, hint?, describe_type?.
-        - Для LLM-facing batch-записи используй tool tx с session_id, intent и mode=apply_if_safe: он сам запускает preview/guard и возвращает единый envelope с ok/method/base_revision/results.
+        - Для LLM-facing batch-записи используй tx с intent и mode=apply_if_safe: kernel сначала запускает preview через hit, затем применяет tx и возвращает единый envelope с ok/method/base_revision/results.
 
         Связи объявлены в Схеме у типа узла-источника: имя, target_types, cardinality, required. Часть связей объединена в named-tree (tree-scope): path для физического размещения в хранилище и доменные классификаторы. Tree-связи всегда cardinality=one + required=true.
 
-        Auto-include: связь с tree=null + required=true считается концептуально неотъемлемой. Read-tools get-nodes/get-tree/get-by-path транзитивно подтягивают цели таких связей в результат и помещают их в auto_includes. Для дешёвого обзора без auto-include используй fields=[title] + depth/tree. На текущей Схеме auto-include активен только для rule.examples.
+        Auto-include: связь с tree=null + required=true считается концептуально неотъемлемой. LLM-facing query возвращает связи и текст только по явному include. Для дешёвого обзора используй get-overview или query compact-формы. На текущей Схеме auto-include активен только для rule.examples.
 
-        Корень графа — id=0, type=root. Обход всего хранилища: tools/call get-tree с arguments {"id":0,"tree":"path"}.
+        Корень графа — id=0, type=root. Стартовый snapshot всего хранилища даёт get-overview; точное чтение участка делай через query.
 
         Порядок работы перед записью:
-        1. brief или resume — восстановить work_session и workset задачи.
-        2. check-integrity — убедиться, что граф валиден.
-        3. query(session_id=...) или get-tree / get-refs — прочитать актуальное состояние затронутого участка; query автоматически пополняет read_workset сессии.
-        4. describe-type — уточнить контракт типа, если он незнаком.
-        5. hit — опционально проверить selectors/write-ops без записи, если нужна отдельная preview-картина.
-        6. tx mode=apply_if_safe — атомарно применить ожидаемые изменения; kernel сам сверит intent, session graph_revision и затронутые ids с read_workset.
-        7. context-check — отдельная диагностическая проверка будущей записи, когда нужно явно увидеть blockers до tx.
+        1. get-overview или query — прочитать актуальное состояние затронутого участка.
+        2. describe-type — уточнить контракт типа, если он незнаком.
+        3. hit — опционально проверить selectors/write-ops без записи, если нужна отдельная preview-картина.
+        4. tx(intent, ops, mode=apply_if_safe) — атомарно применить ожидаемые изменения; kernel сам сверит intent и результат предварительной validation.
 
-        Удаление — только delete-nodes явным списком ids; авто-каскада нет. Набор собирает LLM через get-tree по нужному tree-scope и path-children каждого узла. Ошибки path_orphans_left и dangling_refs перечисляют недостающее.
+        Удаление в LLM-facing workflow — tx delete с id/ids/path/select и expected_count для массовых операций. Авто-каскада нет: LLM явно проверяет размер через hit/query и затем применяет tx. Ошибки path_orphans_left и dangling_refs перечисляют недостающее.
 
-        Переподшивка узла в дереве — move-node с явным tree, если цель не path. Массовая переподшивка cross-refs — redirect-refs.
+        Переподшивка узла и смысловых связей в LLM-facing workflow — tx move/link/unlink. Legacy move-node/redirect-refs не публикуются через MCP/kernel и остаются только внутренней diagnostic/CLI implementation detail до удаления.
 
         Запреты:
         - Не править YAML / sequence.txt / folders.yml в обход kernel API: kernel — sole-writer, внешний edit ломает консистентность RAM-графа.
-        - Схему менять только через update-schema: atomic-замена с server-side проверкой meta-schema и текущего графа.
-        - Не использовать legacy CLI как рабочую поверхность LLM. Он остается внутренним/diagnostic слоем до выпила, но usage-guide и эксплуатационный путь — MCP/kernel-only.
+        - LLM не меняет Схему через MCP surface. Схемные миграции остаются admin/diagnostic задачей вне LLM-facing tools и должны проходить server-side проверку meta-schema и текущего графа.
+        - Не использовать legacy CLI как рабочую поверхность LLM. Он остаётся внутренним/diagnostic слоем до выпила, но usage-guide и эксплуатационный путь — MCP/kernel-only.
 
         Per-graph idle eviction = graph_idle_timeout (default 10m, configurable в kernel-config.json): если граф не запрашивался дольше — выгружается из RAM, при следующем обращении re-load с диска.
         """;

@@ -15,9 +15,9 @@ public class McpArgvBuilderTests
     [Fact]
     public void BuildArgv_StringValue_ProducesKvFlag()
     {
-        using var doc = JsonDocument.Parse(@"{""query"":""validator""}");
-        var argv = McpArgvBuilder.BuildArgvFromArguments("search", doc.RootElement);
-        Assert.Equal(new[] { "search", "--query=validator" }, argv);
+        using var doc = JsonDocument.Parse(@"{""name"":""section""}");
+        var argv = McpArgvBuilder.BuildArgvFromArguments("describe-type", doc.RootElement);
+        Assert.Equal(new[] { "describe-type", "--name=section" }, argv);
     }
 
     [Fact]
@@ -33,8 +33,8 @@ public class McpArgvBuilderTests
     public void BuildArgv_ArrayValue_ProducesCsvIdList()
     {
         using var doc = JsonDocument.Parse(@"{""ids"":[1,8,42]}");
-        var argv = McpArgvBuilder.BuildArgvFromArguments("get-nodes", doc.RootElement);
-        Assert.Equal(new[] { "get-nodes", "--ids=1,8,42" }, argv);
+        var argv = McpArgvBuilder.BuildArgvFromArguments("delete-nodes", doc.RootElement);
+        Assert.Equal(new[] { "delete-nodes", "--ids=1,8,42" }, argv);
     }
 
     [Fact]
@@ -109,8 +109,8 @@ public class McpArgvBuilderTests
     [Fact]
     public void BuildArgv_NoArguments_ReturnsToolNameOnly()
     {
-        var argv = McpArgvBuilder.BuildArgvFromArguments("check-integrity", null);
-        Assert.Equal(new[] { "check-integrity" }, argv);
+        var argv = McpArgvBuilder.BuildArgvFromArguments("get-overview", null);
+        Assert.Equal(new[] { "get-overview" }, argv);
     }
 
     [Fact]
@@ -120,10 +120,10 @@ public class McpArgvBuilderTests
         // LLM-клиент всё же передаст arguments.root, builder пропускает
         // ключ в argv (--root=...) — Dispatcher.Run на kernel-стороне
         // вернёт unknown_parameter (loud failure вместо тихой совместимости).
-        using var doc = JsonDocument.Parse(@"{""root"":""C:\\bogus"",""query"":""x""}");
-        var argv = McpArgvBuilder.BuildArgvFromArguments("search", doc.RootElement);
+        using var doc = JsonDocument.Parse(@"{""root"":""C:\\bogus"",""name"":""section""}");
+        var argv = McpArgvBuilder.BuildArgvFromArguments("describe-type", doc.RootElement);
         Assert.Contains(argv, a => a.StartsWith("--root="));
-        Assert.Contains("--query=x", argv);
+        Assert.Contains("--name=section", argv);
     }
 
     [Fact]

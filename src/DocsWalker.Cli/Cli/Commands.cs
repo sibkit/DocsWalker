@@ -89,18 +89,6 @@ internal static class Commands
                 desc: "Описание одного типа в FS-агностичной форме: text_required и список out_refs (с tree/cardinality/required, target_types). Не выдаёт title_source.",
                 examples: new[] { "docswalker describe-type --name=section", "docswalker describe-type --name=rule" },
                 Req("name", ParamType.String, "Имя типа из Схемы.")),
-            Read("get_nodes",
-                desc: "Полные узлы по списку id. Возвращает объект {nodes:[...], truncated?, stopped_at?, tokens_used?, tokens_budget?}. Truncation-протокол (#406): включаются узлы по порядку, пока влезает max_tokens; default 50000.",
-                examples: new[]
-                {
-                    "docswalker get-nodes --ids=1,8,42",
-                    "docswalker get-nodes --ids=1,8,42 --compact=true",
-                    "docswalker get-nodes --ids=1,8,42 --max-tokens=500",
-                },
-                Req("ids",        ParamType.IdList,  "Один id или список id через запятую."),
-                Opt("fields",     ParamType.String,  "Whitelist полей через запятую: id,type,title,text,out_refs,tokens,subtree_tokens. Без параметра — все поля. id всегда."),
-                Opt("compact",    ParamType.Boolean, "true → alias для fields=id,type,title; default false. Явные fields имеют приоритет."),
-                Opt("max_tokens", ParamType.Integer, "Бюджет токенов на ответ; default 50000. См. truncation-протокол #406.")),
             Read("get_by_path",
                 desc: "Поддерево узла по человекочитаемому пути 'Документ/Раздел/...' в указанном addressable дереве с теми же ограничителями depth/fields/compact/max_tokens, что у get-tree. По умолчанию tree берётся из schema.default_addressable_tree, либо автоматически если в Схеме ровно один addressable tree.",
                 examples: new[]
@@ -146,24 +134,6 @@ internal static class Commands
                 examples: new[] { "docswalker get-in-refs --id=42" },
                 Req("id",   ParamType.Integer, "id узла."),
                 Opt("name", ParamType.String,  "Имя связи; без параметра — все.")),
-            Read("search",
-                desc: "Полнотекстовый поиск с BM25-ранжированием по title и text узлов. Title-hit получает boost ×3 в режиме in=both. Сортировка: score desc, id asc. Снимок одного hit'а — {id, type, title, score, snippet}.",
-                examples: new[]
-                {
-                    "docswalker search --query=валидатор",
-                    "docswalker search --query=get-tree --in=title",
-                    "docswalker search --query=^stg --regex=true --type=definition",
-                    "docswalker search --query=поиск --tree=path --under=17 --limit=10",
-                },
-                Req("query",   ParamType.String,    "Substring (или regex, если --regex=true). Не пустой."),
-                Opt("in",      ParamType.String,    "Где искать: title|text|both. По умолчанию both."),
-                Opt("type",    ParamType.String,    "Фильтр по типу узла (TypeName из Схемы)."),
-                Opt("tree",    ParamType.String,    "Tree-scope для --under. По умолчанию path."),
-                Opt("under",   ParamType.Integer,   "id узла; искать только в его поддереве в указанном tree."),
-                Opt("regex",   ParamType.Boolean,   "true → query как .NET-regex (без BM25, сортировка по id asc). По умолчанию false."),
-                Opt("limit",   ParamType.Integer,   "Максимум hit'ов; default 20."),
-                Opt("compact", ParamType.Boolean,   "true → alias для whitelist полей id,type,title,score,snippet. По умолчанию false (на сейчас функционально no-op)."),
-                Opt("in_tree", ParamType.JsonArray, "Массив объектов {name, under}: classifier-tree-фильтр, ограничивающий выдачу узлами, чьи tree-refs попадают в подграфы указанных категорий. Тот же формат, что в команде find.")),
             Read("find",
                 desc: "Структурный поиск узлов по пересечению multi-tree-фильтров (классификаторов). Без текстового запроса; параметр in_tree — массив {name, under}: для каждого classifier-дерева задаётся id корня подграфа категорий. Результат — пересечение узлов, чьи tree-refs попадают в эти подграфы. Опционально фильтр по типу узла. compact=true оставляет в каждом узле только id,type,title.",
                 examples: new[]
@@ -187,7 +157,7 @@ internal static class Commands
                 examples: new[]
                 {
                     "docswalker get-usage-guide",
-                    "docswalker get-usage-guide --command=get-nodes",
+                    "docswalker get-usage-guide --command=describe-type",
                     "docswalker get-usage-guide --fields=commands --command=get-tree",
                     "docswalker get-usage-guide --fields=trees",
                 },

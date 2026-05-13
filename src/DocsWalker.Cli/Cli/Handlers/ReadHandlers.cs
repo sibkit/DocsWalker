@@ -17,31 +17,6 @@ namespace DocsWalker.Cli.Cli.Handlers;
 /// </summary>
 internal static class ReadHandlers
 {
-    public static int GetNodes(
-        string storagePath,
-        string idsParam,
-        IReadOnlyCollection<string>? fields,
-        int maxTokens)
-    {
-        var ids = ParseIds(idsParam);
-        return WithApi(storagePath, api =>
-        {
-            try
-            {
-                var nodes = api.ReadApi.GetNodes(ids);
-                var autoIncludes = api.ReadApi.CollectAutoIncludes(nodes);
-                var json = ReadApiJson.NodesToJsonBudgeted(nodes, autoIncludes, fields, maxTokens);
-                Output.WriteSuccess(json);
-                return 0;
-            }
-            catch (ReadApiException ex)
-            {
-                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
-                return 1;
-            }
-        });
-    }
-
     public static int GetByPath(
         string storagePath,
         string path,
@@ -185,43 +160,6 @@ internal static class ReadHandlers
         }
     }
 
-    public static int Search(
-        string storagePath,
-        string query,
-        SearchInMode inMode,
-        string? typeFilter,
-        string? tree,
-        int? under,
-        bool regex,
-        int? limit,
-        bool compact,
-        IReadOnlyList<TreeFilter>? inTree = null)
-    {
-        return WithApi(storagePath, api =>
-        {
-            try
-            {
-                var hits = api.ReadApi.Search(
-                    query,
-                    inMode,
-                    typeFilter,
-                    tree,
-                    under,
-                    regex,
-                    limit ?? 20,
-                    compact,
-                    inTree);
-                Output.WriteSuccess(ReadApiJson.SearchToJson(hits));
-                return 0;
-            }
-            catch (ReadApiException ex)
-            {
-                Output.WriteError(ex.Code, path: null, ex.Message, ex.Hint);
-                return 1;
-            }
-        });
-    }
-
     public static int Find(
         string storagePath,
         IReadOnlyList<TreeFilter> inTree,
@@ -299,14 +237,4 @@ internal static class ReadHandlers
         return action(new LoadedApi(loaded.Graph, api));
     }
 
-    private static List<int> ParseIds(string raw)
-    {
-        var parts = raw.Split(',');
-        var ids = new List<int>(parts.Length);
-        foreach (var p in parts)
-        {
-            ids.Add(int.Parse(p.Trim(), System.Globalization.CultureInfo.InvariantCulture));
-        }
-        return ids;
-    }
 }

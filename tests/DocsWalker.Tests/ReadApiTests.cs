@@ -14,28 +14,6 @@ public class ReadApiTests
     }
 
     [Fact]
-    public void GetNodes_ByIds_Returns_FullNodes_InOrder()
-    {
-        var api = BuildApi();
-        var nodes = api.GetNodes(new[] { 1, 8, 45 });
-        Assert.Equal(3, nodes.Count);
-        Assert.Equal(1, nodes[0].Id);
-        Assert.Equal("document", nodes[0].TypeName);
-        Assert.Equal(8, nodes[1].Id);
-        Assert.Equal("definition", nodes[1].TypeName);
-        Assert.Equal(45, nodes[2].Id);
-        Assert.Equal("section", nodes[2].TypeName);
-    }
-
-    [Fact]
-    public void GetNodes_MissingId_Throws()
-    {
-        var api = BuildApi();
-        var ex = Assert.Throws<ReadApiException>(() => api.GetNodes(new[] { 999_999 }));
-        Assert.Equal("node_not_found", ex.Code);
-    }
-
-    [Fact]
     public void GetByPath_ResolvesDocumentTitle()
     {
         var api = BuildApi();
@@ -144,22 +122,6 @@ public class ReadApiTests
         // У DocsWalker (id=1) есть path-children (sections); GetInRefs должен вернуть их.
         var map = api.GetInRefs(1);
         Assert.True(map.ContainsKey(Node.PathRefName));
-    }
-
-    [Fact]
-    public void Search_FindsTermInText()
-    {
-        var api = BuildApi();
-        var hits = api.Search("DocsWalker");
-        Assert.NotEmpty(hits);
-        Assert.All(hits, h => Assert.True(h.Score > 0));
-    }
-
-    [Fact]
-    public void Search_EmptyQuery_Throws()
-    {
-        var api = BuildApi();
-        Assert.Throws<ReadApiException>(() => api.Search(""));
     }
 
     [Fact]

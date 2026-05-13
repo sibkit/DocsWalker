@@ -282,31 +282,4 @@ public class FindTests
         }
     }
 
-    [Fact]
-    public void Search_WithInTreeFilter_LimitsToClassifierSubgraph()
-    {
-        // Поиск 'text' (содержится во всех rule.text) с фильтром subject=api
-        // должен вернуть только rule 30 и 31 (subject=api).
-        var api = BuildApi();
-        var hits = api.Search(
-            query: "text",
-            inTree: new[] { new TreeFilter("subject", 10) });
-        var ids = hits.Select(h => h.Id).OrderBy(id => id).ToArray();
-        Assert.Equal(new[] { 30, 31 }, ids);
-    }
-
-    [Fact]
-    public void Search_WithTwoInTreeFilters_Intersects()
-    {
-        var api = BuildApi();
-        var hits = api.Search(
-            query: "text",
-            inTree: new[]
-            {
-                new TreeFilter("subject", 10),
-                new TreeFilter("subsystem", 20),
-            });
-        Assert.Single(hits);
-        Assert.Equal(30, hits[0].Id);
-    }
 }

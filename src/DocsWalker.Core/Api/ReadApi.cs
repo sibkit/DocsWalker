@@ -26,8 +26,8 @@ public sealed class ReadApiException : Exception
 /// <summary>
 /// Связи узла, сгруппированные по имени связи: для каждого имени — отсортированный
 /// по возрастанию список id противоположных узлов («цель» для исходящих,
-/// «источник» для входящих). Совпадает по форме с <c>out_refs</c> в get-nodes
-/// и describe-type — единый контракт «связь → список целей» по всему API.
+/// «источник» для входящих). Совпадает по форме с <c>out_refs</c>
+/// в describe-type — единый контракт «связь → список целей» по всему API.
 /// </summary>
 public sealed record RefSet(
     IReadOnlyDictionary<string, IReadOnlyList<int>> In,
@@ -44,32 +44,6 @@ public sealed record NodeSubtree(
     int Tokens,
     int SubtreeTokens,
     IReadOnlyList<NodeSubtree> Children);
-
-/// <summary>
-/// Один hit команды search (см. docs/DocsWalker.yml/#26). <see cref="Score"/> —
-/// BM25-метрика (для regex-режима — 0). <see cref="Snippet"/> — фрагмент
-/// текста (или title) вокруг первого совпадения с эллипсисами;
-/// null, когда подходящего совпадения нет (например, hit пришёл через title-boost,
-/// а text пуст). Поле <c>fragments</c> v1-API из этой записи убрано — search v2
-/// возвращает один snippet вместо списка фрагментов.
-/// </summary>
-public sealed record SearchHit(
-    int Id,
-    string Title,
-    string TypeName,
-    double Score,
-    string? Snippet);
-
-/// <summary>
-/// Режим поиска в командах <see cref="ReadApi.Search"/>: где искать query —
-/// в title, в text, или в обоих (с title-boost ×3).
-/// </summary>
-public enum SearchInMode
-{
-    Both,
-    Title,
-    Text,
-}
 
 /// <summary>
 /// Фильтр multi-tree для <see cref="ReadApi.Find"/>: имя classifier-дерева
@@ -207,23 +181,6 @@ public sealed class ReadApi
     {
         sink.Add(st.Node);
         foreach (var c in st.Children) FlattenSubtree(c, sink);
-    }
-
-    /// <summary>
-    /// Возвращает полные узлы по списку id в том же порядке, что был передан.
-    /// Бросает <see cref="ReadApiException"/> с кодом "node_not_found" для первого
-    /// id, которого нет в графе.
-    /// </summary>
-    public IReadOnlyList<Node> GetNodes(IReadOnlyList<int> ids)
-    {
-        var result = new List<Node>(ids.Count);
-        foreach (var id in ids)
-        {
-            var node = _graph.GetById(id) ?? throw new ReadApiException(
-                "node_not_found", $"Узел с id={id} не найден.");
-            result.Add(node);
-        }
-        return result;
     }
 
     /// <summary>
@@ -607,7 +564,7 @@ public sealed class ReadApi
     /// <summary>
     /// Только входящие связи в форме map &lt;имя_связи → source-ids&gt; (без обёртки in/out,
     /// поскольку направление и так фиксировано). Совпадает по форме с <c>out_refs</c>
-    /// в get-nodes и describe-type.
+    /// в describe-type.
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyList<int>> GetInRefs(int id, string? name = null)
         => GetRefs(id, name).In;
@@ -636,49 +593,6 @@ public sealed class ReadApi
         }
         stack.Reverse();
         return string.Join('/', stack);
-    }
-
-    /// <summary>
-    /// Search v2: BM25-ранжированный поиск по title и/или text узлов (см.
-    /// docs/DocsWalker.yml/#26). Параметры:
-    /// <list type="bullet">
-    /// <item><paramref name="query"/> — substring (или regex, если <paramref name="regex"/>=true). Не пустой.</item>
-    /// <item><paramref name="inMode"/> — Title/Text/Both; default Both. В режиме Both title-hit получает boost ×3.</item>
-    /// <item><paramref name="typeFilter"/> — оставить только узлы указанного <c>TypeName</c>.</item>
-    /// <item><paramref name="tree"/> — tree-scope для <paramref name="under"/>; default path.</item>
-    /// <item><paramref name="under"/> — id узла, в чьём поддереве (в указанном tree) искать.</item>
-    /// <item><paramref name="regex"/> — true → query как .NET-regex; ранжирования нет, hits в порядке id.</item>
-    /// <item><paramref name="limit"/> — максимум hit'ов в ответе; default 20.</item>
-    /// <item><paramref name="compact"/> — bool, alias под whitelist полей (id, type, title, score, snippet);
-    /// текущая выдача и так состоит из этих 5 полей, флаг сейчас функционально no-op и зарезервирован
-    /// под будущее расширение результата.</item>
-    /// </list>
-    /// Сортировка: score desc, id asc. Для regex-режима score=0, сортировка по id asc.
-    /// </summary>
-    public IReadOnlyList<SearchHit> Search(
-        string query,
-        SearchInMode inMode = SearchInMode.Both,
-        string? typeFilter = null,
-        string? tree = null,
-        int? under = null,
-        bool regex = false,
-        int limit = 20,
-        bool compact = false,
-        IReadOnlyList<TreeFilter>? inTree = null)
-    {
-        if (string.IsNullOrEmpty(query))
-            throw new ReadApiException("invalid_query", "Параметр query не должен быть пустым.");
-        if (limit <= 0)
-            throw new ReadApiException(
-                "invalid_parameter",
-                "Параметр limit должен быть положительным.");
-
-        var scope = string.IsNullOrEmpty(tree) ? Node.PathRefName : tree;
-        var candidates = BuildSearchCandidates(typeFilter, scope, under, inTree);
-
-        return regex
-            ? RegexSearch(candidates, query, inMode, limit)
-            : Bm25Search(candidates, query, inMode, limit);
     }
 
     /// <summary>
@@ -718,39 +632,9 @@ public sealed class ReadApi
             .ToList();
     }
 
-    private IReadOnlyList<Node> BuildSearchCandidates(
-        string? typeFilter,
-        string scope,
-        int? under,
-        IReadOnlyList<TreeFilter>? inTree)
-    {
-        IEnumerable<Node> source = _graph.ById.Values.Where(n => n.Id != Node.RootId);
-
-        if (under is int rootId)
-        {
-            if (_graph.GetById(rootId) is null)
-                throw new ReadApiException("node_not_found", $"Узел under={rootId} не найден.");
-            ValidateTree(scope);
-            var allowed = CollectScopeDescendants(rootId, scope);
-            source = source.Where(n => allowed.Contains(n.Id));
-        }
-
-        if (!string.IsNullOrEmpty(typeFilter))
-            source = source.Where(n => string.Equals(n.TypeName, typeFilter, StringComparison.Ordinal));
-
-        if (inTree is { Count: > 0 })
-        {
-            var allowedByClassifiers = CollectByClassifierFilters(inTree);
-            source = source.Where(n => allowedByClassifiers.Contains(n.Id));
-        }
-
-        return source.OrderBy(n => n.Id).ToList();
-    }
-
     /// <summary>
     /// Множество id узлов, попадающих под пересечение всех classifier-tree-фильтров.
-    /// Логика идентична <see cref="Find"/>, выделена для переиспользования в
-    /// <see cref="BuildSearchCandidates"/>.
+    /// Логика идентична <see cref="Find"/>.
     /// </summary>
     private HashSet<int> CollectByClassifierFilters(IReadOnlyList<TreeFilter> inTree)
     {
@@ -816,102 +700,6 @@ public sealed class ReadApi
             }
         }
         return set;
-    }
-
-    private static IReadOnlyList<SearchHit> RegexSearch(
-        IReadOnlyList<Node> candidates,
-        string pattern,
-        SearchInMode mode,
-        int limit)
-    {
-        System.Text.RegularExpressions.Regex re;
-        try
-        {
-            re = new System.Text.RegularExpressions.Regex(
-                pattern,
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase
-                | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-        }
-        catch (ArgumentException ex)
-        {
-            throw new ReadApiException("invalid_query", $"Неверный regex: {ex.Message}");
-        }
-
-        var hits = new List<SearchHit>();
-        foreach (var n in candidates)
-        {
-            if (hits.Count >= limit) break;
-            System.Text.RegularExpressions.Match? best = null;
-            bool fromTitle = false;
-            if (mode != SearchInMode.Text)
-            {
-                var m = re.Match(n.Title ?? string.Empty);
-                if (m.Success) { best = m; fromTitle = true; }
-            }
-            if (best is null && mode != SearchInMode.Title)
-            {
-                var m = re.Match(n.Text ?? string.Empty);
-                if (m.Success) { best = m; fromTitle = false; }
-            }
-            if (best is null) continue;
-            var src = (fromTitle ? n.Title : n.Text) ?? string.Empty;
-            var snippet = SnippetExtractor.Extract(src, best.Index, best.Index + best.Length);
-            hits.Add(new SearchHit(n.Id, n.Title ?? string.Empty, n.TypeName, Score: 0, snippet));
-        }
-        return hits;
-    }
-
-    private static IReadOnlyList<SearchHit> Bm25Search(
-        IReadOnlyList<Node> candidates,
-        string query,
-        SearchInMode mode,
-        int limit)
-    {
-        var queryTokens = Bm25Scorer.Tokenize(query);
-        if (queryTokens.Count == 0) return Array.Empty<SearchHit>();
-
-        double[] textScores = Array.Empty<double>();
-        double[] titleScores = Array.Empty<double>();
-
-        if (mode != SearchInMode.Title)
-        {
-            var textDocs = new List<IReadOnlyList<string>>(candidates.Count);
-            foreach (var n in candidates) textDocs.Add(Bm25Scorer.Tokenize(n.Text));
-            textScores = Bm25Scorer.Score(textDocs, queryTokens);
-        }
-        if (mode != SearchInMode.Text)
-        {
-            var titleDocs = new List<IReadOnlyList<string>>(candidates.Count);
-            foreach (var n in candidates) titleDocs.Add(Bm25Scorer.Tokenize(n.Title));
-            titleScores = Bm25Scorer.Score(titleDocs, queryTokens);
-        }
-
-        double titleBoost = mode == SearchInMode.Both ? 3.0 : 1.0;
-        var hits = new List<SearchHit>();
-        for (int i = 0; i < candidates.Count; i++)
-        {
-            double s = 0;
-            if (mode != SearchInMode.Title) s += textScores[i];
-            if (mode != SearchInMode.Text) s += titleBoost * titleScores[i];
-            if (s <= 0) continue;
-
-            var n = candidates[i];
-            string? snippet = mode == SearchInMode.Title
-                ? SnippetExtractor.FindAndExtract(n.Title, queryTokens)
-                : SnippetExtractor.FindAndExtract(n.Text, queryTokens)
-                    ?? SnippetExtractor.FindAndExtract(n.Title, queryTokens);
-
-            hits.Add(new SearchHit(n.Id, n.Title, n.TypeName, s, snippet));
-        }
-
-        hits.Sort((a, b) =>
-        {
-            int c = b.Score.CompareTo(a.Score);
-            return c != 0 ? c : a.Id.CompareTo(b.Id);
-        });
-
-        if (hits.Count > limit) hits.RemoveRange(limit, hits.Count - limit);
-        return hits;
     }
 
     /// <summary>

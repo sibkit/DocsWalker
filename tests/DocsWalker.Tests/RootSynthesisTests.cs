@@ -43,18 +43,6 @@ public class RootSynthesisTests
     }
 
     [Fact]
-    public void GetNodes_IncludingRoot_ReturnsRootInOrder()
-    {
-        var api = BuildApi();
-        var nodes = api.GetNodes(new[] { 0, 1 });
-        Assert.Equal(2, nodes.Count);
-        Assert.Equal(0, nodes[0].Id);
-        Assert.Equal("root", nodes[0].TypeName);
-        Assert.Equal(1, nodes[1].Id);
-        Assert.Equal("document", nodes[1].TypeName);
-    }
-
-    [Fact]
     public void GetInRefs_RootId_PathName_IncludesTopLevelDocsAndFolders()
     {
         var api = BuildApi();

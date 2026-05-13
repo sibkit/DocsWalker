@@ -1,22 +1,12 @@
-using System.Text.Json.Nodes;
 using DocsWalker.Cli.Cli;
 using DocsWalker.Core.Mcp;
-using DocsWalker.Core.Schema;
 
 namespace DocsWalker.Kernel;
 
 /// <summary>
-/// Конвертирует статические command contracts в манифест MCP-tools.
-/// Команда <c>run</c> исключается — это серверная сама-по-себе команда, через
-/// MCP её вызывать не предполагается.
-/// <para>
-/// Для tool'ов с динамическими параметрами (см. <see cref="CommandSpec.DynamicParams"/>) —
-/// сейчас это только <c>create-node</c> — при наличии загруженной проектной Схемы
-/// собирается inputSchema с перечислением всех известных полей и таблицей
-/// required-наборов по типам в description (см. <see cref="BuildCreateNodeInputSchema"/>
-/// и docs/DocsWalker.yml/«(#377)»). Если Схема не передана (null) — descriptor
-/// отдаётся с базовой схемой, сгенерированной из статических <see cref="CommandSpec.Params"/>.
-/// </para>
+/// Конвертирует command contracts в манифест MCP-tools.
+/// Возвращает только компактную LLM-facing surface. Старый legacy command set
+/// не публикуется и не остаётся callable через kernel MCP.
 /// <para>
 /// Жильё в DocsWalker.Kernel: MCP-сервер живёт в kernel'е
 /// (RpcDispatcher.HandleListTools/HandleCallToolAsync), а DocsWalker.Mcp.exe —
@@ -25,7 +15,18 @@ namespace DocsWalker.Kernel;
 /// </summary>
 internal static class CommandsToTools
 {
-    public static IReadOnlyList<McpToolDescriptor> Build(SchemaDocument? schema = null)
+    private static readonly HashSet<string> AdvertisedCommandNames = new(StringComparer.Ordinal)
+    {
+        "describe-type",
+        "get-overview",
+        "get-usage-guide",
+        "get-schema",
+    };
+
+    public static IReadOnlyList<McpToolDescriptor> Build()
+        => BuildCore();
+
+    private static IReadOnlyList<McpToolDescriptor> BuildCore()
     {
         var list = new List<McpToolDescriptor>
         {
@@ -34,52 +35,14 @@ internal static class CommandsToTools
                 "LLM-facing JSON API: безопасная проверка selector-ов и будущих write-ops без записи. Принимает defaults и ops[]."),
             BuildLlmJsonApiTool(
                 "query",
-                "LLM-facing JSON API: чтение данных по select- и grep-операциям. С session_id автоматически пополняет read_workset."),
+                "LLM-facing JSON API: чтение данных по select- и grep-операциям."),
             BuildLlmJsonApiTool(
                 "tx",
-                "LLM-facing JSON API: атомарное внесение изменений. По умолчанию mode=apply_if_safe с preview/guard на стороне kernel."),
-            BuildSessionTool(
-                "brief",
-                "Session lifecycle: собрать compact context pack по goal перед началом или возобновлением задачи.",
-                [
-                    new McpToolParam("goal", "string", true, "Цель задачи естественным языком."),
-                    new McpToolParam("session_id", "string", false, "Опциональный id work_session."),
-                    new McpToolParam("scope", "object", false, "Опциональная область задачи; первая итерация возвращает её как hint."),
-                    new McpToolParam("max_tokens", "integer", false, "Желаемый бюджет ответа. Первая итерация ограничивает search hits.")
-                ]),
-            BuildSessionTool(
-                "checkpoint",
-                "Session lifecycle: сохранить явный handoff work_session для последующего resume.",
-                [
-                    new McpToolParam("session_id", "string", true, "Стабильный id work_session."),
-                    new McpToolParam("summary", "string", true, "Краткое состояние работы."),
-                    new McpToolParam("touched_nodes", "array", false, "Node ids, которые задача читала или меняла.", "integer"),
-                    new McpToolParam("read_workset", "array", false, "Node ids, входящие в текущий read workset.", "integer"),
-                    new McpToolParam("decisions", "array", false, "Принятые решения.", "string"),
-                    new McpToolParam("assumptions", "array", false, "Активные допущения.", "string"),
-                    new McpToolParam("pending", "array", false, "Оставшиеся шаги или проверки.", "string"),
-                    new McpToolParam("next_step", "string", false, "Следующее действие.")
-                ]),
-            BuildSessionTool(
-                "resume",
-                "Session lifecycle: вернуть сохраненный handoff work_session по session_id.",
-                [
-                    new McpToolParam("session_id", "string", true, "Id work_session."),
-                    new McpToolParam("max_tokens", "integer", false, "Желаемый бюджет ответа.")
-                ]),
-            BuildSessionTool(
-                "context-check",
-                "Session lifecycle: проверить будущую запись против session workset и graph revision.",
-                [
-                    new McpToolParam("session_id", "string", true, "Id work_session."),
-                    new McpToolParam("intent", "string", false, "Зачем нужна будущая запись."),
-                    new McpToolParam("write", "object", true, "Будущий write payload, обычно tx arguments с ops[].")
-                ]),
+                "LLM-facing JSON API: атомарное внесение изменений. По умолчанию mode=apply_if_safe: kernel сначала запускает preview через hit, затем применяет tx."),
         };
         foreach (var spec in Commands.All)
         {
-            if (spec.KebabName == "run") continue;
-            if (spec.KebabName == "repl") continue;
+            if (!IsAdvertisedCommand(spec)) continue;
 
             var parameters = new List<McpToolParam>(spec.Params.Count);
             foreach (var p in spec.Params)
@@ -107,20 +70,16 @@ internal static class CommandsToTools
 
             var description = NormalizeMcpText(spec.Description) ?? $"MCP tool {spec.KebabName}.";
 
-            JsonObject? rawSchema = null;
-            if (spec.KebabName == "create-node" && schema is not null)
-            {
-                rawSchema = BuildCreateNodeInputSchema(schema);
-            }
-
             list.Add(new McpToolDescriptor(
                 Name: spec.KebabName,
                 Description: description,
-                Params: parameters,
-                RawInputSchema: rawSchema));
+                Params: parameters));
         }
         return list;
     }
+
+    private static bool IsAdvertisedCommand(CommandSpec spec) =>
+        AdvertisedCommandNames.Contains(spec.KebabName);
 
     private static McpToolDescriptor BuildLlmJsonApiTool(string name, string description)
     {
@@ -139,14 +98,6 @@ internal static class CommandsToTools
                 ItemsJsonType: "object"),
         };
 
-        if (name is "query" or "tx")
-        {
-            parameters.Add(new McpToolParam(
-                Name: "session_id",
-                JsonType: "string",
-                Required: false,
-                Description: "Id work_session. query пополняет read_workset; tx использует session guard."));
-        }
         if (name == "tx")
         {
             parameters.Add(new McpToolParam(
@@ -166,15 +117,6 @@ internal static class CommandsToTools
             Description: description,
             Params: parameters);
     }
-
-    private static McpToolDescriptor BuildSessionTool(
-        string name,
-        string description,
-        IReadOnlyList<McpToolParam> parameters) =>
-        new(
-            Name: name,
-            Description: description,
-            Params: parameters);
 
     private static (string JsonType, string? ItemsType) MapParamType(ParamType type) => type switch
     {
@@ -214,134 +156,4 @@ internal static class CommandsToTools
             .Replace("--help", "help");
     }
 
-    /// <summary>
-    /// Строит inputSchema для <c>create-node</c> по проектной Схеме.
-    /// Контракт — docs/DocsWalker.yml/«(#377) inputSchema динамических tool»:
-    /// единый JSON-Schema object, в котором <c>properties</c> перечисляет все
-    /// известные поля (type-enum, title, text, все имена связей всех типов как
-    /// optional с корректным JSON-типом по cardinality), плюс универсальный
-    /// dry-run. <c>required</c> на верхнем уровне — статически <c>[type, title]</c>;
-    /// per-type required (text при text_required=true, path-ref, прочие required
-    /// out_refs) транслируются в текстовую таблицу внутри <c>description</c>
-    /// корневой схемы и поля <c>type</c> — это обходной путь, т.к. Anthropic
-    /// API запрещает <c>oneOf</c>/<c>allOf</c>/<c>anyOf</c> на верхнем уровне
-    /// inputSchema, а <c>if/then/else</c> и <c>dependentRequired</c> не
-    /// поддерживает. Источник истины для required по типу — серверный
-    /// валидатор create-node в ядре. Тип <c>root</c> в enum не включается —
-    /// он синтезируется ядром, через create-node не создаётся (#376).
-    /// </summary>
-    internal static JsonObject BuildCreateNodeInputSchema(SchemaDocument schema)
-    {
-        // Все типы кроме root (root — синтезируется ядром).
-        var creatableTypes = schema.Types
-            .Where(t => !string.Equals(t.Name, "root", StringComparison.Ordinal))
-            .ToArray();
-
-        // Сбор всех уникальных имён связей по всем типам с их cardinality
-        // (для определения JSON-типа в properties: integer vs array+items=integer).
-        // Источник description — первая встреченная RefDef с этим именем.
-        var refsByName = new SortedDictionary<string, RefDef>(StringComparer.Ordinal);
-        foreach (var t in schema.Types)
-        {
-            foreach (var rd in t.OutRefs)
-            {
-                if (!refsByName.ContainsKey(rd.Name))
-                {
-                    refsByName[rd.Name] = rd;
-                }
-            }
-        }
-
-        // Per-type required-наборы — строятся один раз и используются и в
-        // description корневой схемы (таблица), и в description поля type.
-        var requiredByType = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-        foreach (var t in creatableTypes)
-        {
-            var requiredForType = new List<string> { "type", "title" };
-            if (t.TextRequired) requiredForType.Add("text");
-            foreach (var rd in t.OutRefs)
-            {
-                if (rd.Required && !requiredForType.Contains(rd.Name))
-                {
-                    requiredForType.Add(rd.Name);
-                }
-            }
-            requiredByType[t.Name] = requiredForType;
-        }
-
-        var requiredTable = string.Join(
-            "\n",
-            creatableTypes.Select(t => $"  - {t.Name}: [{string.Join(", ", requiredByType[t.Name])}]"));
-
-        // Базовые properties: type-enum, title, text, далее все ref-имена,
-        // плюс универсальный dry-run.
-        var typeEnum = new JsonArray();
-        foreach (var t in creatableTypes) typeEnum.Add((JsonNode?)t.Name);
-
-        var properties = new JsonObject
-        {
-            ["type"] = new JsonObject
-            {
-                ["type"] = "string",
-                ["enum"] = typeEnum,
-                ["description"] = "Имя типа узла из проектной Схемы. Required-набор полей по типу:\n" + requiredTable,
-            },
-            ["title"] = new JsonObject
-            {
-                ["type"] = "string",
-                ["description"] = "Title узла — для типов с title_source=filename/dirname кладётся в FS-имя файла/каталога; для inline_key — ключ в YAML родителя.",
-            },
-            ["text"] = new JsonObject
-            {
-                ["type"] = "string",
-                ["description"] = "Текст узла. Обязателен для типов с text_required=true (см. таблицу required по типу в описании поля type).",
-            },
-        };
-
-        foreach (var (name, rd) in refsByName)
-        {
-            JsonObject prop;
-            if (rd.Cardinality == Cardinality.Many)
-            {
-                prop = new JsonObject
-                {
-                    ["type"] = "array",
-                    ["items"] = new JsonObject { ["type"] = "integer" },
-                    ["description"] = rd.Description ?? $"id-list для связи '{name}' (cardinality=many).",
-                };
-            }
-            else
-            {
-                prop = new JsonObject
-                {
-                    ["type"] = "integer",
-                    ["description"] = rd.Description ?? $"id для связи '{name}' (cardinality=one).",
-                };
-            }
-            properties[name] = prop;
-        }
-
-        properties["dry-run"] = new JsonObject
-        {
-            ["type"] = "boolean",
-            ["description"] = "true → не записывать на FS, вернуть applied=false. По умолчанию false.",
-        };
-
-        // Top-level required — статически [type, title]. Per-type required
-        // фиксируется текстом в description и серверной валидацией.
-        var rootRequired = new JsonArray { (JsonNode?)"type", (JsonNode?)"title" };
-
-        var description =
-            "Создать узел. Required-набор полей зависит от type — серверный валидатор отвергнет создание при недостаче. " +
-            "Required по типу:\n" + requiredTable +
-            "\nСм. (#377) docs/DocsWalker.yml.";
-
-        return new JsonObject
-        {
-            ["type"] = "object",
-            ["description"] = description,
-            ["properties"] = properties,
-            ["required"] = rootRequired,
-        };
-    }
 }

@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="DocsWalker.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DocsWalker.Core\DocsWalker.Core.csproj" />
     <ProjectReference Include="..\DocsWalker.Cli\DocsWalker.Cli.csproj" />
   </ItemGroup>

@@ -41,11 +41,11 @@ public class UsageGuideTests
     [Fact]
     public void Filter_KnownCommand_ReturnsSingleCommandPlusOtherFields()
     {
-        using var doc = CaptureGuide("get-nodes");
+        using var doc = CaptureGuide("describe-type");
         var commands = doc.RootElement.GetProperty("commands").EnumerateArray().ToList();
 
         Assert.Single(commands);
-        Assert.Equal("get-nodes", commands[0].GetProperty("name").GetString());
+        Assert.Equal("describe-type", commands[0].GetProperty("name").GetString());
 
         // Остальные поля guide — на месте.
         Assert.True(doc.RootElement.TryGetProperty("mental_model", out _));
@@ -56,12 +56,12 @@ public class UsageGuideTests
     [Fact]
     public void Fields_CommandsWithKnownCommand_ReturnsOnlySingleCommandSection()
     {
-        using var doc = CaptureGuide("get-tree", "commands");
+        using var doc = CaptureGuide("tx", "commands");
         var root = doc.RootElement;
         var commands = root.GetProperty("commands").EnumerateArray().ToList();
 
         Assert.Single(commands);
-        Assert.Equal("get-tree", commands[0].GetProperty("name").GetString());
+        Assert.Equal("tx", commands[0].GetProperty("name").GetString());
         Assert.False(root.TryGetProperty("mental_model", out _));
         Assert.False(root.TryGetProperty("trees", out _));
         Assert.False(root.TryGetProperty("graph_snapshot", out _));
@@ -91,11 +91,22 @@ public class UsageGuideTests
         Assert.Contains("hit", names);
         Assert.Contains("query", names);
         Assert.Contains("tx", names);
-        Assert.Contains("brief", names);
-        Assert.Contains("checkpoint", names);
-        Assert.Contains("resume", names);
-        Assert.Contains("context-check", names);
+        Assert.Contains("get-overview", names);
+        Assert.Contains("get-usage-guide", names);
+        Assert.Contains("describe-type", names);
+        Assert.Contains("get-schema", names);
+        Assert.DoesNotContain("check-integrity", names);
+        Assert.DoesNotContain("brief", names);
+        Assert.DoesNotContain("checkpoint", names);
+        Assert.DoesNotContain("resume", names);
+        Assert.DoesNotContain("context-check", names);
+        Assert.DoesNotContain("get-nodes", names);
+        Assert.DoesNotContain("search", names);
         Assert.DoesNotContain("transaction", names);
+        Assert.DoesNotContain("get-tree", names);
+        Assert.DoesNotContain("get-refs", names);
+        Assert.DoesNotContain("create-node", names);
+        Assert.DoesNotContain("update-schema", names);
         Assert.False(doc.RootElement.TryGetProperty("transaction_operations", out _));
     }
 

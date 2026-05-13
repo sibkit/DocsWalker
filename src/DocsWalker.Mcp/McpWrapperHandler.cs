@@ -134,10 +134,12 @@ internal static class McpWrapperHandler
             return ok.ToJsonString();
         }
 
+        var forwardJson = req.ToJsonString();
+
         HttpResponseMessage httpResp;
         try
         {
-            using var content = new StringContent(requestJson, Encoding.UTF8);
+            using var content = new StringContent(forwardJson, Encoding.UTF8);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
             httpResp = await http.PostAsync(rpcUrl, content, ct);
         }

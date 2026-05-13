@@ -32,7 +32,7 @@ sections:
         - csharp_structure: [437]
     - examples:
       - "(#188) MCP-вызов":
-        - text: Создание section выполняется через MCP tools/call create-node с arguments {"type":"section","title":"...","path":<parent_id>}, не правкой YAML вручную.
+        - text: Создание section выполняется через MCP tools/call tx с операцией create и явным intent, а не через старый create-node и не правкой YAML вручную.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -74,7 +74,7 @@ sections:
         - csharp_structure: [437]
     - examples:
       - "(#190) MCP-tools":
-        - text: 'Команды API доступны как MCP-tools: get-nodes, create-node, move-node. Это основной и единственный рекомендуемый канал для LLM.'
+        - text: 'LLM API доступен как MCP tools: hit, query и tx. Это основной и единственный рекомендуемый канал записи и чтения для LLM; низкоуровневые legacy-команды не публикуются как MCP tools.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -191,7 +191,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#376) Root как точка входа":
-        - text: Любая ссылка на id=0 в out_refs.path указывает на root. LLM, увидев id=0 впервые, может зафетчить его через get-nodes ids=[0] — узел отдаёт pointer на get-usage-guide; список top-level документов и folders доступен через get-in-refs --id=0 --name=path.
+        - text: Любая ссылка на id=0 в out_refs.path указывает на root. Для стартового обзора LLM использует get-overview и get-usage-guide; точное чтение нужных участков выполняется через query.
         - examples: [375]
         - subject: [425]
         - subsystem: [433]
@@ -229,7 +229,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#86) root":
-        - text: 'Синглтон ядра с id=0 — корень дерева path. С мета-схемы v6 объявлен как тип root в Схеме, с особенностью: нет path-ref (root не имеет родителя). Не персистится в YAML — синтезируется ядром на лету (title=имя FS-папки docs/, text=pointer на get-usage-guide, out_refs пуст). Точка входа для LLM: get-nodes ids=[0] возвращает узел; get-in-refs --id=0 --name=path даёт список top-level documents и folders.'
+        - text: 'Синглтон ядра с id=0 — корень дерева path. С мета-схемы v6 объявлен как тип root в Схеме, с особенностью: нет path-ref (root не имеет родителя). Не персистится в YAML — синтезируется ядром на лету (title=имя FS-папки docs/, text=pointer на get-usage-guide, out_refs пуст). Точка входа для LLM: get-overview даёт список top-level documents, а точное чтение выполняется через query.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -277,8 +277,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#375) get-nodes id=0":
-        - text: Запрос get-nodes ids=[0] отдаёт {id:0, type:root, title:docs, text:Корень docs/. Briefing — get-usage-guide., out_refs:{}}.
+      - "(#375) root overview":
+        - text: Корень графа имеет id=0 и type=root. Для стартового обзора LLM использует get-overview и get-usage-guide; точное чтение нужных участков выполняется через query select или query grep.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -458,7 +458,7 @@ sections:
   - "(#17) Операции чтения":
     - rules:
       - "(#406) Truncation-протокол":
-        - text: 'Read-команды get-tree, get-by-path и get-nodes принимают max_tokens — бюджет ответа по токенам; default 50000. При превышении бюджета обход идет BFS по depth: сначала включается максимально близкий контекст, затем более глубокие children. Усеченный ответ получает top-level поля truncated (bool), stopped_at (массив {parent_id, remaining_children, next_offset} — точки обрыва BFS; для get-nodes используется parent_id=0 как общий список), tokens_used (int — сколько токенов включено), tokens_budget (int — примененный max_tokens). При truncated=false поля stopped_at, tokens_used и tokens_budget опускаются. Для продолжения чтения LLM запрашивает тот же parent_id с offset=next_offset или сужает запрос через depth/fields/compact.'
+        - text: 'Read-команды get-tree и get-by-path принимают max_tokens — бюджет ответа по токенам; default 50000. При превышении бюджета обход идет BFS по depth: сначала включается максимально близкий контекст, затем более глубокие children. Усеченный ответ получает top-level поля truncated (bool), stopped_at (массив {parent_id, remaining_children, next_offset} — точки обрыва BFS), tokens_used (int — сколько токенов включено), tokens_budget (int — примененный max_tokens). При truncated=false поля stopped_at, tokens_used и tokens_budget опускаются. Для продолжения чтения LLM запрашивает тот же parent_id с offset=next_offset или сужает запрос через depth/fields/compact.'
         - examples: [405]
         - subject: [425]
         - subsystem: [433]
@@ -483,12 +483,6 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#22) get_nodes":
-        - text: 'Полные узлы по списку id. Параметры — ids (один или несколько id через запятую), fields (опц., whitelist через запятую из id, type, title, text, out_refs, tokens, subtree_tokens; default все, id всегда), compact (опц., bool — alias для fields=id,type,title; default false; явные fields имеют приоритет), max_tokens (опц., бюджет токенов на ответ; default 50000; см. truncation-протокол #406). Для каждого узла возвращает 5 концептуальных полей (id, type, title, text, out_refs Map<имя, list<id>> включая path) плюс метрики токенов tokens (только сам узел) и subtree_tokens (узел вместе с path-потомками). При превышении max_tokens — включаются узлы по порядку ids, пока влезает бюджет; stopped_at несёт {parent_id: 0, remaining_children, next_offset} (parent_id=0 — синтетический маркер плоского списка, next_offset — индекс первого невключённого id).'
-        - subject: [425]
-        - subsystem: [433]
-        - audience: [436]
-        - csharp_structure: [437]
       - "(#23) get_by_path":
         - text: 'Поддерево узла по человекочитаемому пути. Параметры: path (строка пути, например "Документ" или "Документ/Раздел/Подраздел", разделитель "/"), tree (опционально, addressable tree), depth (опционально, максимальная глубина: 0 — только найденный узел, 1 — найденный узел и один уровень), fields (опционально, whitelist id,type,title,text,out_refs,tokens,subtree_tokens), compact (опционально, alias для fields=id,type,title), max_tokens (опционально, бюджет ответа; default 50000). Возвращает {tree, root, truncated?, stopped_at?, tokens_used?, tokens_budget?}. Используется для точечного чтения по известному пути; для крупных поддеревьев LLM должна задавать compact/depth/max_tokens, чтобы не получить чрезмерный ответ.'
         - subject: [425]
@@ -502,7 +496,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#303) get_ancestors":
-        - text: Цепочка родителей узла в указанном tree-scope, от ближайшего родителя к корню дерева. Параметры — id (узел), tree (опц., имя tree-scope; по умолчанию "path"). Возвращает {tree, ancestors}, где ancestors — массив узлов (в формате get_nodes) в порядке от ближайшего родителя к корню. Если узел — корень scope (нет scope-ref для этого дерева), ancestors пуст. Для tree=path цепочка заканчивается над root (id=0); сам root в результат не включается. Единственный способ получить путь до корня одной командой — без него LLM пришлось бы итеративно дёргать get_nodes по out_refs[path].
+        - text: Цепочка родителей узла в указанном tree-scope, от ближайшего родителя к корню дерева. Параметры — id (узел), tree (опц., имя tree-scope; по умолчанию "path"). Возвращает {tree, ancestors}, где ancestors — массив узлов в стандартной JSON-форме id/type/title/text/out_refs в порядке от ближайшего родителя к корню. Если узел — корень scope, ancestors пуст. Для tree=path цепочка заканчивается над root (id=0); сам root в результат не включается.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -515,12 +509,6 @@ sections:
         - csharp_structure: [437]
       - "(#25) get_in_refs":
         - text: Только входящие связи на узел. Параметры — id, name (опц., фильтр по имени связи). Возвращает Map<имя_связи, [source-ids]> непосредственно (без обёртки in/out, поскольку выводятся только входящие). Параметр name оставляет в map-е только запись с этим именем (или пустой объект, если связей нет). Порядок id — по возрастанию.
-        - subject: [425]
-        - subsystem: [433]
-        - audience: [436]
-        - csharp_structure: [437]
-      - "(#26) search":
-        - text: Полнотекстовый поиск с BM25-ранжированием по title и text узлов. Параметры — query (substring или regex согласно флагу regex), in (опц., title|text|both, default both), type (опц., фильтр по типу узла), tree (опц., tree-scope; default path), under (опц., id узла — поиск только в его поддереве в указанном tree), regex (опц., true → query трактуется как .NET-regex; default false, query — case-insensitive substring), limit (опц., максимум hit'ов; default 20), compact (опц., bool — alias для whitelist полей id, type, title, score, snippet; default false; функционально совпадает с текущей формой выдачи и зарезервирован под будущее расширение результата). Возвращает массив hit-объектов с полями id, type, title, score (BM25-метрика; больше — релевантнее), snippet (фрагмент text окном ±40 символов вокруг первого совпадения с эллипсисами по краям; ≤160 символов). Title-hit получает boost ×3 относительно text-hit. Сортировка hit'ов по убыванию score, при равенстве — по возрастанию id.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -657,7 +645,7 @@ sections:
   - "(#35) Legacy-клиенты":
     - statements:
       - "(#157) MCP-tools повторяют API":
-        - text: 'MCP-tools повторяют API один-в-один: имя tool — kebab-case имя операции, arguments — JSON-object с именованными параметрами.'
+        - text: 'LLM-facing tools/list и direct tools/call намеренно не повторяют legacy command set. MCP/kernel surface состоит из компактного набора: hit, query, tx, get-overview, get-usage-guide, check-integrity, describe-type, get-schema. Старые read/write commands не являются callable MCP tools; они могут оставаться только внутренним diagnostic/CLI implementation detail до удаления.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -747,12 +735,6 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
     - examples:
-      - "(#36) Чтение нескольких узлов сразу":
-        - text: 'get-nodes {"ids": [1, 8, 42]}'
-        - subject: [425]
-        - subsystem: [433]
-        - audience: [436]
-        - csharp_structure: [437]
       - "(#38) Поддерево по пути":
         - text: 'get-by-path {"path": "DocsWalker/Операции чтения"}'
         - subject: [425]
@@ -850,7 +832,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#299) get-usage-guide на старте сессии":
-        - text: 'get-usage-guide {} → полный JSON для graph plane: mental_model, trees[], commands[] (с примерами), graph_snapshot. get-usage-guide --fields=commands --command=get-tree → только описание одной команды без mental_model/trees/snapshot. get-usage-guide --fields=trees → только перечень tree-scope''ов. Kernel/API-level сведения доступны отдельно через `/api/v0.4`.'
+        - text: 'get-usage-guide {} → полный JSON для graph plane: mental_model, trees[], commands[] (с примерами), graph_snapshot. get-usage-guide --fields=commands --command=tx → только описание одной LLM-facing команды без mental_model/trees/snapshot. get-usage-guide --fields=trees → только перечень tree-scope''ов. Kernel/API-level сведения доступны отдельно через `/api/v0.4`.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -863,36 +845,6 @@ sections:
         - csharp_structure: [437]
       - "(#335) Запуск kernel-а":
         - text: DocsWalker.Kernel.exe --config=/path/to/kernel-config.json → bind на host:port из config-а, lazy-load графов по запросам, баннер о готовности; процесс блокируется на сигнал. Auto-spawn клиентами нет — клиент просто шлёт запрос на endpoint из `.dw/client.json` и получает `kernel_unreachable`, если kernel не запущен. Запуск kernel — задача оператора (systemd, NSSM, manual).
-        - subject: [425]
-        - subsystem: [433]
-        - audience: [436]
-        - csharp_structure: [437]
-      - "(#398) search BM25 по умолчанию":
-        - text: "Поиск без фильтров — case-insensitive substring по title и text узлов, BM25-ранжирование, title-hit boost ×3. Пример — все упоминания термина «валидатор»:\n\nsearch {\"query\": \"валидатор\"}\n\nОтвет — массив hit-объектов {id, type, title, score, snippet}, отсортированный по убыванию score. Совпадения в title всплывают наверх благодаря boost'у."
-        - subject: [425]
-        - subsystem: [433]
-        - audience: [436]
-        - csharp_structure: [437]
-      - "(#399) search по title":
-        - text: "Сузить поиск до title-полей — экономит токены, когда text загромождает выдачу.\n\nsearch {\"query\": \"get-tree\", \"in\": \"title\"}\n\nВернёт только узлы, у которых query встречается в title; text-совпадения игнорируются. score считается BM25 по title без boost ×3 (сравнение однородное). Поле snippet берётся из title."
-        - subject: [425]
-        - subsystem: [433]
-        - audience: [436]
-        - csharp_structure: [437]
-      - "(#400) search по типу узла":
-        - text: "Фильтр по type — оставляет в выдаче только узлы заданного типа из Схемы. Удобно для поиска правил по доменному термину.\n\nsearch {\"query\": \"авто-каскад\", \"type\": \"rule\"}\n\nВ ответе только узлы type=rule с упоминанием query. Поля id, type, title, score, snippet — без изменений."
-        - subject: [425]
-        - subsystem: [433]
-        - audience: [436]
-        - csharp_structure: [437]
-      - "(#401) search в поддереве":
-        - text: "Ограничить поиск поддеревом узла в указанном tree-scope. Параметр under — id корня поддерева, tree — имя дерева (default path).\n\nsearch {\"query\": \"tx\", \"tree\": \"path\", \"under\": 438}\n\nНайдёт упоминания «tx» только в поддереве документа DocsWalker-LLM JSON API по path-дереву. Без under поиск глобальный по всему графу."
-        - subject: [425]
-        - subsystem: [433]
-        - audience: [436]
-        - csharp_structure: [437]
-      - "(#402) search regex":
-        - text: "Регулярное выражение вместо substring. query трактуется как .NET-regex.\n\nsearch {\"query\": \"get-(tree|nodes|by-path)\", \"regex\": true}\n\nНайдёт все упоминания одной из трёх команд. При невалидном паттерне — ошибка invalid_regex с hint позиции. Сочетается с фильтрами in, type, tree, under."
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -913,7 +865,7 @@ sections:
         - csharp_structure: [437]
     - rules:
       - "(#364) JSON-RPC stdio":
-        - text: Транспорт MCP — newline-delimited JSON-RPC 2.0 над stdin/stdout. Команды API регистрируются как MCP-tools; имя tool = kebab-case имя операции; параметры публикуются как JSON-Schema, выведенная из контракта операции.
+        - text: Транспорт MCP — newline-delimited JSON-RPC 2.0 над stdin/stdout. Kernel регистрирует только LLM-facing tool surface, а не весь legacy command set. Имя tool задается явно в kebab-case; параметры публикуются как JSON-Schema из MCP descriptor конкретного tool.
         - examples: [365]
         - subject: [425]
         - subsystem: [433]
@@ -927,7 +879,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#377) inputSchema динамических tool":
-        - text: "Для tool с динамическими параметрами (сейчас только create-node) inputSchema собирается из Схемы graph-а на старте mcp-server. Форма — JSON-Schema object без top-level oneOf/allOf/anyOf: Anthropic API их на верхнем уровне inputSchema запрещает, а if/then/else и dependentRequired не поддерживает — условный required по значению type машинно невыразим.\n\nproperties перечисляет все поля: type-enum (без root), title, text, имена связей всех типов как optional (integer для cardinality=one, array+items=integer для many), плюс dry-run. required на верхнем уровне — [type, title]. Per-type required (text при text_required=true, path-ref, прочие required out_refs) транслируется текстовой таблицей в description корневой схемы и поля type — модель читает её при выборе type.\n\nИсточник истины для required по типу — серверный валидатор ядра. root в enum не включается. Если Схему загрузить не удалось — tool отдаётся с базовой схемой, warning в stderr; mcp-server не падает."
+        - text: LLM-facing MCP tools используют стабильные inputSchema и не публикуют динамическую per-graph схему старого create-node. Контракт типа узла LLM получает через describe-type и проверяет будущую запись через hit/tx; серверная валидация tx остается источником истины для required-полей, связей и tree constraints. Историческая генерация inputSchema для create-node может оставаться только во внутреннем legacy/diagnostic коде до удаления и не должна попадать в tools/list или direct tools/call surface.
         - examples: [378]
         - subject: [425]
         - subsystem: [433]
@@ -941,20 +893,20 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
     - examples:
-      - "(#365) tools/call":
-        - text: MCP-tool `get-nodes` принимает {"ids":[42]} через MCP tools/call → wrapper подставляет endpoint и graph-name из client-config, шлёт HTTP POST `/<graph>` с JSON-RPC `{name:"get-nodes",arguments:{ids:[42]}}` → ответ kernel-а маршалится в MCP-формат tools/call response (success-объект или MCP-error). Параметра root в MCP-tool нет.
+      - "(#365) tools-call tx":
+        - text: MCP-tool `tx` принимает {"intent":"...","ops":[...]} через MCP tools/call → wrapper подставляет endpoint и graph-name из client-config, шлёт HTTP POST `/<graph>` с JSON-RPC `{name:"tx",arguments:{...}}` → ответ kernel-а маршалится в MCP-формат tools/call response. Параметра root в MCP-tool нет.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#369) Две базы знаний":
-        - text: '`.mcp.json` с двумя entries: `docs-base-a` (cwd=/path/A) и `docs-base-b` (cwd=/path/B). Каждый entry стартует отдельный mcp-server в своей cwd — wrapper находит соответствующий `.dw/client.json` со своим graph-name, шлёт запросы к нужному kernel-у. Оба entries могут указывать на один kernel (с двумя graphs в kernel-config) или на разные kernels. LLM видит tools как `docs-base-a__get_nodes` и `docs-base-b__get_nodes`.'
+        - text: '`.mcp.json` с двумя entries: `docs-base-a` (cwd=/path/A) и `docs-base-b` (cwd=/path/B). Каждый entry стартует отдельный mcp-server в своей cwd — wrapper находит соответствующий `.dw/client.json` со своим graph-name, шлёт запросы к нужному kernel-у. Оба entries могут указывать на один kernel (с двумя graphs в kernel-config) или на разные kernels. LLM видит tools как `docs-base-a__tx` и `docs-base-b__tx`.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#378) create-node — required-таблица по типу":
-        - text: "Required-таблица в description корневой схемы и поля type генерируется по проектной Схеме. Для type=rule: required=[type, title, text, path, examples] — text_required=true плюс required out_ref examples (cardinality=many → в properties объявлен как array+items=integer). Для type=section: required=[type, title, path] — text не обязателен, остальные out_refs (sections/rules/notes/...) остаются в properties как optional array+items=integer. Параметр root в schema отсутствует — graph диспетчеризуется через URL kernel-а.\n\nПоскольку top-level required содержит только [type, title], дополнительные required для конкретного типа фиксируются текстом в description, а проверяются серверным валидатором ядра при попытке create-node: при недостаче поля возвращается validation_failed с указанием, какое поле обязательно для этого type."
+        - text: Required-поля по типу больше не передаются LLM через MCP inputSchema create-node. LLM читает контракт типа через describe-type, задает coordinates.type и relations в tx create/update, а kernel проверяет text_required, required relations, cardinality и tree constraints внутри hit/tx. При недостаче обязательных данных tx возвращает validation_failed или более точный LLM JSON API error code и не применяет запись.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1194,7 +1146,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#330) Кадры запроса/ответа":
-        - text: 'Запрос: POST /docswalker HTTP/1.1; Host: 127.0.0.1:8080; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-nodes","arguments":{"ids":[42]}}}. Ответ: HTTP/1.1 200 OK; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"result":[{...}]}. Имя графа (`docswalker`) идёт в URL, не в JSON.'
+        - text: 'Запрос: POST /docswalker HTTP/1.1; Host: 127.0.0.1:8080; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tx","arguments":{"intent":"...","ops":[]}}}. Ответ: HTTP/1.1 200 OK; Content-Type: application/json; body: {"jsonrpc":"2.0","id":1,"result":{"content":[...]}}. Имя графа (`docswalker`) идёт в URL, не в JSON.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1206,7 +1158,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#332) Multi-graph в одном kernel":
-        - text: 'get-nodes {"ids": [1]} (вызов из проекта A с .dw/client.json указывающим на graph=docswalker) → kernel: lazy-load графа docswalker, отвечает. get-nodes {"ids": [1]} (параллельно или следом, из проекта B с .dw/client.json указывающим на graph=another) → kernel: lazy-load графа another, отвечает; графы docswalker и another живут в одном процессе, читаются независимо (per-graph semaphore #313), не конфликтуют. Cross-graph запрос невозможен — каждый graph — изолированный namespace id.'
+        - text: 'tx {"intent":"обновить спецификацию","ops":[...]} (вызов из проекта A с .dw/client.json указывающим на graph=docswalker) → kernel lazy-load графа docswalker и отвечает. Такой же tx или query из проекта B с .dw/client.json указывающим на graph=another → kernel lazy-load графа another и отвечает; графы docswalker и another живут в одном процессе, читаются независимо (per-graph semaphore #313), не конфликтуют. Cross-graph запрос невозможен — каждый graph — изолированный namespace id.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1224,13 +1176,13 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#379) Error: kernel_unreachable":
-        - text: 'get-nodes {"ids": [1]} (kernel offline; .dw/client.json указывает на 127.0.0.1:8080) → ошибка {"code": "kernel_unreachable", "message": "Не удалось установить TCP-соединение с 127.0.0.1:8080", "hint": "Проверь, что kernel запущен (DocsWalker.Kernel.exe --config=...) и endpoint в .dw/client.json правильный"}.'
+        - text: tx {"intent":"...","ops":[]} (kernel offline; .dw/client.json указывает на 127.0.0.1:8080) → ошибка {"code":"kernel_unreachable","message":"Не удалось установить TCP-соединение с 127.0.0.1:8080","hint":"Проверь, что kernel запущен (DocsWalker.Kernel.exe --config=...) и endpoint в .dw/client.json правильный"}.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#380) Auto-spawn попытка → kernel_unreachable":
-        - text: 'get-nodes {"ids": [1]} (kernel offline). Раньше клиент пытался бы auto-spawn-нуть kernel сам. В новой модели — клиент только шлёт TCP-запрос на endpoint из .dw/client.json, получает Connection refused → ошибка {"code": "kernel_unreachable", ...}. Auto-spawn-механизма нет; kernel запускается оператором отдельно командой DocsWalker.Kernel.exe --config=<path>.'
+        - text: tx {"intent":"...","ops":[]} (kernel offline). Раньше клиент пытался бы auto-spawn-нуть kernel сам. В новой модели клиент только шлёт TCP-запрос на endpoint из .dw/client.json, получает Connection refused → ошибка {"code":"kernel_unreachable", ...}. Auto-spawn-механизма нет; kernel запускается оператором отдельно командой DocsWalker.Kernel.exe --config=<path>.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1264,7 +1216,7 @@ sections:
         - csharp_structure: [437]
     - rules:
       - "(#340) Auto-include":
-        - text: 'При любой read-команде сервер транзитивно подтягивает цели всех non-tree required cross-refs узлов-результата (auto-include = `tree == null && required == true`). Отдельного поля в Схеме нет — семантика выводится из существующих `tree` и `required`. На текущей Схеме auto-include активен только для связи `rule.examples`. Шейп ответа: get-nodes возвращает auto-include-цели в основном плоском массиве после прямых id; get-tree и get-by-path кладут их в top-level поле `auto_includes` (массив узлов). При нулевом auto-include поле опускается, шейп идентичен дофиче.'
+        - text: При read-операциях внутренний read-слой может транзитивно подтягивать цели всех non-tree required cross-refs узлов-результата (auto-include = `tree == null && required == true`). Отдельного поля в Схеме нет — семантика выводится из существующих `tree` и `required`. На текущей Схеме auto-include активен только для связи `rule.examples`. LLM-facing чтение выполняется через query с явным include нужных полей; при нулевом auto-include шейп ответа не меняется.
         - examples: [341]
         - subject: [425]
         - subsystem: [433]
@@ -1279,7 +1231,7 @@ sections:
         - csharp_structure: [437]
     - examples:
       - "(#341) auto-include для rule.examples":
-        - text: На текущей Схеме auto-include активен только для связи rule.examples — единственная non-tree required связь. `get-nodes --ids=125` (rule «Запись через API») вернёт сам узел и узел (#188) — его пример.
+        - text: На текущей Схеме auto-include активен только для связи rule.examples — единственная non-tree required связь. Внутренний read-слой может подтягивать обязательные example-узлы вместе с rule, но LLM-facing чтение выполняется через query с явным include нужных полей.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1386,7 +1338,7 @@ sections:
         - csharp_structure: [437]
     - rules:
       - "(#280) Read → describe → write":
-        - text: Перед любой write-операцией прочитай актуальное состояние интересующего поддерева (get-tree) и контракт типа (describe-type), и только затем вызывай write-команду. Стейл-данные → invalid_parent / unknown_ref-имя в ответ.
+        - text: Перед любой tx write-операцией прочитай актуальное состояние затронутого участка через query и контракт типа через describe-type. Затем проверь будущую запись через hit или сразу вызывай tx с intent; tx обязан повторно выполнить preview, hard validation и применить изменения только при успешной проверке.
         - examples: [279]
         - subject: [425]
         - subsystem: [433]
@@ -1457,7 +1409,7 @@ sections:
         - csharp_structure: [437]
     - examples:
       - "(#279) Цепочка перед записью":
-        - text: get-tree --id=42 → describe-type --name=section → create-node --type=section --path=42 ...
+        - text: query select по нужному path/coordinates → describe-type --name=section → hit с будущей create-операцией → tx create с intent и mode=apply_if_safe.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1602,7 +1554,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#415) Фильтр включает подграф":
-        - text: 'Параметр in_tree в read-командах (find, search) принимает массив {name, under}: name — имя classifier_tree, under — id корня поддерева в этом дереве. Результат содержит узлы, чья классификатор-ссылка попадает в подграф (включая сам under и всех его потомков по дереву). Несколько in_tree-элементов комбинируются по И (пересечение).'
+        - text: 'Параметр in_tree в структурной read-команде find принимает массив {name, under}: name — имя classifier_tree, under — id корня поддерева в этом дереве. Результат содержит узлы, чья классификатор-ссылка попадает в подграф (включая сам under и всех его потомков по дереву). Несколько in_tree-элементов комбинируются по И (пересечение).'
         - examples: [413]
         - subject: [425]
         - subsystem: [433]
@@ -1629,7 +1581,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#413) Фильтр под категорией":
-        - text: 'find или search с параметром in_tree=[{name: ''subject'', under: <id_api>}] отдаёт узлы, чья ссылка subject находится в подграфе категории <id_api> по path-дереву внутри classifier_tree subject. Узел, ссылающийся на корневую категорию api, попадает в выдачу; узел, ссылающийся на api/read, — тоже попадает. Узел с subject=none — не попадает (`none` лежит вне подграфа api).'
+        - text: 'find с параметром in_tree=[{name: ''subject'', under: <id_api>}] отдаёт узлы, чья ссылка subject находится в подграфе категории <id_api> внутри classifier_tree subject. Узел, ссылающийся на корневую категорию api, попадает в выдачу; узел, ссылающийся на api/read, — тоже попадает. Узел с subject=none — не попадает (`none` лежит вне подграфа api).'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]

@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\DocsWalker.Core\DocsWalker.Core.csproj" />
     <ProjectReference Include="..\..\src\DocsWalker.Cli\DocsWalker.Cli.csproj" />
     <ProjectReference Include="..\..\src\DocsWalker.Kernel\DocsWalker.Kernel.csproj" />
+    <ProjectReference Include="..\..\src\DocsWalker.Mcp\DocsWalker.Mcp.csproj" />
   </ItemGroup>
 
 </Project>

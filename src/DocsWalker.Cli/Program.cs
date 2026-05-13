@@ -98,7 +98,6 @@ internal static class Dispatcher
                                     storagePath,
                                     parsed.Params.TryGetValue("command", out var cmdFilter) ? cmdFilter : null,
                                     parsed.Params.TryGetValue("fields", out var fieldsFilter) ? fieldsFilter : null),
-            "get_nodes"       => DispatchGetNodes(storagePath, parsed.Params),
             "get_by_path"     => DispatchGetByPath(storagePath, parsed.Params),
             "get_tree"        => DispatchGetTree(storagePath, parsed.Params),
             "get_ancestors"   => ReadHandlers.GetAncestors(
@@ -113,7 +112,6 @@ internal static class Dispatcher
                                     storagePath,
                                     int.Parse(parsed.Params["id"], System.Globalization.CultureInfo.InvariantCulture),
                                     parsed.Params.TryGetValue("name", out var n2) ? n2 : null),
-            "search"          => DispatchSearch(storagePath, parsed.Params),
             "find"            => DispatchFind(storagePath, parsed.Params),
             "check_integrity" => ReadHandlers.CheckIntegrity(storagePath),
             "get_overview"    => ReadHandlers.GetOverview(storagePath),
@@ -185,23 +183,6 @@ internal static class Dispatcher
         return ReadHandlers.GetByPath(storagePath, args["path"], tree, depth, fields, maxTokens);
     }
 
-    private static int DispatchGetNodes(string storagePath, IReadOnlyDictionary<string, string> args)
-    {
-        if (!TryParseBoolOpt(args, "compact", out bool compact, out string? compactErr))
-        {
-            Output.WriteError("invalid_parameter", path: null, compactErr!);
-            return 1;
-        }
-        var fields = ResolveFields(args, compact);
-        if (!TryParseMaxTokens(args, out int maxTokens, out string? mtErr))
-        {
-            Output.WriteError("invalid_parameter", path: null, mtErr!);
-            return 1;
-        }
-
-        return ReadHandlers.GetNodes(storagePath, args["ids"], fields, maxTokens);
-    }
-
     private static IReadOnlyCollection<string>? ResolveFields(
         IReadOnlyDictionary<string, string> args,
         bool compact)
@@ -232,59 +213,6 @@ internal static class Dispatcher
         }
         maxTokens = parsed;
         return true;
-    }
-
-    private static int DispatchSearch(string storagePath, IReadOnlyDictionary<string, string> args)
-    {
-        var query = args["query"];
-
-        SearchInMode inMode = SearchInMode.Both;
-        if (args.TryGetValue("in", out var inRaw))
-        {
-            switch (inRaw)
-            {
-                case "title": inMode = SearchInMode.Title; break;
-                case "text":  inMode = SearchInMode.Text;  break;
-                case "both":  inMode = SearchInMode.Both;  break;
-                default:
-                    Output.WriteError(
-                        "invalid_parameter",
-                        path: null,
-                        $"Параметр '--in': ожидается одно из 'title', 'text', 'both'. Получено: '{inRaw}'.");
-                    return 1;
-            }
-        }
-
-        string? typeFilter = args.TryGetValue("type", out var tf) && !string.IsNullOrEmpty(tf) ? tf : null;
-        string? tree       = args.TryGetValue("tree", out var tr) && !string.IsNullOrEmpty(tr) ? tr : null;
-        int? under = args.TryGetValue("under", out var u)
-            ? int.Parse(u, System.Globalization.CultureInfo.InvariantCulture)
-            : (int?)null;
-        if (!TryParseBoolOpt(args, "regex", out bool regex, out string? regexErr))
-        {
-            Output.WriteError("invalid_parameter", path: null, regexErr!);
-            return 1;
-        }
-        int? limit = args.TryGetValue("limit", out var l)
-            ? int.Parse(l, System.Globalization.CultureInfo.InvariantCulture)
-            : (int?)null;
-        if (!TryParseBoolOpt(args, "compact", out bool compact, out string? compactErr))
-        {
-            Output.WriteError("invalid_parameter", path: null, compactErr!);
-            return 1;
-        }
-
-        List<TreeFilter>? inTree = null;
-        if (args.TryGetValue("in-tree", out var inTreeRaw) && !string.IsNullOrEmpty(inTreeRaw))
-        {
-            if (!TryParseInTree(inTreeRaw, out inTree, out var inTreeError))
-            {
-                Output.WriteError("invalid_parameter", path: null, inTreeError!);
-                return 1;
-            }
-        }
-
-        return ReadHandlers.Search(storagePath, query, inMode, typeFilter, tree, under, regex, limit, compact, inTree);
     }
 
     private static int DispatchFind(string storagePath, IReadOnlyDictionary<string, string> args)
@@ -548,7 +476,7 @@ internal static class Dispatcher
     /// <summary>
     /// Резолвит storage-path из argv: единственный источник —
     /// <c>--storage-path=&lt;path&gt;</c> (kernel инжектит его перед вызовом
-    /// Dispatcher.Run). Никакого upward-search'а от cwd: эта логика
+    /// Dispatcher.Run). Никакого поиска вверх от cwd: эта логика
     /// перенесена в <see cref="ClientConfig"/> на CLI top-level.
     /// </summary>
     private static bool TryResolveStoragePath(
