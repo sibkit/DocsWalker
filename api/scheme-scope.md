@@ -1,18 +1,18 @@
 # Scope `scheme`
 
-`scheme` — editable scope, в котором живут **редактируемые** контракты
-Схемы для `main` и `usage`. Meta-schema и hist-schema в scheme scope
-не лежат; они kernel-owned (см. ниже).
+`scheme` — editable scope, в котором живут редактируемые контракты Схемы
+для `main` и `usage`. Meta-schema и hist-schema лежат отдельно, в
+`docs/.docswalker/meta-schema.json` (kernel-owned).
 
 LLM читает scheme через `read scope=scheme` и меняет через
-`tx scope=scheme`. Любое изменение проходит обязательный
-breaking-change-check относительно существующих данных в main / usage.
+`tx scope=scheme`. Каждое изменение проходит breaking-change-check
+относительно существующих данных в main / usage.
 
 ## Что лежит в scheme
 
 В scheme scope живут узлы двух описаний:
 
-- описание map для main или usage,
+- описание map для main или usage;
 - описание link для main или usage.
 
 Map node:
@@ -44,10 +44,9 @@ Map node:
 ```
 
 - `map_bindings.kind` ∈ {`map`, `link`}.
-- `map_bindings.owner_scope` ∈ {`main`, `usage`} — какой scope использует
-  эту map / link.
-- `map_bindings.map_name` или `map_bindings.link_name` — имя описываемого
-  объекта.
+- `map_bindings.owner_scope` ∈ {`main`, `usage`}.
+- `map_bindings.map_name` или `map_bindings.link_name` — имя
+  описываемого объекта.
 - `value` содержит структурированное описание (branches, required,
   source / target constraints, cardinality и т.д.).
 
@@ -86,27 +85,19 @@ Link node:
 ## Schema scope-а
 
 Сам scheme scope имеет минимальную внутреннюю schema, описанную в
-meta-schema. Эта схема жёстко зафиксирована и не редактируется через
-`tx scope=scheme`. Изменения в scheme scope = добавление / правка /
-удаление map-узлов и link-узлов.
+meta-schema. `tx scope=scheme` оперирует созданием / правкой / удалением
+map-узлов и link-узлов.
 
-`scope` для нового map / link определяется через `owner_scope`:
+`scope` для нового описания задаётся через `owner_scope`:
 
 - `owner_scope=main` — описание относится к контракту main scope.
 - `owner_scope=usage` — описание относится к контракту usage scope.
 
-Описаний с `owner_scope=hist` или `owner_scope=scheme` в редактируемой
-scheme не бывает: hist-формат — часть meta-schema, scheme-формат — часть
-meta-schema.
-
 ## Breaking-change-check
 
-Любая `tx scope=scheme` проходит проверку: после применения tx
-все существующие узлы main и usage обязаны соответствовать новой
-схеме. Если хотя бы один узел нарушает (например, у него есть привязка
-к map, которую tx удаляет; или есть link, для которого tx сужает
-constraints так, что данный link становится недопустимым), tx
-возвращает:
+`tx scope=scheme` проходит проверку: после применения tx все
+существующие узлы main и usage обязаны соответствовать новой схеме.
+Нарушение возвращает:
 
 ```json
 {
@@ -115,7 +106,7 @@ constraints так, что данный link становится недопус
     "violations": [
       {
         "scope": "main",
-        "node.id": 42,
+        "node.id": "2a",
         "reason": "map_branch_unknown",
         "map_name": "content",
         "violating_value": "documents/legacy"
@@ -125,45 +116,42 @@ constraints так, что данный link становится недопус
 }
 ```
 
-`tx` отклоняется атомарно. LLM подготовит миграцию руками (см. ниже).
+`tx` отклоняется атомарно. LLM подготавливает миграцию руками (см.
+ниже).
 
 ## Add-then-remove migration workflow
 
-Поскольку breaking change отклоняется жёстко, миграция Схемы делается
-**последовательностью** non-breaking шагов. Канонический шаблон для
-переименования / реорганизации map или link:
+Миграция Схемы делается последовательностью non-breaking шагов.
+Канонический шаблон для переименования / реорганизации map или link:
 
-1. **Добавить новую структуру** через `tx scope=scheme`. Новая map / link
-   не required и не пересекается с существующими данными — это additive
-   non-breaking change, tx проходит.
+1. **Добавить новую структуру** через `tx scope=scheme`. Новая map /
+   link не required и не пересекается с существующими данными —
+   additive change, tx проходит.
 2. **Мигрировать данные** через одну или несколько `tx scope=main` /
    `tx scope=usage`: для каждого затронутого узла добавить новую
-   привязку или новый link. Каждый шаг non-breaking, tx проходит.
+   привязку или новый link. Каждый шаг non-breaking.
 3. **Переключить required / constraints** через `tx scope=scheme`:
    усилить новую структуру до required и/или ослабить старую до
-   `deprecated`. Если данные уже мигрированы (шаг 2), tx проходит; если
-   что-то пропущено, tx возвращает `schema_breaks_existing_data`, и LLM
-   доделывает шаг 2 на остальных узлах.
+   `deprecated`. При незаконченной миграции данных tx возвращает
+   `schema_breaks_existing_data`; LLM доделывает шаг 2 на остальных
+   узлах.
 4. **Удалить старые привязки в данных** через `tx scope=main` /
    `tx scope=usage`.
-5. **Удалить старую структуру в схеме** через `tx scope=scheme`. Теперь
-   данных, ссылающихся на неё, нет — tx проходит.
+5. **Удалить старую структуру в схеме** через `tx scope=scheme`.
 
 Пример «переименовать map `subject` в `topic`»:
 
 ```
-1. tx scope=scheme: create map "topic" (с теми же branches, не required).
+1. tx scope=scheme: создать map "topic" (с теми же branches, не required).
 2. tx scope=main: для каждого узла добавить map_bindings.topic = old subject value.
 3. tx scope=scheme: сделать "topic" required (если был required); сделать "subject" deprecated.
 4. tx scope=main: для каждого узла удалить map_bindings.subject.
 5. tx scope=scheme: удалить map "subject".
 ```
 
-Каждый из пяти шагов — атомарная tx, каждый non-breaking сам по себе.
+Каждый шаг — атомарная tx, каждый non-breaking сам по себе.
 
 ## Чтение схемы
-
-LLM читает scheme scope обычным `read scope=scheme`:
 
 ```json
 {
@@ -188,7 +176,7 @@ LLM читает scheme scope обычным `read scope=scheme`:
 Возвращает все map-описания main-схемы. Аналогично для link-описаний и
 для usage-схемы.
 
-Альтернативно — точечно по имени:
+Точечное чтение по имени:
 
 ```json
 {
@@ -219,13 +207,12 @@ Meta-schema — kernel-owned JSON-файл `docs/.docswalker/meta-schema.json`.
   link_name);
 - структуру hist-узлов (`hist/transaction`, `hist/change`, target поля).
 
-LLM не редактирует meta-schema через tx. Она версионируется вместе с
-релизами DocsWalker. Когда новая версия kernel вводит несовместимое
-изменение meta-schema, оператор мигрирует данные при старте kernel-а
-отдельным механизмом (вне LLM-facing API).
+Meta-schema редактируется только kernel-ом, версионируется вместе с
+релизами DocsWalker. При несовместимом изменении meta-schema оператор
+мигрирует данные при старте kernel-а отдельным механизмом.
 
-LLM может **прочитать** meta-schema через `read scope=scheme` со
-специальным маркером:
+LLM читает meta-schema через `read scope=scheme` со специальным
+маркером:
 
 ```json
 {
@@ -243,8 +230,7 @@ LLM может **прочитать** meta-schema через `read scope=scheme`
 }
 ```
 
-Этот селектор возвращает один узел с полным содержимым meta-schema
+Селектор возвращает один узел с полным содержимым meta-schema
 (сериализованным в `value`).
 
-Hist-schema не имеет отдельной точки чтения: её описание — часть
-meta-schema (раздел про hist-узлы).
+Hist-schema — раздел meta-schema; отдельной точки чтения нет.

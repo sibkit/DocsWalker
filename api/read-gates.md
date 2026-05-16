@@ -3,13 +3,12 @@
 Read gate — server-side проверка перед `tx`, гарантирующая, что LLM
 прочитала актуальное состояние затронутых узлов и обязательные
 инструкции из usage. Цель: защита от lost updates (stale overwrite) и
-от записи без понимания применимых правил.
+от записи без подтверждения применимых правил.
 
-Read gates применяются по матрице ниже в зависимости от `tx.scope`. LLM
-передаёт opaque `read_id`-ы, полученные из `read`, через `tx.read_ids`.
-Если чего-то не хватает, kernel возвращает `read_required` с готовыми
-`read`-вызовами для добора недостающего; если `read_id` устарел или не
-подходит — `invalid_read_id`.
+LLM передаёт opaque `read_id`-ы, полученные из `read`, через
+`tx.read_ids`. Если чего-то не хватает, kernel возвращает `read_required`
+с готовыми `read`-вызовами для добора недостающего; устаревший или
+неподходящий `read_id` — `invalid_read_id`.
 
 ## Матрица gates
 
@@ -19,10 +18,8 @@ Read gates применяются по матрице ниже в зависим
 | `usage`      | да                 | нет       | нет       | нет        | нет               |
 | `scheme`     | да                 | нет       | нет       | нет        | нет (плюс breaking-change-check, см. [scheme-scope.md](scheme-scope.md)) |
 
-Rule / map / link gates действуют только при `tx scope=main`. Для usage и
-scheme достаточно state preconditions: rule-gates на этих scope создали
-бы рекурсию (rule про rules) без пользы, а scheme дополнительно защищён
-breaking-change-check'ом.
+Rule / map / link gates действуют при `tx scope=main`. Для usage и
+scheme применяются только state preconditions.
 
 ## State precondition
 
@@ -39,58 +36,49 @@ breaking-change-check'ом.
 
 State `read_id` принимается любым из state или value scope (value
 `read_id` той же версии узла удовлетворяет state precondition того же
-node/version). Если узел изменился после чтения, его актуальный
-`read_id` уже другой и tx отклоняется.
+node/version).
 
 Узел, созданный в этой же tx и переданный в последующие ops через
-alias, не требует state `read_id` (до этой tx его не существовало).
+alias, освобождён от state `read_id` — до этой tx его не существовало.
 
-## Usage rule gate (только tx scope=main)
+## Usage rule gate (tx scope=main)
 
 Для каждого main-узла, который `tx` создаёт, изменяет, удаляет или
-структурно затрагивает, kernel находит **применимые** rule-узлы из
-usage scope (через `applies_to`-селектор в value rule, см.
+структурно затрагивает, kernel находит применимые rule-узлы из usage
+scope (через `applies_to`-селектор в value rule, см.
 [usage-scope.md](usage-scope.md)). Для каждого применимого rule LLM
-обязана передать value `read_id` этого rule-узла в `tx.read_ids`.
+передаёт value `read_id` этого rule-узла в `tx.read_ids`.
 
-Применимость считается атомарно для всей tx: если в одном tx
-изменяются main-узлы из разных под-областей, набор применимых rules —
-объединение.
+Применимость считается атомарно для всей tx: при изменении main-узлов
+из разных под-областей набор применимых rules — объединение.
 
-## Usage map gate (только tx scope=main)
+## Usage map gate (tx scope=main)
 
-При каждой operation, назначающей `map_bindings` (`create`, `move` с
-`to.map_bindings`), для каждой назначаемой map LLM обязана передать
-value `read_id` соответствующего `usage/map`-узла (`map_bindings.content=
+При operation, назначающей `map_bindings` (`create`, `move` с
+`to.map_bindings`), для каждой назначаемой map LLM передаёт value
+`read_id` соответствующего `usage/map`-узла (`map_bindings.content=
 usage/map`, `map_name=<map>`).
 
-Map gate не действует при `tx scope=usage` или `tx scope=scheme`.
+## Usage link gate (tx scope=main)
 
-## Usage link gate (только tx scope=main)
-
-При операции `link` для каждого создаваемого link с именем `name` LLM
-обязана передать value `read_id` соответствующего `usage/link`-узла
+При operation `link` для каждого создаваемого link с именем `name`
+LLM передаёт value `read_id` соответствующего `usage/link`-узла
 (`map_bindings.content=usage/link`, `link_name=<name>`).
 
-Link gate не действует при `tx scope=usage` или `tx scope=scheme`.
-
-## Project value gate (только tx scope=main, по rule)
+## Project value gate (tx scope=main, по rule)
 
 Если применимый `usage/rule` содержит в value
-`requires_project_value_read=true`, для каждого main-узла, который
-одновременно затронут tx и попадает под `applies_to` этого rule, LLM
-обязана передать **value** `read_id` этого main-узла. Чтобы получить
-value `read_id`, LLM делает full read через `read scope=main` с
-`include=["value"]` и без truncation.
+`requires_project_value_read=true`, для каждого main-узла, одновременно
+затронутого tx и попадающего под `applies_to` этого rule, LLM передаёт
+value `read_id` этого main-узла. Чтобы получить value `read_id`, LLM
+делает full read через `read` с `include=["value"]` и без truncation.
 
-Если rule не содержит `requires_project_value_read=true`, тот же узел
-по-прежнему требует state `read_id` (state precondition), но
-value `read_id` не нужен.
+Если rule не содержит `requires_project_value_read=true`, узел требует
+только state `read_id`.
 
 ## `read_required` envelope
 
-Если `tx` обнаруживает недостаток `read_id`-ов, она ничего не применяет
-и возвращает:
+При недостатке `read_id`-ов `tx` ничего не применяет и возвращает:
 
 ```json
 {
@@ -99,19 +87,17 @@ value `read_id` не нужен.
     "required": [
       {
         "reason": "state_precondition",
-        "scope": "main",
         "read_scope": "state",
         "node": {
-          "id": 42,
+          "id": "2a",
           "path": "DocsWalker/api/write-ops"
         },
         "name": "read",
         "arguments": {
-          "scope": "main",
           "ops": [
             {
               "select": {
-                "selector": { "node.id": 42 },
+                "selector": { "node.id": "2a" },
                 "include": ["map_bindings"]
               }
             }
@@ -172,50 +158,45 @@ value `read_id` не нужен.
 - `reason` ∈ {`state_precondition`, `value_gate`, `usage_rule`,
   `usage_map`, `usage_link`}.
 - `read_scope` ∈ {`state`, `value`}.
-- `name`, `arguments` — точная форма MCP-tool call, который LLM должна
-  выполнить, чтобы получить нужный `read_id`.
+- `name`, `arguments` — точная форма MCP-tool call для получения
+  нужного `read_id`.
 
-`read_required` не возвращает `read_id`. Единственный способ получить
-`read_id` — выполнить указанный `read`.
+`read_required` не возвращает `read_id`. Получение `read_id` — через
+выполнение указанного `read`-а.
 
-После выполнения всех reads LLM повторяет `tx` с заполненным
-`tx.read_ids`. Если за время между read и tx что-то изменилось, kernel
-вернёт новый `read_required` с актуальным списком (или `invalid_read_id`,
-если переданный id устарел).
+После выполнения reads LLM повторяет `tx` с заполненным `tx.read_ids`.
+При изменении состояния между read и tx kernel вернёт новый
+`read_required` с актуальным списком, либо `invalid_read_id` для
+переданных устаревших id.
 
 ## `invalid_read_id`
 
-Если хотя бы один `read_id` в `tx.read_ids`:
+`details.reason`:
 
-- собран клиентом руками или не выпускался kernel-ом — `invalid_read_id`
-  с `details.reason=unknown`;
-- устарел (узел изменился после чтения) — `invalid_read_id` с
-  `details.reason=stale`;
-- не подходит read_scope-у (например, передан state `read_id` там, где
-  требуется value) — `invalid_read_id` с `details.reason=scope_mismatch`;
-- не соответствует текущей Схеме (например, схема map изменилась после
-  чтения) — `invalid_read_id` с `details.reason=schema_mismatch`.
+- `unknown` — `read_id` не выпускался kernel-ом или собран клиентом
+  руками;
+- `stale` — узел изменился после чтения;
+- `scope_mismatch` — передан state `read_id` там, где требуется value;
+- `schema_mismatch` — схема map / link изменилась после чтения.
 
-Если kernel может связать устаревший id с конкретным узлом / gate,
-`details.required` содержит готовый `read`-вызов для чтения текущей
-версии. LLM выполняет, переоценивает изменение на новом состоянии и
-отправляет новую `tx` (не повторяет старую с переданным новым id —
-данные могли существенно отличаться).
+При связке устаревшего id с конкретным узлом / gate `details.required`
+содержит готовый `read`-вызов для чтения текущей версии. LLM
+перечитывает узел, переоценивает изменение на новом состоянии и
+отправляет новую `tx`.
 
 ## Полный пример workflow
 
-1. LLM вызывает `read scope=main` для нужного куска main:
+1. `read` для нужного main-узла:
    ```json
    {
-     "scope": "main",
      "ops": [
-       { "select": { "selector": { "node.id": 42 },
+       { "select": { "selector": { "node.id": "2a" },
          "include": ["value", "map_bindings"] } }
      ]
    }
    ```
-   получает узел 42 с value `read_id`.
-2. LLM вызывает `read scope=usage` для рул, относящихся к этому узлу:
+   получает узел `"2a"` с value `read_id`.
+2. `read scope=usage` для применимого rule:
    ```json
    {
      "scope": "usage",
@@ -226,17 +207,16 @@ value `read_id` не нужен.
    }
    ```
    получает rule с value `read_id`.
-3. LLM вызывает `read scope=usage` для map / link, которые tx будет
-   назначать или создавать; получает value `read_id`-ы.
-4. LLM вызывает `tx`:
+3. `read scope=usage` для map / link, назначаемых или создаваемых tx;
+   получает value `read_id`-ы.
+4. `tx`:
    ```json
    {
-     "scope": "main",
      "commit_message": "...",
-     "read_ids": ["read_value_node42_...", "read_value_rule_...", "..."],
-     "ops": [ { "update": { "id": 42, "set": { "value": "..." } } } ]
+     "read_ids": ["4c8f", "31bf", "7bc0"],
+     "ops": [ { "update": { "id": "2a", "set": { "value": "..." } } } ]
    }
    ```
-5. Если kernel считает, что чего-то не хватает, возвращает
-   `read_required` — LLM выполняет указанные `read`-ы, дополняет
-   `tx.read_ids` и повторяет шаг 4.
+5. При недостающих `read_id` kernel возвращает `read_required` — LLM
+   выполняет указанные `read`-ы, дополняет `tx.read_ids` и повторяет
+   шаг 4.

@@ -12,102 +12,92 @@ docs/
   main/                       пользовательский контент (project data)
   usage/                      инструкции для LLM
   scheme/                     редактируемые схемы main и usage
-  hist/                       журнал всех изменений editable scope
+  hist/                       журнал изменений editable scope
   .docswalker/
     meta-schema.json          kernel-owned: контракт узла, link и hist-формат
     sequence.txt              служебный счётчик и порядок
 ```
 
-Хранение в JSON. Никакого YAML на диске не используется.
+Хранение в JSON.
 
 ## 4 Scope
 
-- `main` — пользовательский контент. Editable через `tx` без явного `scope`
-  (default).
-- `usage` — инструкции для LLM (rules, examples, topics, methods, fields,
-  errors, map descriptions, link descriptions). Editable через
+- `main` — пользовательский контент. Editable через `tx` без `scope`.
+- `usage` — инструкции для LLM (rules, examples, topics, methods,
+  fields, errors, map descriptions, link descriptions). Editable через
   `tx scope=usage`.
 - `scheme` — редактируемые контракты Схемы main и usage. Editable через
-  `tx scope=scheme` с обязательным breaking-change-check; meta-schema и
-  hist-schema в scheme scope не лежат, они kernel-owned.
-- `hist` — kernel-журнал всех изменений editable scope. Read-only для LLM;
-  `tx scope=hist` возвращает `hist_read_only`.
+  `tx scope=scheme` с обязательным breaking-change-check.
+- `hist` — kernel-журнал изменений editable scope. Read-only для LLM.
 
-LLM выбирает scope для read обязательным параметром `scope` на каждом
-вызове `read`. Для write LLM передаёт опциональный `scope` в `tx`; при его
-отсутствии цель — `main`.
+`scope` в `read` и `tx` опционален. Отсутствие = `main`. Явное
+указание `"main"` — ошибка `invalid_scope`. Допустимые значения в `read`:
+`"usage"`, `"hist"`, `"scheme"`. Допустимые значения в `tx`: `"usage"`,
+`"scheme"`. `tx scope=hist` отклоняется кодом `hist_read_only`.
 
 ## Meta-schema поля
 
-Meta-schema (`.docswalker/meta-schema.json`) задаёт обязательные поля узла
-и link для всех scope. LLM читает meta-schema через
+Meta-schema (`.docswalker/meta-schema.json`) задаёт обязательные поля
+узла и link для всех scope. LLM читает meta-schema через
 `read scope=scheme` со специальным маркером `meta=true` в селекторе.
 
 ### Поля узла
 
-- `node.id` — целое число, глобально уникально на весь каталог. Не
-  переиспользуется после удаления (kernel-генерируемое исключение —
-  rollback, см. [tx.md](tx.md)).
+- `node.id` — opaque hex-строка lower-case (например `"2a"`, `"4c8f"`).
+  Глобально уникальна на весь каталог. После удаления узла id остаётся
+  историческим идентификатором в hist и не выдаётся новым узлам;
+  исключение — kernel-генерируемый rollback восстанавливает удалённый
+  id на тот же узел (см. [tx.md](tx.md)).
 - `node.path` — уникальный иерархический address внутри scope. Сегменты
   разделены `/`. Последний сегмент задаёт `title` узла.
-- `node.title` — последний сегмент `node.path`. Обязан соответствовать
-  regex `^[\p{L}\p{Nd}._-]+$` (Unicode-буквы, decimal digits, точка, тире,
+- `node.title` — последний сегмент `node.path`. Соответствует regex
+  `^[\p{L}\p{Nd}._-]+$` (Unicode-буквы, decimal digits, точка, тире,
   underscore). Уникальность siblings проверяется по lower-case форме
   `title` внутри одного parent path.
-- `node.value` — содержимое узла. Для main это документируемый контент;
-  для usage — инструкция/example/topic; для scheme — описание map/link/
-  constraint; для hist — payload event-а.
+- `node.value` — содержимое узла. Для main — документируемый контент;
+  для usage — инструкция / example / topic; для scheme — описание map
+  / link / constraint; для hist — payload event-а.
 - `node.map_bindings` — классификационные привязки узла к maps,
-  объявленным в schema scope-а. Ключ — имя map, значение — путь ветки в
-  branches этой map. У одного узла не больше одной привязки к одной map.
+  объявленным в schema scope-а. Ключ — имя map, значение — путь ветки
+  в branches этой map. У одного узла одна привязка к одной map.
 
 ### Поля link
 
 - `link.name` — имя link, объявленное в schema scope.
 - `link.source.id` — id узла-источника.
 - `link.target.id` — id узла-цели.
-- `link.target.scope` — опциональное; если присутствует и отличается от
-  scope узла-источника, это cross-scope link. Default — same scope as
-  source.
+- `link.target.scope` — опциональное. Default — scope узла-источника.
 
-Identity link — tuple `(name, source.id, target.id, target.scope)`. Двух
-links с одинаковым tuple в одном scope быть не может.
+Identity link — tuple `(name, source.id, target.id, target.scope)`.
+Tuple уникален в пределах scope.
 
 ## Глобальный id
 
-Один счётчик kernel-а на весь каталог. main-узел, usage-узел, scheme-узел,
-hist-change-узел — все получают id из одного пространства. Это упрощает
-ссылочную идентификацию (особенно в hist) и устраняет необходимость
-таскать `(scope, id)` как составной key.
+Один счётчик kernel-а на весь каталог. main-узел, usage-узел,
+scheme-узел, hist-change-узел — все получают id из одного пространства.
+Это упрощает ссылочную идентификацию (особенно в hist).
 
-`(scope, id)` имеет смысл только в селекторах, когда LLM хочет ограничить
-выборку конкретным scope. Сам `id` уже однозначно адресует узел.
+Все id — opaque hex-строки lower-case переменной длины: `node.id`,
+`link.source.id`, `link.target.id`, `tx_id`, `read_id`. Префиксы и
+суффиксы внутри id не используются — kernel выдаёт компактные hex.
+
+`(scope, id)` имеет смысл в селекторах, когда нужно ограничить выборку
+конкретным scope. Сам `id` однозначно адресует узел.
 
 ## Cross-scope ссылки
 
 Разрешённые направления link:
 
-| source scope | target scope | разрешено |
-|--------------|--------------|-----------|
-| `main`       | `main`       | да        |
-| `usage`      | `usage`      | да        |
-| `usage`      | `main`       | да        |
-| `main`       | `usage`      | нет       |
-| `main`       | `hist`       | нет       |
-| `usage`      | `hist`       | нет       |
-| `hist`       | любой        | нет (links в hist отсутствуют) |
-| `scheme`     | любой scope, кроме `scheme` | нет |
+| source scope | target scope |
+|--------------|--------------|
+| `main`       | `main`       |
+| `usage`      | `usage`      |
+| `usage`      | `main`       |
 
-Контракт: main не зависит от своей документации (`main → usage`
-запрещён); hist не имеет исходящих links вовсе (идентификация затронутых
-узлов — через структурные поля `target.*`, см. [hist-scope.md](hist-scope.md));
-scheme живёт изолированно от данных. Cross-scope link допустим только в
-направлении `usage → main` — например `usage/example → main/method-узел`.
-
-При попытке удалить main-узел, на который есть incoming `usage → main`
-link, `tx` возвращает `delete_blocked_by_cross_scope_link` со списком
-блокирующих usage-узлов. LLM должна сначала убрать или переключить эти
-links отдельной `tx scope=usage`, затем повторить delete.
+Иное направление возвращает `cross_scope_not_allowed` при `link` и при
+`create.set.links[]`. Удаление main-узла, на который ссылается
+incoming `usage → main` link, возвращает
+`delete_blocked_by_cross_scope_link` со списком блокирующих usage-узлов.
 
 ## Defaults
 
@@ -125,29 +115,37 @@ links отдельной `tx scope=usage`, затем повторить delete.
 }
 ```
 
-- `defaults.path_parent` — если задан, `path` внутри `create`, `move.to`
-  и selector slots должен быть относительным внутри этого parent. Полный
-  `path` вместе с `defaults.path_parent` даёт `ambiguous_path_base`.
+- `defaults.path_parent` — если задан, `path` внутри `create`,
+  `move.to.parent_path` и selector slots интерпретируется как
+  относительный внутри этого parent. Абсолютный `path` вместе с
+  `defaults.path_parent` возвращает `ambiguous_path_base`.
 - `defaults.map_bindings` — применяется к `create.set.map_bindings`. Для
-  `move.to.map_bindings` привязки задаются явно — общий default не
-  применяется к bulk-переклассификации, чтобы случайное wildcard-move
-  не переписывало map_bindings разом.
+  `move.to.map_bindings` привязки задаются явно — общий default к
+  `move` не применяется.
 
 ## Аргументы методов
 
-Каждый MCP `tools/call` выбирает метод по `params.name` (`read` или `tx`).
-Внутри `params.arguments` поле `method` отсутствует. Минимальная форма
-аргументов:
+Каждый MCP `tools/call` выбирает метод по `params.name` (`read` или
+`tx`). Внутри `params.arguments` поле `method` отсутствует. Минимальная
+форма аргументов:
 
 ```json
 {
-  "scope": "main",
+  "ops": []
+}
+```
+
+С опциональным `scope` и `defaults`:
+
+```json
+{
+  "scope": "usage",
   "defaults": {},
   "ops": []
 }
 ```
 
-Для `tx` к этой форме добавляются:
+Для `tx` добавляются:
 
 ```json
 {
@@ -156,16 +154,11 @@ links отдельной `tx scope=usage`, затем повторить delete.
 }
 ```
 
-`ops` обязательно и всегда массив, даже если операция одна. Каждый элемент
-`ops[]` — объект с ровно одним ключом операции (`select`, `create`,
-`update`, `move`, `delete`, `link`, `unlink`, `rollback`), и значение
-ключа содержит тело операции.
+`ops` обязательно и всегда массив, даже если операция одна. Каждый
+элемент `ops[]` — объект с ровно одним ключом операции (`select`,
+`create`, `update`, `move`, `delete`, `link`, `unlink`, `rollback`);
+значение ключа — тело операции.
 
-`scope` в `read` обязателен и принимает `"main"`, `"usage"`, `"hist"` или
-`"scheme"`. `scope` в `tx` опционален и принимает `"usage"` или
-`"scheme"`; отсутствие = `"main"`; `"hist"` отклоняется как
-`hist_read_only`.
-
-`commit_message` обязателен для `tx`. Значение не должно превышать 100
-токенов. `read_ids` опционален и содержит opaque receipts, полученные
-через предыдущие `read` (см. [read-gates.md](read-gates.md)).
+`commit_message` обязателен для `tx`, не больше 100 токенов.
+`read_ids` опционален и содержит opaque receipts, полученные через
+предыдущие `read` (см. [read-gates.md](read-gates.md)).
