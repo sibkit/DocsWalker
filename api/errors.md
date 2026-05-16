@@ -167,7 +167,7 @@ target.scope)`.
 
 Tx прошла resolve и read gates, финальная validation графа отклонила
 результат. `details.errors[]` — массив объектов
-`{code, node.id, path, ref}` с подробностями каждого нарушения.
+`{code, id, path, ref}` с подробностями каждого нарушения.
 
 ### `schema_breaks_existing_data`
 

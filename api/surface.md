@@ -17,7 +17,7 @@ Read-only метод. Читает узлы из выбранного scope по
     {
       "select": {
         "selector": {
-          "node.path": "rules/api/**"
+          "path": "rules/api/**"
         },
         "include": ["value", "links", "map_bindings"],
         "max_tokens": 4000

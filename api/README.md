@@ -15,10 +15,9 @@ DocsWalker хранит граф знаний в одном каталоге `do
 для LLM), `scheme` (редактируемые контракты Схемы) и `hist` (журнал
 изменений editable scope, пишется kernel-ом). У каждого scope своя
 schema, общая meta-schema (`docs/.docswalker/meta-schema.json`) задаёт
-базовые поля узла (`node.id`, `node.path`, `node.title`, `node.value`,
-`node.map_bindings`) и link (`link.name`, `link.source.id`,
-`link.target.id`, `link.target.scope`). Id-пространство глобальное на
-весь каталог. Все id — opaque hex-строки lower-case. Все данные
+базовые поля узла (`id`, `path`, `title`, `value`, `map_bindings`) и
+link (`name`, `source.id`, `target.id`, `target.scope`). Id-пространство
+глобальное на весь каталог. Все id — opaque hex-строки lower-case. Все данные
 хранятся как JSON.
 
 Внешняя поверхность v1 состоит из двух методов:
@@ -62,7 +61,7 @@ MCP tool descriptions содержат компактный quickstart. Подр
 ## Файлы
 
 - [model.md](model.md) — meta-schema, поля узла и link, 4 scope,
-  глобальный id, defaults, hex-формат id.
+  глобальный id, defaults.
 - [surface.md](surface.md) — два MCP-tools `read` и `tx`, параметр
   `scope`, envelope success/error.
 - [selectors.md](selectors.md) — predicate-селекторы по полям

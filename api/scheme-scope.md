@@ -19,14 +19,14 @@ Map node:
 
 ```json
 {
-  "node.path": "main/content",
-  "node.title": "content",
-  "node.map_bindings": {
+  "path": "main/content",
+  "title": "content",
+  "map_bindings": {
     "kind": "map",
     "owner_scope": "main",
     "map_name": "content"
   },
-  "node.value": {
+  "value": {
     "description": "Классифицирует назначение main-узла по типу содержимого.",
     "branches": {
       "documents": {
@@ -54,22 +54,22 @@ Link node:
 
 ```json
 {
-  "node.path": "main/depends_on",
-  "node.title": "depends_on",
-  "node.map_bindings": {
+  "path": "main/depends_on",
+  "title": "depends_on",
+  "map_bindings": {
     "kind": "link",
     "owner_scope": "main",
     "link_name": "depends_on"
   },
-  "node.value": {
+  "value": {
     "description": "Source-узел зависит от target-узла.",
     "source": {
-      "node.map_bindings": {
+      "map_bindings": {
         "content": "documents/**"
       }
     },
     "target": {
-      "node.map_bindings": {
+      "map_bindings": {
         "content": "documents/**"
       }
     },
@@ -106,7 +106,7 @@ map-узлов и link-узлов.
     "violations": [
       {
         "scope": "main",
-        "node.id": "2a",
+        "id": "2a",
         "reason": "map_branch_unknown",
         "map_name": "content",
         "violating_value": "documents/legacy"
@@ -160,7 +160,7 @@ map-узлов и link-узлов.
     {
       "select": {
         "selector": {
-          "node.map_bindings": {
+          "map_bindings": {
             "kind": "map",
             "owner_scope": "main"
           }
@@ -185,7 +185,7 @@ map-узлов и link-узлов.
     {
       "select": {
         "selector": {
-          "node.path": "main/content"
+          "path": "main/content"
         },
         "include": ["value", "map_bindings"]
       }
@@ -199,10 +199,8 @@ map-узлов и link-узлов.
 Meta-schema — kernel-owned JSON-файл `docs/.docswalker/meta-schema.json`.
 Описывает:
 
-- структуру узла (`node.id`, `node.path`, `node.title`, `node.value`,
-  `node.map_bindings`);
-- структуру link (`link.name`, `link.source.id`, `link.target.id`,
-  `link.target.scope`);
+- структуру узла (`id`, `path`, `title`, `value`, `map_bindings`);
+- структуру link (`name`, `source.id`, `target.id`, `target.scope`);
 - внутреннюю schema scheme scope (kind / owner_scope / map_name /
   link_name);
 - структуру hist-узлов (`hist/transaction`, `hist/change`, target поля).

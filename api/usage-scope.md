@@ -55,23 +55,23 @@ main-узлов и операций, к которым rule относится.
 
 ```json
 {
-  "node.path": "rules/api/write",
-  "node.title": "write",
-  "node.map_bindings": {
+  "path": "rules/api/write",
+  "title": "write",
+  "map_bindings": {
     "content": "usage/rule",
     "subject": "tx",
     "method": "tx"
   },
-  "node.value": {
+  "value": {
     "applies_to": {
-      "node.path": "DocsWalker/api/**",
-      "node.map_bindings": {
+      "path": "DocsWalker/api/**",
+      "map_bindings": {
         "audience": "llm-agent"
       },
-      "node.links": {
+      "links": {
         "name": "depends_on",
         "to": {
-          "node.map_bindings": {
+          "map_bindings": {
             "content": "documents/**"
           }
         }
@@ -102,14 +102,14 @@ link на main-узлы из rule не создаётся.
 
 ```json
 {
-  "node.path": "maps/content",
-  "node.title": "content",
-  "node.map_bindings": {
+  "path": "maps/content",
+  "title": "content",
+  "map_bindings": {
     "content": "usage/map",
     "map_name": "content",
     "schema_name": "main"
   },
-  "node.value": {
+  "value": {
     "description": "...",
     "branch_usage_notes": {
       "documents/spec": "...",
@@ -129,14 +129,14 @@ value `read_id` в `tx.read_ids` (см. [read-gates.md](read-gates.md)).
 
 ```json
 {
-  "node.path": "links/depends_on",
-  "node.title": "depends_on",
-  "node.map_bindings": {
+  "path": "links/depends_on",
+  "title": "depends_on",
+  "map_bindings": {
     "content": "usage/link",
     "link_name": "depends_on",
     "schema_name": "main"
   },
-  "node.value": {
+  "value": {
     "description": "...",
     "when_to_use": "...",
     "vs_similar_links": "..."
@@ -154,14 +154,14 @@ descriptions не включаются — LLM явно читает их чер
 
 ```json
 {
-  "node.path": "examples/tx/move-with-expected-count",
-  "node.title": "move-with-expected-count",
-  "node.map_bindings": {
+  "path": "examples/tx/move-with-expected-count",
+  "title": "move-with-expected-count",
+  "map_bindings": {
     "content": "usage/example",
     "subject": "tx",
     "method": "tx"
   },
-  "node.value": {
+  "value": {
     "request": {
       "commit_message": "...",
       "ops": [{ "move": { "...": "..." } }]

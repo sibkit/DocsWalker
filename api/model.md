@@ -43,30 +43,30 @@ Meta-schema (`.docswalker/meta-schema.json`) задаёт обязательны
 
 ### Поля узла
 
-- `node.id` — opaque hex-строка lower-case (например `"2a"`, `"4c8f"`).
+- `id` — opaque hex-строка lower-case (например `"2a"`, `"4c8f"`).
   Глобально уникальна на весь каталог. После удаления узла id остаётся
   историческим идентификатором в hist и не выдаётся новым узлам;
   исключение — kernel-генерируемый rollback восстанавливает удалённый
   id на тот же узел (см. [tx.md](tx.md)).
-- `node.path` — уникальный иерархический address внутри scope. Сегменты
+- `path` — уникальный иерархический address внутри scope. Сегменты
   разделены `/`. Последний сегмент задаёт `title` узла.
-- `node.title` — последний сегмент `node.path`. Соответствует regex
+- `title` — последний сегмент `path`. Соответствует regex
   `^[\p{L}\p{Nd}._-]+$` (Unicode-буквы, decimal digits, точка, тире,
   underscore). Уникальность siblings проверяется по lower-case форме
   `title` внутри одного parent path.
-- `node.value` — содержимое узла. Для main — документируемый контент;
+- `value` — содержимое узла. Для main — документируемый контент;
   для usage — инструкция / example / topic; для scheme — описание map
   / link / constraint; для hist — payload event-а.
-- `node.map_bindings` — классификационные привязки узла к maps,
+- `map_bindings` — классификационные привязки узла к maps,
   объявленным в schema scope-а. Ключ — имя map, значение — путь ветки
   в branches этой map. У одного узла одна привязка к одной map.
 
 ### Поля link
 
-- `link.name` — имя link, объявленное в schema scope.
-- `link.source.id` — id узла-источника.
-- `link.target.id` — id узла-цели.
-- `link.target.scope` — опциональное. Default — scope узла-источника.
+- `name` — имя link, объявленное в schema scope.
+- `source.id` — id узла-источника.
+- `target.id` — id узла-цели.
+- `target.scope` — опциональное. Default — scope узла-источника.
 
 Identity link — tuple `(name, source.id, target.id, target.scope)`.
 Tuple уникален в пределах scope.
@@ -77,8 +77,8 @@ Tuple уникален в пределах scope.
 scheme-узел, hist-change-узел — все получают id из одного пространства.
 Это упрощает ссылочную идентификацию (особенно в hist).
 
-Все id — opaque hex-строки lower-case переменной длины: `node.id`,
-`link.source.id`, `link.target.id`, `tx_id`, `read_id`. Префиксы и
+Все id — opaque hex-строки lower-case переменной длины: `id` узла,
+`source.id` / `target.id` у link, `tx_id`, `read_id`. Префиксы и
 суффиксы внутри id не используются — kernel выдаёт компактные hex.
 
 `(scope, id)` имеет смысл в селекторах, когда нужно ограничить выборку

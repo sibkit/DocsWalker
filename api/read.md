@@ -9,7 +9,7 @@
     {
       "select": {
         "selector": {
-          "node.id": ["2a", "11"]
+          "id": ["2a", "11"]
         },
         "include": ["value", "map_bindings"],
         "max_tokens": 4000
@@ -163,7 +163,7 @@ value `read_id`. Старые перестают соответствовать 
     {
       "select": {
         "selector": {
-          "node.path": "DocsWalker/api/**"
+          "path": "DocsWalker/api/**"
         },
         "max_tokens": 2000
       }
@@ -183,7 +183,7 @@ value `read_id`. Старые перестают соответствовать 
     {
       "select": {
         "selector": {
-          "node.id": "2a"
+          "id": "2a"
         },
         "include": ["value", "links", "map_bindings"],
         "max_tokens": 4000
@@ -205,7 +205,7 @@ value `read_id`. Старые перестают соответствовать 
     {
       "select": {
         "selector": {
-          "node.path": "rules/api/write"
+          "path": "rules/api/write"
         },
         "include": ["value", "links", "map_bindings"],
         "max_tokens": 4000

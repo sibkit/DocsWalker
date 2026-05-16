@@ -97,7 +97,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
           "ops": [
             {
               "select": {
-                "selector": { "node.id": "2a" },
+                "selector": { "id": "2a" },
                 "include": ["map_bindings"]
               }
             }
@@ -117,7 +117,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
           "ops": [
             {
               "select": {
-                "selector": { "node.path": "rules/api/write" },
+                "selector": { "path": "rules/api/write" },
                 "include": ["value", "links", "map_bindings"]
               }
             }
@@ -138,7 +138,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
             {
               "select": {
                 "selector": {
-                  "node.map_bindings": {
+                  "map_bindings": {
                     "content": "usage/map",
                     "map_name": "content"
                   }
@@ -190,7 +190,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
    ```json
    {
      "ops": [
-       { "select": { "selector": { "node.id": "2a" },
+       { "select": { "selector": { "id": "2a" },
          "include": ["value", "map_bindings"] } }
      ]
    }
@@ -201,7 +201,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
    {
      "scope": "usage",
      "ops": [
-       { "select": { "selector": { "node.path": "rules/api/write" },
+       { "select": { "selector": { "path": "rules/api/write" },
          "include": ["value", "links", "map_bindings"] } }
      ]
    }
