@@ -14,14 +14,14 @@ map и link из схемы. LLM редактирует usage через `tx sco
 - отката tx через `rollback`;
 - обработки `rollback_conflict`;
 - работы с селекторами, aliases, `expected_count`;
-- подбора state и value `read_id` для `tx.read_ids`;
-- понимания полей узла (`title`, `value`, `map_bindings`) и
+- подбора state и content `read_id` для `tx.read_ids`;
+- понимания полей узла (`title`, `content`, `map_bindings`) и
   envelope-форматов;
 - понимания кодов ошибок.
 
 ## Node contracts
 
-В schema usage заведены типы узлов через `map_bindings.content` со
+В schema usage заведены типы узлов через `map_bindings.category` со
 значениями `usage/*`:
 
 - `usage/topic` — общая тема или workflow.
@@ -36,7 +36,7 @@ map и link из схемы. LLM редактирует usage через `tx sco
 - `usage/rule` — обязательная инструкция, привязанная к подмножеству
   main-узлов через `applies_to`.
 
-Map `content` обязательна. Дополнительные map в usage schema:
+Map `category` обязательна. Дополнительные map в usage schema:
 
 - `subject` — тема: `read`, `tx`, `selector`, `error`, `schema`,
   `workflow`, `scope`.
@@ -47,10 +47,23 @@ Map `content` обязательна. Дополнительные map в usage 
 - `map` — имя map (для `usage/map`).
 - `link_name` — имя link (для `usage/link`).
 
+## Формат `content` в usage
+
+Поле `content` у data-узла — всегда строка на уровне API (см.
+[model.md](model.md)). У usage-узлов с структурным контрактом
+(`usage/rule`, `usage/map`, `usage/link`, `usage/example`) в `content`
+кладётся escaped-JSON соответствующего shape; kernel парсит строку для
+механизмов, которым нужен shape (rule applicability, gate computation).
+
+Примеры ниже показывают `content` развёрнутым JSON-объектом для
+читаемости. На уровне API он сериализуется как строка с escaped-JSON
+внутри. У `usage/topic`, `usage/method`, `usage/field`, `usage/error`,
+`usage/schema` `content` обычно markdown/plain text без структуры.
+
 ## Узел `usage/rule`
 
 Rule — инструкция, которую LLM читает перед конкретной `tx scope=main`.
-`applies_to` — JSON-header внутри `value`, описывает множество
+`applies_to` — JSON-header внутри `content`, описывает множество
 main-узлов и операций, к которым rule относится.
 
 ```json
@@ -58,11 +71,11 @@ main-узлов и операций, к которым rule относится.
   "path": "rules/api/write",
   "title": "write",
   "map_bindings": {
-    "content": "usage/rule",
+    "category": "usage/rule",
     "subject": "tx",
     "method": "tx"
   },
-  "value": {
+  "content": {
     "applies_to": {
       "path": "DocsWalker/api/**",
       "map_bindings": {
@@ -72,12 +85,12 @@ main-узлов и операций, к которым rule относится.
         "name": "depends_on",
         "to": {
           "map_bindings": {
-            "content": "documents/**"
+            "category": "documents/**"
           }
         }
       }
     },
-    "requires_project_value_read": false,
+    "requires_project_content_read": false,
     "instruction": "Перед изменением узлов под DocsWalker/api/** ... "
   }
 }
@@ -86,8 +99,8 @@ main-узлов и операций, к которым rule относится.
 - `applies_to` — обычный селектор по main-полям (см.
   [selectors.md](selectors.md)). Если `tx scope=main` затрагивает
   узлы под этот селектор, LLM читает rule через `read scope=usage` и
-  передаёт его value `read_id` в `tx.read_ids`.
-- `requires_project_value_read` — опциональный, default `false`. При
+  передаёт его content `read_id` в `tx.read_ids`.
+- `requires_project_content_read` — опциональный, default `false`. При
   `true` rule дополнительно требует full read main-узлов под
   `applies_to`, попадающих в tx (см. [read-gates.md](read-gates.md)).
 - `instruction` — текст инструкции.
@@ -102,14 +115,14 @@ link на main-узлы из rule не создаётся.
 
 ```json
 {
-  "path": "maps/content",
-  "title": "content",
+  "path": "maps/category",
+  "title": "category",
   "map_bindings": {
-    "content": "usage/map",
-    "map": "content",
+    "category": "usage/map",
+    "map": "category",
     "schema_name": "main"
   },
-  "value": {
+  "content": {
     "description": "...",
     "branch_usage_notes": {
       "documents/spec": "...",
@@ -121,7 +134,7 @@ link на main-узлы из rule не создаётся.
 
 При создании или изменении узла с `map_bindings.<map>=<branch>` LLM
 предварительно делает full-read этого usage-узла и передаёт его
-value `read_id` в `tx.read_ids` (см. [read-gates.md](read-gates.md)).
+content `read_id` в `tx.read_ids` (см. [read-gates.md](read-gates.md)).
 
 ## Узел `usage/link`
 
@@ -132,11 +145,11 @@ value `read_id` в `tx.read_ids` (см. [read-gates.md](read-gates.md)).
   "path": "links/depends_on",
   "title": "depends_on",
   "map_bindings": {
-    "content": "usage/link",
+    "category": "usage/link",
     "link_name": "depends_on",
     "schema_name": "main"
   },
-  "value": {
+  "content": {
     "description": "...",
     "when_to_use": "...",
     "vs_similar_links": "..."
@@ -144,7 +157,7 @@ value `read_id` в `tx.read_ids` (см. [read-gates.md](read-gates.md)).
 }
 ```
 
-Перед `link` в `tx` LLM делает full-read этого узла и передаёт value
+Перед `link` в `tx` LLM делает full-read этого узла и передаёт content
 `read_id` в `tx.read_ids`.
 
 ## Узел `usage/example`
@@ -157,11 +170,11 @@ descriptions не включаются — LLM явно читает их чер
   "path": "examples/tx/move-with-expected-count",
   "title": "move-with-expected-count",
   "map_bindings": {
-    "content": "usage/example",
+    "category": "usage/example",
     "subject": "tx",
     "method": "tx"
   },
-  "value": {
+  "content": {
     "request": {
       "title": "...",
       "ops": [{ "move": { "...": "..." } }]

@@ -19,7 +19,7 @@ Read-only метод. Читает узлы из выбранного scope по
         "selector": {
           "path": "rules/api/**"
         },
-        "include": ["value", "links"],
+        "include": ["content", "links"],
         "max_tokens": 4000
       }
     }
@@ -53,7 +53,7 @@ scope.
         "id": "2a",
         "set": {
           "title": "selectors",
-          "value": "..."
+          "content": "..."
         }
       }
     }

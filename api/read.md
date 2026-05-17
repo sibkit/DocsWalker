@@ -11,7 +11,7 @@
         "selector": {
           "id": ["2a", "11"]
         },
-        "include": ["value"],
+        "include": ["content"],
         "max_tokens": 4000
       }
     }
@@ -79,7 +79,7 @@ compact-форме:
   "path": "DocsWalker/api/write-ops",
   "title": "write-ops",
   "map_bindings": {
-    "content": "documents/spec"
+    "category": "documents/spec"
   },
   "tokens": 320,
   "read_id": "31bf"
@@ -89,11 +89,11 @@ compact-форме:
 Поле `scope` сериализуется в ответе только для узлов вне main
 (`scope=usage`, `scope=scheme`); для main опускается.
 
-`tokens` — оценка стоимости полного `value` узла. `read_id` в
+`tokens` — оценка стоимости полного `content` узла. `read_id` в
 compact-форме — **state** read_id.
 
-При `include` с `"value"`, если value целиком влез в `max_tokens`, узел
-возвращается с полем `value` и **value** read_id:
+При `include` с `"content"`, если content целиком влез в `max_tokens`, узел
+возвращается с полем `content` и **content** read_id:
 
 ```json
 {
@@ -101,9 +101,9 @@ compact-форме — **state** read_id.
   "path": "DocsWalker/api/write-ops",
   "title": "write-ops",
   "map_bindings": {
-    "content": "documents/spec"
+    "category": "documents/spec"
   },
-  "value": "...",
+  "content": "...",
   "tokens": 320,
   "read_id": "4c8f"
 }
@@ -163,8 +163,8 @@ compact-форме — **state** read_id.
 
 При `include` с одной или несколькими секциями event-узел возвращается
 с этими секциями раскрытыми. Если все запрошенные секции уложились в
-`max_tokens` — возвращается **value** read_id (по аналогии с data-узлом
-для полного value). Если часть секций обрезана — state read_id.
+`max_tokens` — возвращается **content** read_id (по аналогии с data-узлом
+для полного content). Если часть секций обрезана — state read_id.
 
 ## Truncation
 
@@ -190,10 +190,10 @@ compact-форме — **state** read_id.
 - `omitted_count` — сколько узлов осталось за пределами выдачи.
 - `items` — массив возвращённых узлов.
 
-Truncated узел с запрошенным `value` / секцией, который не помещён,
-получает только state read_id; value read_id выдаётся только для
-полностью прочитанного value (или для полностью раскрытых секций
-event-узла). Чтобы получить value read_id, LLM повторяет `read` с более
+Truncated узел с запрошенным `content` / секцией, который не помещён,
+получает только state read_id; content read_id выдаётся только для
+полностью прочитанного content (или для полностью раскрытых секций
+event-узла). Чтобы получить content read_id, LLM повторяет `read` с более
 узким селектором или с увеличенным `max_tokens`.
 
 ## `read_id`
@@ -211,18 +211,18 @@ Scope-ы `read_id`:
   State `read_id` используется как write precondition: если узел
   изменился после чтения, его актуальный state `read_id` другой и `tx`
   отклоняется.
-- **value** — подтверждает, что содержимое узла прочитано целиком, без
-  truncation: для data-узла — `value`; для event-узла — все секции,
-  заявленные в `include`. Value `read_id` одновременно удовлетворяет
+- **content** — подтверждает, что смысл узла прочитан целиком, без
+  truncation: для data-узла — `content`; для event-узла — все секции,
+  заявленные в `include`. Content `read_id` одновременно удовлетворяет
   state precondition того же узла той же версии.
 
 Compact read возвращает state `read_id`. Full read
-(`include=["value"]` для data-узла / `include=["created","changed","deleted"]`
-для event-узла, без truncation) возвращает value `read_id`. Truncated
+(`include=["content"]` для data-узла / `include=["created","changed","deleted"]`
+для event-узла, без truncation) возвращает content `read_id`. Truncated
 full read возвращает state `read_id`.
 
 При успешном изменении data-узла kernel выпускает для него новый state
-и value `read_id`. Старые перестают соответствовать актуальной версии.
+и content `read_id`. Старые перестают соответствовать актуальной версии.
 Создание или удаление link обновляет state `read_id` его source и
 target узлов. Event-узлы не меняются после записи, их `read_id`-ы не
 устаревают (кроме случая перестройки всей hist-схемы, что эквивалентно
@@ -232,12 +232,12 @@ target узлов. Event-узлы не меняются после записи,
 [read-gates.md](read-gates.md)). Применимость:
 
 - state precondition для изменяемых project-узлов принимает state или
-  value `read_id` той же версии.
-- usage rule / map / link gate требует value `read_id`
+  content `read_id` той же версии.
+- usage rule / map / link gate требует content `read_id`
   соответствующего usage-узла.
-- project value gate (для `tx scope=main`) требует value `read_id`
+- project content gate (для `tx scope=main`) требует content `read_id`
   main-узла, если применимый rule содержит
-  `requires_project_value_read=true`.
+  `requires_project_content_read=true`.
 
 ## Примеры
 
@@ -271,7 +271,7 @@ target узлов. Event-узлы не меняются после записи,
         "selector": {
           "id": "2a"
         },
-        "include": ["value", "links"],
+        "include": ["content", "links"],
         "max_tokens": 4000
       }
     }
@@ -279,7 +279,7 @@ target узлов. Event-узлы не меняются после записи,
 }
 ```
 
-Возвращает узел `"2a"` целиком с value `read_id`. Этот `read_id` LLM
+Возвращает узел `"2a"` целиком с content `read_id`. Этот `read_id` LLM
 передаёт в `tx.read_ids` при `update` / `delete` / `move` этого узла.
 
 ### Чтение usage rule перед tx scope=main
@@ -293,7 +293,7 @@ target узлов. Event-узлы не меняются после записи,
         "selector": {
           "path": "rules/api/write"
         },
-        "include": ["value", "links"],
+        "include": ["content", "links"],
         "max_tokens": 4000
       }
     }
@@ -301,7 +301,7 @@ target узлов. Event-узлы не меняются после записи,
 }
 ```
 
-Возвращает rule-узел с value `read_id`. Этот `read_id` LLM передаёт в
+Возвращает rule-узел с content `read_id`. Этот `read_id` LLM передаёт в
 `tx.read_ids` при затрагивающем main-узлы tx (см.
 [read-gates.md](read-gates.md)).
 

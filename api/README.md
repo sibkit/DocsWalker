@@ -16,7 +16,7 @@ DocsWalker хранит граф знаний в одном каталоге `do
 изменений editable scope, пишется kernel-ом). Meta-schema
 (`docs/.docswalker/meta-schema.json`) описывает два класса узлов:
 data-узел (main / usage / scheme) с полями `id`, `path`, `title`,
-`value`, `map_bindings` и link `(name, from.id, to.id)`; event-узел
+`content`, `map_bindings` и link `(name, from.id, to.id)`; event-узел
 (hist) с полями `id`, `title`, `date`, опциональным `description`,
 опциональным `rollback_of` и тремя секциями
 `created` / `changed` / `deleted`. Id-пространство глобальное на весь
@@ -70,7 +70,7 @@ MCP tool descriptions содержат компактный quickstart. Подр
 - [selectors.md](selectors.md) — predicate-селекторы по полям
   meta-schema и schema scope, `selector.match.regex`, aliases и slots.
 - [read.md](read.md) — метод `read`, `include`, `max_tokens`, truncation,
-  `read_id` (state vs value).
+  `read_id` (state vs content).
 - [tx.md](tx.md) — метод `tx`, семь op-типов
   (`create`/`update`/`move`/`delete`/`link`/`unlink`/`rollback`),
   `expected_count`.
@@ -84,6 +84,6 @@ MCP tool descriptions содержат компактный quickstart. Подр
   селекторы `touches_node`/`touches_link`/`rollback_of`/`tx_scope`,
   replay restoration, rollback.
 - [read-gates.md](read-gates.md) — state preconditions, usage rule / map
-  / link gates, project value gates, `read_required` envelope.
+  / link gates, project content gates, `read_required` envelope.
 - [errors.md](errors.md) — полный реестр кодов ошибок с `details` и
   подсказками.

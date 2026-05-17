@@ -45,7 +45,7 @@
 | op       | cardinality | что делает                                            |
 |----------|-------------|------------------------------------------------------|
 | `create` | single      | создание узла со всеми начальными полями              |
-| `update` | single (по id) | изменение `title`, `value`                          |
+| `update` | single (по id) | изменение `title`, `content`                        |
 | `move`   | bulk (по selector) | изменение `parent_path`, `map_bindings`         |
 | `delete` | bulk (по ids/selector) | удаление узла(ов)                            |
 | `link`   | bulk        | создание связи(ей)                                    |
@@ -72,9 +72,9 @@ Op `select` в `tx` отсутствует. Чтобы сослаться вну
     "as": "new_section",
     "set": {
       "title": "new-section",
-      "value": "...",
+      "content": "...",
       "map_bindings": {
-        "content": "documents/spec"
+        "category": "documents/spec"
       },
       "links": [
         { "name": "depends_on", "to": "2a" }
@@ -90,7 +90,7 @@ Op `select` в `tx` отсутствует. Чтобы сослаться вну
   и резолвится в `id`, выданный kernel-ом этой `create`-op.
 - `set.title` — опциональный; при отсутствии выводится из последнего
   сегмента `path`.
-- `set.value` — опциональный.
+- `set.content` — опциональный.
 - `set.map_bindings` — опциональный объект; полный начальный набор
   привязок узла. Обязательность отдельных map задаёт Схема target scope.
   `null` в значении запрещён (нечего снимать у нового узла) — возвращает
@@ -123,14 +123,14 @@ post-state, а каждый созданный link — в `created.links` с id
     "id": "2a",
     "set": {
       "title": "selectors",
-      "value": "..."
+      "content": "..."
     }
   }
 }
 ```
 
 - `id` — обязательный hex-строка.
-- `set` — обязательный, содержит хотя бы одно из `title`, `value`.
+- `set` — обязательный, содержит хотя бы одно из `title`, `content`.
 
 Изменение `title` пересчитывает `path` самого узла и path всех
 path-потомков. Для затронутых узлов нужны state `read_id`-ы в
@@ -208,7 +208,7 @@ Bulk-удаление узлов.
   "delete": {
     "selector": {
       "map_bindings": {
-        "content": "documents/draft"
+        "category": "documents/draft"
       }
     },
     "expected_count": 4
@@ -244,7 +244,7 @@ source × target × name.
     "to": {
       "selector": {
         "map_bindings": {
-          "content": "documents/spec"
+          "category": "documents/spec"
         }
       }
     },
@@ -373,9 +373,9 @@ hist применяются вместе. При падении записи eve
         "path": "DocsWalker/api/selectors",
         "as": "selectors",
         "set": {
-          "value": "...",
+          "content": "...",
           "map_bindings": {
-            "content": "documents/spec",
+            "category": "documents/spec",
             "audience": "llm-agent"
           }
         }

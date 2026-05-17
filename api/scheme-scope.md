@@ -19,14 +19,14 @@ Map node:
 
 ```json
 {
-  "path": "main/content",
-  "title": "content",
+  "path": "main/category",
+  "title": "category",
   "map_bindings": {
-    "kind": "map",
+    "category": "map",
     "owner_scope": "main",
-    "map": "content"
+    "map": "category"
   },
-  "value": {
+  "content": {
     "description": "Классифицирует назначение main-узла по типу содержимого.",
     "branches": {
       "documents": {
@@ -43,11 +43,11 @@ Map node:
 }
 ```
 
-- `map_bindings.kind` ∈ {`map`, `link`}.
+- `map_bindings.category` ∈ {`map`, `link`}.
 - `map_bindings.owner_scope` ∈ {`main`, `usage`}.
 - `map_bindings.map` или `map_bindings.link_name` — имя описываемого
   объекта.
-- `value` содержит структурированное описание (branches, required,
+- `content` содержит структурированное описание (branches, required,
   source / target constraints, cardinality и т.д.).
 
 Link node:
@@ -57,20 +57,20 @@ Link node:
   "path": "main/depends_on",
   "title": "depends_on",
   "map_bindings": {
-    "kind": "link",
+    "category": "link",
     "owner_scope": "main",
     "link_name": "depends_on"
   },
-  "value": {
+  "content": {
     "description": "From-узел зависит от to-узла.",
     "from": {
       "map_bindings": {
-        "content": "documents/**"
+        "category": "documents/**"
       }
     },
     "to": {
       "map_bindings": {
-        "content": "documents/**"
+        "category": "documents/**"
       }
     },
     "cardinality": "many_to_many",
@@ -81,6 +81,18 @@ Link node:
 
 `required_for` — массив `[]`, `["from"]`, `["to"]` или
 `["from", "to"]`.
+
+## Формат `content` в scheme
+
+Поле `content` у data-узла — всегда строка на уровне API (см.
+[model.md](model.md)). У scheme-узлов в `content` кладётся
+escaped-JSON со структурой описания (branches, constraints,
+cardinality, ...); kernel парсит строку при breaking-change-check, при
+вычислении link constraints и при валидации новых данных.
+
+Примеры выше показывают `content` развёрнутым JSON-объектом для
+читаемости — на уровне API он сериализуется как строка с escaped-JSON
+внутри.
 
 ## Schema scope-а
 
@@ -108,7 +120,7 @@ map-узлов и link-узлов.
         "scope": "main",
         "id": "2a",
         "reason": "map_branch_unknown",
-        "map": "content",
+        "map": "category",
         "violating_value": "documents/legacy"
       }
     ]
@@ -161,11 +173,11 @@ map-узлов и link-узлов.
       "select": {
         "selector": {
           "map_bindings": {
-            "kind": "map",
+            "category": "map",
             "owner_scope": "main"
           }
         },
-        "include": ["value"],
+        "include": ["content"],
         "max_tokens": 8000
       }
     }
@@ -185,9 +197,9 @@ map-узлов и link-узлов.
     {
       "select": {
         "selector": {
-          "path": "main/content"
+          "path": "main/category"
         },
-        "include": ["value"]
+        "include": ["content"]
       }
     }
   ]
@@ -199,7 +211,7 @@ map-узлов и link-узлов.
 Meta-schema — kernel-owned JSON-файл `docs/.docswalker/meta-schema.json`.
 Описывает два класса узлов (см. [model.md](model.md)):
 
-- **Data-узел** (main / usage / scheme): `id`, `path`, `title`, `value`,
+- **Data-узел** (main / usage / scheme): `id`, `path`, `title`, `content`,
   `map_bindings`.
 - **Event-узел** (hist `hist/transaction`): `id`, `title`, `date`,
   `description?`, `rollback_of?`, секции `created` / `changed` /
@@ -208,7 +220,7 @@ Meta-schema — kernel-owned JSON-файл `docs/.docswalker/meta-schema.json`.
 А также:
 
 - структуру link (`name`, `from.id`, `to.id`) для data-scope-ов;
-- внутреннюю schema scheme scope (kind / owner_scope / map / link_name);
+- внутреннюю schema scheme scope (category / owner_scope / map / link_name);
 - hist-specific селекторные предикаты (`touches_node`, `touches_link`,
   `tx_scope`, `rollback_of`).
 
