@@ -94,6 +94,40 @@ public sealed class SqliteStore
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Регистрирует граф в БД: добавляет строки в <c>graph</c> и
+    /// <c>sequence</c>, если их ещё нет. Идемпотентно. <c>sequence.next_id</c>
+    /// инициализируется значением <paramref name="initialNextId"/> (по
+    /// умолчанию 1), но не сбрасывается у существующего графа.
+    /// </summary>
+    public static void EnsureGraphRegistered(
+        SqliteConnection connection, string graphName, long initialNextId = 1)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentException.ThrowIfNullOrEmpty(graphName);
+        if (initialNextId < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(initialNextId));
+        }
+        using var tx = connection.BeginTransaction();
+        using (var insertGraph = connection.CreateCommand())
+        {
+            insertGraph.Transaction = tx;
+            insertGraph.CommandText = "INSERT OR IGNORE INTO graph(name) VALUES(@n)";
+            insertGraph.Parameters.AddWithValue("@n", graphName);
+            insertGraph.ExecuteNonQuery();
+        }
+        using (var insertSeq = connection.CreateCommand())
+        {
+            insertSeq.Transaction = tx;
+            insertSeq.CommandText = "INSERT OR IGNORE INTO sequence(graph_name, next_id) VALUES(@n, @i)";
+            insertSeq.Parameters.AddWithValue("@n", graphName);
+            insertSeq.Parameters.AddWithValue("@i", initialNextId);
+            insertSeq.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
     private static void ApplyPragmas(SqliteConnection connection)
     {
         using var cmd = connection.CreateCommand();

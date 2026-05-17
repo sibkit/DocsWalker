@@ -2,14 +2,12 @@
 
 Мета-памятка ассистента.
 
-> **⚠️ Статус (2026-05-18): V1 архивирован.** Кодовая база V1 переехала в
-> `.archive/v1/` (sources, tests, docs/, slnx, scripts, .mcp.json). В корне
-> репо начат V2 с нуля: скелет проектов создан
-> (`src/DocsWalker.{Core,Cli,Kernel,Mcp}`, `tests/DocsWalker.Tests`,
-> `DocsWalker.slnx`), бизнес-логики пока нет. Инструкции по «Работе с
-> `docs/`» и «Запуску DocsWalker» ниже относятся к V1 и **сейчас не
-> работают**; оставлены как референс до момента, когда аналогичные
-> инструкции для V2 будут готовы.
+> **Статус (2026-05-18): V2 запускается.** Core (Read/Tx executors,
+> hist replay, at time-travel, scheme validation), Kernel (HTTP+MCP
+> JSON-RPC), Mcp (stdio↔HTTP bridge), Cli (init / exec / repl / health
+> / migrate-v1) реализованы и покрыты тестами (192 теста). V1 архив
+> остался под `.archive/v1/`; миграция V1 → V2 — через
+> `dw migrate-v1`. Раздел «Запуск DocsWalker» ниже описывает V2-runtime.
 
 ## Единственный источник истины — `api/` и `database-model/`
 
@@ -92,27 +90,93 @@ SQLite-storage V2.
 
 **Не-C# файлы** (`.yml`, `.csproj`, `.md`, `.json`, `.txt`): `Read`/`Write`/`Edit` свободно.
 
-## Работа с `docs/` — только через DocsWalker
+## Работа с данными графа
 
-> **⚠️ V1.** Раздел относится к V1. `docs/` архивирован в
-> `.archive/v1/docs/`; V1 kernel не запущен, MCP-tools
-> `mcp__docswalker__*` недоступны. Для миграционных задач (просмотр
-> `.archive/v1/docs/**/*.yml` как референс при имплементации V2) обычные
-> `Read`/`Grep`/`Glob` допустимы.
->
-> Когда V2 заработает и появится свой dogfood-канал (через MCP-tools V2
-> над SQLite-graph), этот раздел перепишется под новые правила.
+V2 хранит граф в SQLite-файле; LLM ходит туда через два инструмента
+`read` и `tx` (см. [`api/`](api/)). Прямая правка SQLite или его дампа
+запрещена так же, как в V1 запрещалась правка YAML — целостность
+держит kernel.
+
+Каналы:
+
+- **MCP-клиент → `DocsWalker.Mcp.exe` → kernel.** Production-путь для
+  Claude Code, Codex и других MCP-агентов. Wrapper читает
+  `.dw/client.json` (host/port kernel-а + имя графа), форвардит
+  JSON-RPC через `POST /{graph}` kernel-а.
+- **`dw exec` / `dw repl`.** Diagnostic-инструмент, открывает SQLite
+  напрямую без kernel-а — для smoke-тестов, разовых правок, repro в
+  shell-скриптах.
+
+V1 YAML-граф остался в `.archive/v1/docs/` как историческая референс-копия.
+Импортируется в V2 одноразово через `dw migrate-v1` (см. ниже).
 
 ## Запуск DocsWalker
 
-> **⚠️ V1.** Инструкции ниже описывали публикацию и запуск V1
-> kernel/Cli/Mcp (`dotnet publish src/DocsWalker.*` → `Start-Process
-> DocsWalker.Kernel.exe`). V1 заархивирован, его binaries не публикуются,
-> MCP не подключён.
->
-> Полный V1-runbook сохранён в `git log -- CLAUDE.md` (последний коммит до
-> архивации) и в `.archive/v1/`. Раздел перепишется под V2 в момент, когда
-> V2 Kernel/Mcp/Cli достигают запускаемого состояния.
+### Сборка и публикация
+
+```powershell
+dotnet build DocsWalker.slnx
+dotnet test  DocsWalker.slnx --no-restore
+dotnet publish src/DocsWalker.Kernel -c Release -r win-x64
+dotnet publish src/DocsWalker.Mcp    -c Release -r win-x64
+# CLI можно гонять через `dotnet run` — публикация необязательна.
+```
+
+### Создание и заполнение БД
+
+```powershell
+# Пустая БД (создаётся при первом обращении, граф регистрируется).
+dotnet run --project src/DocsWalker.Cli -- init .dw/docswalker.sqlite docswalker
+
+# Импорт V1 YAML-графа (один раз; падает, если main scope уже не пустой).
+dotnet run --project src/DocsWalker.Cli -- migrate-v1 `
+    .archive/v1/docs .dw/docswalker.sqlite docswalker
+```
+
+### Запуск kernel (HTTP+MCP transport)
+
+Конфигурация — `kernel-config.json` (bind/port/db_path/graphs[]).
+Старт в фоне через `scripts/start-kernel.sh` (Start-Process в
+скрытом окне, stderr → `kernel.log`, stdout → `kernel.stdout.log`).
+Остановка — `scripts/stop-kernel.sh` (taskkill) или
+`POST /<graph>` с `{"jsonrpc":"2.0","id":1,"method":"shutdown"}`.
+
+Проверка здоровья:
+
+```powershell
+curl.exe http://127.0.0.1:18080/health
+# или
+dotnet run --project src/DocsWalker.Cli -- health
+```
+
+### MCP wrapper (для LLM-агентов)
+
+`scripts/docswalker-mcp.ps1` запускает `DocsWalker.Mcp.exe` из
+publish/. MCP-клиент конфигурируется как:
+
+```
+"docswalker": {
+  "command": "powershell.exe",
+  "args": ["-NoProfile", "-ExecutionPolicy", "Bypass",
+           "-File", "scripts\\docswalker-mcp.ps1"]
+}
+```
+
+Wrapper читает `.dw/client.json` (host/port + graph) поиском вверх
+от cwd.
+
+### Smoke
+
+```powershell
+# tools/list через прямой HTTP
+curl.exe -X POST http://127.0.0.1:18080/docswalker `
+  -H "Content-Type: application/json" `
+  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'
+
+# tools/call read через MCP wrapper
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{"ops":[{"select":{"selector":{"path":"DocsWalker"}}}]}}}' `
+  | dotnet run --project src/DocsWalker.Mcp -- --quiet=true
+```
 
 ## Обратная связь о DocsWalker
 
