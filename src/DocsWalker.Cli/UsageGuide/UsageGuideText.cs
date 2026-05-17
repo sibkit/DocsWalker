@@ -14,13 +14,13 @@ internal static class UsageGuideText
 
         Основной LLM-канал — MCP: клиент вызывает tools/list и tools/call, wrapper читает .dw/client.json (kernel host/port + graph-name) поиском вверх от cwd и пересылает вызов в /<graph>. Auto-spawn отсутствует: если kernel не отвечает, клиент получает kernel_unreachable.
 
-        tools/list и прямой tools/call ограничены компактной LLM-facing surface: hit, query, tx, get-overview, get-usage-guide, describe-type, get-schema. Остальные legacy read/write commands не являются MCP/kernel surface и должны возвращать unknown tool.
+        tools/list и прямой tools/call ограничены компактной LLM-facing surface: query, tx, rollback, scheme, get-overview, get-usage-guide, describe-type, get-schema. Остальные legacy read/write commands не являются MCP/kernel surface и должны возвращать unknown tool.
 
         Контракт kernel/MCP:
         - JSON-RPC request: {"jsonrpc":"2.0","id":<id>,"method":"tools/call","params":{"name":"<tool>","arguments":{...}}}.
         - Успех: JSON-RPC result с MCP content; внутри text лежит JSON-результат конкретного tool.
-        - Ошибка JSON-RPC: error {code,message}. Ошибка DocsWalker tool: JSON с машинным code, message, path?, hint?, describe_type?.
-        - Для LLM-facing batch-записи используй tx с intent и mode=apply_if_safe: kernel сначала запускает preview через hit, затем применяет tx и возвращает единый envelope с ok/method/base_revision/results.
+        - Ошибка JSON-RPC: error {code,message}. Ошибка LLM JSON API tool: JSON с машинным code и details.
+        - Для LLM-facing batch-записи используй tx с intent и expected_count для массовых update/delete.
 
         Связи объявлены в Схеме у типа узла-источника: имя, target_types, cardinality, required. Часть связей объединена в named-tree (tree-scope): path для физического размещения в хранилище и доменные классификаторы. Tree-связи всегда cardinality=one + required=true.
 
@@ -31,16 +31,16 @@ internal static class UsageGuideText
         Порядок работы перед записью:
         1. get-overview или query — прочитать актуальное состояние затронутого участка.
         2. describe-type — уточнить контракт типа, если он незнаком.
-        3. hit — опционально проверить selectors/write-ops без записи, если нужна отдельная preview-картина.
-        4. tx(intent, ops, mode=apply_if_safe) — атомарно применить ожидаемые изменения; kernel сам сверит intent и результат предварительной validation.
+        3. tx(intent, ops) — атомарно применить ожидаемые изменения после validation и получить tx_id.
+        4. rollback(tx_id) — откатить транзакцию по tx_id, если после tx найдена ошибка.
 
-        Удаление в LLM-facing workflow — tx delete с id/ids/path/select и expected_count для массовых операций. Авто-каскада нет: LLM явно проверяет размер через hit/query и затем применяет tx. Ошибки path_orphans_left и dangling_refs перечисляют недостающее.
+        Удаление в LLM-facing workflow — tx delete с ids/path/select и expected_count для массовых операций. Авто-каскада нет: LLM явно проверяет размер через query и затем применяет tx. Ошибки path_orphans_left и dangling_refs перечисляют недостающее.
 
         Переподшивка узла и смысловых связей в LLM-facing workflow — tx move/link/unlink. Legacy move-node/redirect-refs не публикуются через MCP/kernel и остаются только внутренней diagnostic/CLI implementation detail до удаления.
 
         Запреты:
         - Не править YAML / sequence.txt / folders.yml в обход kernel API: kernel — sole-writer, внешний edit ломает консистентность RAM-графа.
-        - LLM не меняет Схему через MCP surface. Схемные миграции остаются admin/diagnostic задачей вне LLM-facing tools и должны проходить server-side проверку meta-schema и текущего графа.
+        - LLM читает Схему через scheme, describe-type или get-schema, но не меняет Схему через MCP surface. Схемные миграции остаются admin/diagnostic задачей вне LLM-facing write-tools и должны проходить server-side проверку meta-schema и текущего графа.
         - Не использовать legacy CLI как рабочую поверхность LLM. Он остаётся внутренним/diagnostic слоем до выпила, но usage-guide и эксплуатационный путь — MCP/kernel-only.
 
         Per-graph idle eviction = graph_idle_timeout (default 10m, configurable в kernel-config.json): если граф не запрашивался дольше — выгружается из RAM, при следующем обращении re-load с диска.

@@ -31,20 +31,17 @@ public class LlmJsonApiQueryExecutorTests
 
         var data = result.Single().Data;
         Assert.Equal(1, data["count"]!.GetValue<int>());
-        Assert.Equal(1, data["returned"]!.GetValue<int>());
         Assert.False(data["truncated"]!.GetValue<bool>());
 
         var node = data["nodes"]!.AsArray()[0]!.AsObject();
         Assert.Equal(30, node["id"]!.GetValue<int>());
         Assert.Equal("TestDoc/Selectors/A_rule", node["path"]!.GetValue<string>());
-        Assert.Equal("rule", node["coordinates"]!["type"]!.GetValue<string>());
-        Assert.Equal("A_rule", node["title"]!.GetValue<string>());
+        Assert.Equal("rule", node["type"]!.GetValue<string>());
         Assert.True(node["tokens"]!.GetValue<int>() > 0);
+        Assert.False(node.ContainsKey("coordinates"));
+        Assert.False(node.ContainsKey("title"));
         Assert.False(node.ContainsKey("text"));
         Assert.False(node.ContainsKey("relations"));
-        Assert.False(node.ContainsKey("ancestors"));
-        Assert.False(node.ContainsKey("children"));
-        Assert.False(node.ContainsKey("type_contract"));
     }
 
     [Fact]
@@ -65,10 +62,7 @@ public class LlmJsonApiQueryExecutorTests
                   "include": [
                     "text",
                     "relations",
-                    "coordinates",
-                    "ancestors",
-                    "children",
-                    "type_contract"
+                    "coordinates"
                   ]
                 }
               ]
@@ -86,20 +80,6 @@ public class LlmJsonApiQueryExecutorTests
         Assert.False(outRelations.ContainsKey("path"));
         Assert.False(outRelations.ContainsKey("subject"));
         Assert.Equal(40, outRelations["examples"]!.AsArray()[0]!["id"]!.GetValue<int>());
-
-        var children = node["children"]!.AsArray();
-        Assert.Single(children);
-        Assert.Equal("TestDoc/Selectors/A_rule/A_example", children[0]!["path"]!.GetValue<string>());
-
-        var ancestors = node["ancestors"]!.AsArray();
-        Assert.Equal(new[] { 1, 2 }, ancestors.Select(item => item!["id"]!.GetValue<int>()));
-
-        var typeContract = node["type_contract"]!.AsObject();
-        Assert.Equal("rule", typeContract["name"]!.GetValue<string>());
-        Assert.True(typeContract["text_required"]!.GetValue<bool>());
-        Assert.Contains(
-            typeContract["out_refs"]!.AsArray(),
-            item => item!["name"]!.GetValue<string>() == "examples");
     }
 
     [Fact]
@@ -127,16 +107,17 @@ public class LlmJsonApiQueryExecutorTests
         var data = executor.Execute(request).Single().Data;
 
         Assert.Equal(2, data["count"]!.GetValue<int>());
-        Assert.Equal(0, data["returned"]!.GetValue<int>());
         Assert.True(data["truncated"]!.GetValue<bool>());
-        Assert.False(data["within_budget"]!.GetValue<bool>());
         Assert.Equal(30, data["stopped_at"]!.GetValue<int>());
         Assert.Equal(2, data["omitted_count"]!.GetValue<int>());
         Assert.Empty(data["nodes"]!.AsArray());
+        Assert.False(data.ContainsKey("returned"));
+        Assert.False(data.ContainsKey("within_budget"));
+        Assert.False(data.ContainsKey("tokens_budget"));
     }
 
     [Fact]
-    public void Execute_GrepLiteral_ReturnsCompactMatches()
+    public void Execute_SelectMatchRegex_FiltersByTitleAndText()
     {
         var executor = BuildExecutor();
         var request = Parse(
@@ -145,13 +126,13 @@ public class LlmJsonApiQueryExecutorTests
               "method": "query",
               "ops": [
                 {
-                  "op": "grep",
-                  "pattern": "RULE",
-                  "scope": {
-                    "path": "TestDoc/Selectors/*"
-                  },
-                  "in": "both",
-                  "context_chars": 4
+                  "op": "select",
+                  "select": {
+                    "path": "TestDoc/Selectors/*",
+                    "match": {
+                      "regex": "RULE"
+                    }
+                  }
                 }
               ]
             }
@@ -159,21 +140,19 @@ public class LlmJsonApiQueryExecutorTests
 
         var data = executor.Execute(request).Single().Data;
 
-        Assert.Equal(4, data["count"]!.GetValue<int>());
-        Assert.Equal(4, data["returned"]!.GetValue<int>());
+        Assert.Equal(2, data["count"]!.GetValue<int>());
         Assert.False(data["truncated"]!.GetValue<bool>());
 
-        var first = data["matches"]!.AsArray()[0]!.AsObject();
+        var first = data["nodes"]!.AsArray()[0]!.AsObject();
         Assert.Equal(30, first["id"]!.GetValue<int>());
         Assert.Equal("TestDoc/Selectors/A_rule", first["path"]!.GetValue<string>());
-        Assert.Equal("title", first["field"]!.GetValue<string>());
-        Assert.Equal("A_rule", first["snippet"]!.GetValue<string>());
-        Assert.Equal("rule", first["coordinates"]!["type"]!.GetValue<string>());
+        Assert.Equal("rule", first["type"]!.GetValue<string>());
         Assert.True(first["tokens"]!.GetValue<int>() > 0);
+        Assert.False(first.ContainsKey("title"));
     }
 
     [Fact]
-    public void Execute_GrepCaseSensitive_UsesOrdinalComparison()
+    public void Execute_SelectMatchCaseSensitive_ReturnsValidationFailureWhenNoNodesMatch()
     {
         var executor = BuildExecutor();
         var request = Parse(
@@ -182,129 +161,14 @@ public class LlmJsonApiQueryExecutorTests
               "method": "query",
               "ops": [
                 {
-                  "op": "grep",
-                  "pattern": "RULE",
-                  "scope": {
-                    "path": "TestDoc/Selectors/*"
-                  },
-                  "case_sensitive": true
-                }
-              ]
-            }
-            """);
-
-        var data = executor.Execute(request).Single().Data;
-
-        Assert.Equal(0, data["count"]!.GetValue<int>());
-        Assert.Empty(data["matches"]!.AsArray());
-    }
-
-    [Fact]
-    public void Execute_GrepRegex_FiltersByScopeAndField()
-    {
-        var executor = BuildExecutor();
-        var request = Parse(
-            """
-            {
-              "method": "query",
-              "ops": [
-                {
-                  "op": "grep",
-                  "pattern": "second\\s+rule",
-                  "scope": {
-                    "path": "TestDoc/Selectors/**",
-                    "coordinates": { "type": "rule" }
-                  },
-                  "in": "text",
-                  "regex": true
-                }
-              ]
-            }
-            """);
-
-        var match = executor.Execute(request).Single().Data["matches"]!.AsArray().Single()!.AsObject();
-
-        Assert.Equal(31, match["id"]!.GetValue<int>());
-        Assert.Equal("text", match["field"]!.GetValue<string>());
-        Assert.Contains("second rule", match["snippet"]!.GetValue<string>(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Execute_GrepLimit_TruncatesMatches()
-    {
-        var executor = BuildExecutor();
-        var request = Parse(
-            """
-            {
-              "method": "query",
-              "ops": [
-                {
-                  "op": "grep",
-                  "pattern": "text",
-                  "scope": {
-                    "path": "TestDoc/Selectors/**"
-                  },
-                  "in": "text",
-                  "limit": 2
-                }
-              ]
-            }
-            """);
-
-        var data = executor.Execute(request).Single().Data;
-
-        Assert.Equal(4, data["count"]!.GetValue<int>());
-        Assert.Equal(2, data["returned"]!.GetValue<int>());
-        Assert.True(data["truncated"]!.GetValue<bool>());
-        Assert.False(data["within_budget"]!.GetValue<bool>());
-        Assert.Equal(31, data["stopped_at"]!.GetValue<int>());
-        Assert.Equal(2, data["omitted_count"]!.GetValue<int>());
-    }
-
-    [Fact]
-    public void Execute_GrepTinyMaxTokens_TruncatesMatches()
-    {
-        var executor = BuildExecutor();
-        var request = Parse(
-            """
-            {
-              "method": "query",
-              "ops": [
-                {
-                  "op": "grep",
-                  "pattern": "rule",
-                  "scope": {
-                    "path": "TestDoc/Selectors/*"
-                  },
-                  "max_tokens": 1
-                }
-              ]
-            }
-            """);
-
-        var data = executor.Execute(request).Single().Data;
-
-        Assert.Equal(4, data["count"]!.GetValue<int>());
-        Assert.Equal(0, data["returned"]!.GetValue<int>());
-        Assert.True(data["truncated"]!.GetValue<bool>());
-        Assert.Equal(30, data["stopped_at"]!.GetValue<int>());
-        Assert.Equal(4, data["omitted_count"]!.GetValue<int>());
-        Assert.Empty(data["matches"]!.AsArray());
-    }
-
-    [Fact]
-    public void Execute_GrepInvalidRegex_ReturnsValidationFailure()
-    {
-        var executor = BuildExecutor();
-        var request = Parse(
-            """
-            {
-              "method": "query",
-              "ops": [
-                {
-                  "op": "grep",
-                  "pattern": "[",
-                  "regex": true
+                  "op": "select",
+                  "select": {
+                    "path": "TestDoc/Selectors/*",
+                    "match": {
+                      "regex": "RULE",
+                      "case_sensitive": true
+                    }
+                  }
                 }
               ]
             }
@@ -313,8 +177,67 @@ public class LlmJsonApiQueryExecutorTests
         var validation = executor.Execute(request).Single().Data["validation"]!.AsObject();
 
         Assert.False(validation["ok"]!.GetValue<bool>());
-        Assert.Equal("invalid_grep_pattern", validation["code"]!.GetValue<string>());
-        Assert.Equal("$.ops[0].pattern", validation["path"]!.GetValue<string>());
+        Assert.Equal("not_found", validation["code"]!.GetValue<string>());
+        Assert.Equal("$.ops[0].select", validation["path"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Execute_SelectMatchRegex_FiltersByScopeAndField()
+    {
+        var executor = BuildExecutor();
+        var request = Parse(
+            """
+            {
+              "method": "query",
+              "ops": [
+                {
+                  "op": "select",
+                  "select": {
+                    "path": "TestDoc/Selectors/**",
+                    "coordinates": { "type": "rule" },
+                    "match": {
+                      "regex": "second\\s+rule",
+                      "fields": [ "text" ]
+                    }
+                  },
+                  "include": [ "text" ]
+                }
+              ]
+            }
+            """);
+
+        var node = executor.Execute(request).Single().Data["nodes"]!.AsArray().Single()!.AsObject();
+
+        Assert.Equal(31, node["id"]!.GetValue<int>());
+        Assert.Contains("second rule", node["text"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Execute_SelectMatchInvalidRegex_ReturnsValidationFailure()
+    {
+        var executor = BuildExecutor();
+        var request = Parse(
+            """
+            {
+              "method": "query",
+              "ops": [
+                {
+                  "op": "select",
+                  "select": {
+                    "match": {
+                      "regex": "["
+                    }
+                  }
+                }
+              ]
+            }
+            """);
+
+        var validation = executor.Execute(request).Single().Data["validation"]!.AsObject();
+
+        Assert.False(validation["ok"]!.GetValue<bool>());
+        Assert.Equal("invalid_match_regex", validation["code"]!.GetValue<string>());
+        Assert.Equal("$.ops[0].select.match.regex", validation["path"]!.GetValue<string>());
     }
 
     [Fact]

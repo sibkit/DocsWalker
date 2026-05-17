@@ -66,7 +66,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#130) Legacy executable deprecated":
-        - text: 'Legacy CLI executable зафризен: новые команды и поведение в него не добавляются. Эксплуатационный и LLM-facing путь — MCP tools поверх kernel JSON-RPC; exe остаётся только временным совместимым слоем до выпила.'
+        - text: 'Legacy executable зафризен: новые команды и поведение в него не добавляются. Эксплуатационный и LLM-facing путь — MCP tools поверх kernel JSON-RPC; executable остаётся только внутренней diagnostic-поверхностью до удаления.'
         - examples: [191]
         - subject: [425]
         - subsystem: [433]
@@ -514,7 +514,7 @@ sections:
         - audience: [436]
         - csharp_structure: [437]
       - "(#70) check_integrity":
-        - text: 'Полный прогон валидатора на текущем состоянии docs/ без записи. Без параметров. Возвращает структуру {ok: bool, errors: [{code, message, path?, node_id?, hint?}]}. Сама команда не падает на ошибках графа — exit code 0; нарушения целостности — данные ответа, не CLI-ошибка. Используется LLM-агентом как sanity check перед цепочкой правок и для аудита после ручной правки YAML или миграции.'
+        - text: 'Проверка текущего docs/ на соответствие meta-schema и Схеме. Возвращает {ok: bool, errors: [{code, message, path?, node_id?, hint?}]}. Сама команда не превращает нарушения графа в transport-error: нарушения целостности остаются данными ответа. Используется как sanity check перед цепочкой правок и для аудита после ручной правки YAML или миграции.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -645,13 +645,13 @@ sections:
   - "(#35) Legacy-клиенты":
     - statements:
       - "(#157) MCP-tools повторяют API":
-        - text: 'LLM-facing tools/list и direct tools/call намеренно не повторяют legacy command set. MCP/kernel surface состоит из компактного набора: hit, query, tx, get-overview, get-usage-guide, check-integrity, describe-type, get-schema. Старые read/write commands не являются callable MCP tools; они могут оставаться только внутренним diagnostic/CLI implementation detail до удаления.'
+        - text: 'LLM-facing tools/list и direct tools/call намеренно не повторяют legacy command set. MCP/kernel surface состоит из компактного набора: hit, query, tx, scheme, get-overview, get-usage-guide, describe-type, get-schema. Старые read/write commands не являются callable MCP tools; они могут оставаться только внутренней diagnostic implementation detail до удаления.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
       - "(#407) Legacy executable deprecated":
-        - text: Legacy CLI executable зафризен. Новые команды, флаги и поведение для него больше не добавляются; LLM-facing и эксплуатационный путь — только MCP tools поверх kernel JSON-RPC. Оставшийся exe нужен лишь как временный совместимый слой до выпила.
+        - text: Legacy executable зафризен. Новые команды, флаги и поведение для него больше не добавляются. LLM-facing и эксплуатационный путь — только MCP tools поверх kernel JSON-RPC; legacy executable остаётся внутренней диагностической поверхностью до удаления.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -729,7 +729,7 @@ sections:
         - csharp_structure: [437]
     - notes:
       - "(#408) Roadmap выпила legacy executable":
-        - text: 'Стадии: (1) зафиксировать deprecation-маркер; (2) убрать CLI-примеры из LLM-facing usage-guide и MCP tool metadata; (3) перенести оставшиеся внутренние зависимости kernel/MCP с legacy command contracts на отдельный core-contract слой; (4) удалить exe DocsWalker.Cli. Постоянный интерфейс LLM-агента — MCP/kernel.'
+        - text: 'Стадии: (1) зафиксировать deprecation-маркер; (2) убрать примеры legacy executable из LLM-facing usage-guide и MCP tool metadata; (3) перенести оставшиеся внутренние зависимости kernel/MCP с legacy command contracts на отдельный core-contract слой; (4) удалить legacy executable. Постоянный интерфейс LLM-агента — MCP/kernel.'
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -993,8 +993,8 @@ sections:
         - subsystem: [433]
         - audience: [436]
         - csharp_structure: [437]
-      - "(#229) JSON только в CLI":
-        - text: Команды CLI отдают JSON в stdout; данные docs/ хранятся в YAML.
+      - "(#229) JSON для транспортов":
+        - text: Команды и MCP/kernel-ответы используют JSON-совместимые структуры; данные docs/ хранятся в YAML.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]
@@ -1611,8 +1611,6 @@ sections:
       - "(#426) core":
         - subsystem_parent: [0]
       - "(#427) kernel":
-        - subsystem_parent: [0]
-      - "(#428) cli":
         - subsystem_parent: [0]
       - "(#429) mcp":
         - subsystem_parent: [0]

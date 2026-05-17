@@ -70,10 +70,10 @@ MCP tool descriptions содержат компактный quickstart. Подр
 - [selectors.md](selectors.md) — predicate-селекторы по полям
   meta-schema и schema scope, `selector.match.regex`, aliases и slots.
 - [read.md](read.md) — метод `read`, `include`, `max_tokens`, truncation,
-  `read_id` (state vs content).
+  поле `version` для optimistic concurrency.
 - [tx.md](tx.md) — метод `tx`, семь op-типов
   (`create`/`update`/`move`/`delete`/`link`/`unlink`/`rollback`),
-  `expected_count`.
+  `expected_count`, `expected_version`.
 - [scheme-scope.md](scheme-scope.md) — scheme scope, breaking-change-check,
   add-then-remove migration workflow.
 - [usage-scope.md](usage-scope.md) — usage scope, node contracts (rule,
@@ -83,7 +83,5 @@ MCP tool descriptions содержат компактный quickstart. Подр
   `hist/transaction` с секциями `created`/`changed`/`deleted`,
   селекторы `touches_node`/`touches_link`/`rollback_of`/`tx_scope`,
   replay restoration, rollback.
-- [read-gates.md](read-gates.md) — state preconditions, usage rule / map
-  / link gates, project content gates, `read_required` envelope.
 - [errors.md](errors.md) — полный реестр кодов ошибок с `details` и
   подсказками.

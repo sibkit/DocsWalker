@@ -167,8 +167,6 @@ public sealed class LlmJsonApiTxExecutor
         {
             ["count"] = nodes.Count,
             ["ids"] = BuildIds(nodes),
-            ["validation"] = BuildValidation(true),
-            ["applied"] = false,
         };
         return new PendingResult(new LlmOperationResult(index, op.Op, op.Alias, data), Array.Empty<int>(), null);
     }
@@ -284,8 +282,6 @@ public sealed class LlmJsonApiTxExecutor
 
         return new CompiledWrite(ops, new JsonObject
         {
-            ["validation"] = BuildValidation(true),
-            ["applied"] = false,
             ["resolved"] = new JsonObject
             {
                 ["count"] = nodes.Count,
@@ -306,8 +302,6 @@ public sealed class LlmJsonApiTxExecutor
 
         return new CompiledWrite(new WriteOp[] { new DeleteNodesOp(ids) }, new JsonObject
         {
-            ["validation"] = BuildValidation(true),
-            ["applied"] = false,
             ["resolved"] = new JsonObject
             {
                 ["count"] = ids.Length,
@@ -381,15 +375,12 @@ public sealed class LlmJsonApiTxExecutor
 
         return new CompiledWrite(ops, new JsonObject
         {
-            ["validation"] = BuildValidation(true),
-            ["applied"] = false,
             ["resolved"] = new JsonObject
             {
                 ["id"] = source.Id,
                 ["from_path"] = source.Path,
                 ["to_path"] = destination.Path,
                 ["parent_id"] = parent.Id,
-                ["title"] = title,
                 ["moved"] = parentChanged,
                 ["renamed"] = titleChanged,
             },
@@ -803,12 +794,9 @@ public sealed class LlmJsonApiTxExecutor
     {
         var data = new JsonObject
         {
-            ["validation"] = BuildValidation(true),
-            ["applied"] = false,
             ["resolved"] = new JsonObject
             {
                 ["path"] = create.Path,
-                ["title"] = create.Title,
                 ["parent_id"] = create.ParentId,
                 ["coordinates"] = BuildCoordinates(create.Coordinates),
                 ["refs"] = BuildRefs(create.Refs),
@@ -824,7 +812,6 @@ public sealed class LlmJsonApiTxExecutor
             if (result.WriteResultIndexes.Count == 0)
                 continue;
 
-            var lowLevelResults = new JsonArray();
             foreach (var writeResultIndex in result.WriteResultIndexes)
             {
                 if (writeResultIndex >= writeResult.OpResults.Count)
@@ -832,23 +819,13 @@ public sealed class LlmJsonApiTxExecutor
                         "internal_inconsistency",
                         $"WriteApi вернул {writeResult.OpResults.Count} результатов для {writeResultIndex + 1} write-операций.");
 
-                var lowLevel = writeResult.OpResults[writeResultIndex];
-                lowLevelResults.Add((JsonNode)new JsonObject
-                {
-                    ["op"] = lowLevel.Type,
-                    ["data"] = lowLevel.Data.DeepClone(),
-                });
             }
-
-            result.Result.Data["applied"] = writeResult.Applied;
-            result.Result.Data["write_results"] = lowLevelResults;
 
             if (result.Create is null)
                 continue;
 
             var createWriteResult = writeResult.OpResults[result.WriteResultIndexes[0]];
             var nodeId = createWriteResult.Data["id"]?.GetValue<int>();
-            result.Result.Data["write_result"] = createWriteResult.Data.DeepClone();
             if (nodeId is int id)
                 result.Result.Data["node"] = BuildCreatedNode(id, result.Create);
         }
@@ -861,9 +838,6 @@ public sealed class LlmJsonApiTxExecutor
     {
         if (writeIndexes.Count == 0)
             return;
-
-        foreach (var result in pending)
-            result.Result.Data["applied"] = false;
 
         var target = pending[writeIndexes[0]].Result.Data;
         target["validation"] = validation;
@@ -890,7 +864,6 @@ public sealed class LlmJsonApiTxExecutor
         new(index, op.Op, op.Alias, new JsonObject
         {
             ["validation"] = BuildValidation(false, ex.Code, ex.Message, ex.Path, ex.Details),
-            ["applied"] = false,
         });
 
     private static JsonObject BuildValidation(
@@ -903,8 +876,6 @@ public sealed class LlmJsonApiTxExecutor
         var result = new JsonObject { ["ok"] = ok };
         if (code is not null)
             result["code"] = code;
-        if (message is not null)
-            result["message"] = message;
         if (path is not null)
             result["path"] = path;
         if (details is not null)
@@ -920,7 +891,6 @@ public sealed class LlmJsonApiTxExecutor
             errors.Add((JsonNode)new JsonObject
             {
                 ["code"] = error.Code,
-                ["message"] = error.Message,
                 ["node_id"] = error.NodeId,
                 ["path"] = error.Path,
                 ["ref"] = error.RefName,
@@ -935,8 +905,7 @@ public sealed class LlmJsonApiTxExecutor
         {
             ["id"] = id,
             ["path"] = create.Path,
-            ["coordinates"] = BuildCoordinates(create.Coordinates),
-            ["title"] = create.Title,
+            ["type"] = create.Coordinates.Type!.Name,
         };
 
     private static JsonObject BuildCoordinates(LlmResolvedCoordinates coordinates)
@@ -1007,8 +976,6 @@ public sealed class LlmJsonApiTxExecutor
     private static JsonObject BuildLinkData(LinkEndpoints endpoints) =>
         new()
         {
-            ["validation"] = BuildValidation(true),
-            ["applied"] = false,
             ["resolved"] = new JsonObject
             {
                 ["from_id"] = endpoints.From.Id,

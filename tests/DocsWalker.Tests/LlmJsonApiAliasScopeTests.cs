@@ -31,6 +31,7 @@ public class LlmJsonApiAliasScopeTests
             new LlmSelector(
                 "TestDoc/Selectors/*",
                 Coordinates(("type", "rule")),
+                null,
                 null),
             Array.Empty<string>(),
             null,
@@ -81,7 +82,7 @@ public class LlmJsonApiAliasScopeTests
     {
         var (pathResolver, coordinateResolver, scope) = BuildScope();
         var select = new LlmSelectOperation(
-            new LlmSelector("TestDoc/Selectors/*", Coordinates(("type", "rule")), null),
+            new LlmSelector("TestDoc/Selectors/*", Coordinates(("type", "rule")), null, null),
             Array.Empty<string>(),
             null,
             "rules");
@@ -121,6 +122,7 @@ public class LlmJsonApiAliasScopeTests
                 Select = new LlmSelector(
                     "TestDoc/Selectors/*",
                     Coordinates(("type", "statement")),
+                    null,
                     null),
             },
             LlmRequestDefaults.Empty,

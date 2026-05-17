@@ -31,9 +31,10 @@ internal sealed class RpcDispatcher
     private const string McpProtocolVersion = "2024-11-05";
     private static readonly HashSet<string> LlmJsonApiToolNames = new(StringComparer.Ordinal)
     {
-        "hit",
         "query",
         "tx",
+        "rollback",
+        "scheme",
     };
 
     private static readonly UTF8Encoding StrictUtf8NoBom = new(
@@ -236,6 +237,7 @@ internal sealed class RpcDispatcher
             return await HandleLlmJsonApiToolAsync(
                 request.Id,
                 entry,
+                graphName,
                 callParams.Name,
                 callParams.Arguments,
                 ct);
@@ -285,6 +287,7 @@ internal sealed class RpcDispatcher
     private async Task<JsonRpcResponse> HandleLlmJsonApiToolAsync(
         JsonElement? requestId,
         GraphEntry entry,
+        string graphName,
         string toolName,
         JsonElement? arguments,
         CancellationToken ct)
@@ -304,65 +307,54 @@ internal sealed class RpcDispatcher
             try
             {
                 var args = NormalizeArguments(arguments);
-                var executeMethod = toolName;
-                var txMode = string.Empty;
+
+                if (toolName == "rollback")
+                {
+                    envelope = BuildRollbackEnvelope(entry.StoragePath, graphName, args);
+                    return MakeToolTextResponse(
+                        requestId,
+                        envelope.ToJsonString(RelaxedCtx.Options),
+                        IsLlmJsonApiError(envelope));
+                }
 
                 var ctx = WriteContext.FromStoragePath(entry.StoragePath);
                 var schema = SchemaLoader.LoadSchema(ctx.SchemaPath);
                 var loaded = DocumentLoader.Load(ctx.DocsRoot, schema);
-                var baseRevision = new SequenceCounter(ctx.SequencePath).Read();
                 var writeApi = new WriteApi(ctx);
                 var executor = new LlmJsonApiExecutor(
                     loaded.Graph,
                     schema,
-                    writeApi,
-                    () => baseRevision);
+                    writeApi);
 
                 if (toolName == "tx")
                 {
-                    txMode = ReadTxMode(args);
-                    if (!IsKnownTxMode(txMode))
+                    var guardError = BuildTxGuardError(args);
+                    if (guardError is not null)
                     {
-                        envelope = BuildInvalidTxModeError(txMode);
+                        envelope = guardError;
                         return MakeToolTextResponse(
                             requestId,
                             envelope.ToJsonString(RelaxedCtx.Options),
                             isError: true);
                     }
+                }
 
-                    if (txMode == "preview")
+                using var pendingTx = toolName == "tx" && ContainsWriteOperation(args)
+                    ? TxJournal.Capture(entry.StoragePath, graphName)
+                    : null;
+                var request = BuildLlmJsonApiRequest(toolName, args, expectedMethod: toolName);
+                envelope = executor.Execute(request);
+                if (pendingTx is not null)
+                {
+                    if (IsLlmJsonApiError(envelope))
                     {
-                        executeMethod = "hit";
+                        pendingTx.Discard();
                     }
                     else
                     {
-                        var hitRequest = BuildLlmJsonApiRequest("hit", args, expectedMethod: "tx");
-                        var hitEnvelope = executor.Execute(hitRequest);
-                        if (IsLlmJsonApiError(hitEnvelope))
-                        {
-                            envelope = RewriteTxPreviewEnvelope(hitEnvelope, txMode);
-                            return MakeToolTextResponse(
-                                requestId,
-                                envelope.ToJsonString(RelaxedCtx.Options),
-                                isError: true);
-                        }
-
-                        var guardError = BuildTxGuardError(args, txMode, baseRevision);
-                        if (guardError is not null)
-                        {
-                            envelope = guardError;
-                            return MakeToolTextResponse(
-                                requestId,
-                                envelope.ToJsonString(RelaxedCtx.Options),
-                                isError: true);
-                        }
+                        AttachTxId(envelope, pendingTx.Commit());
                     }
                 }
-
-                var request = BuildLlmJsonApiRequest(executeMethod, args, expectedMethod: toolName);
-                envelope = executor.Execute(request);
-                if (toolName == "tx" && txMode == "preview")
-                    envelope = RewriteTxPreviewEnvelope(envelope, txMode);
             }
             catch (ArgumentException ex)
             {
@@ -371,33 +363,25 @@ internal sealed class RpcDispatcher
             catch (SchemaLoadException ex)
             {
                 envelope = BuildLlmJsonApiInfrastructureError(
-                    toolName,
                     ex.Code,
-                    ex.Message,
                     BuildFileDetails(ex.FilePath));
             }
             catch (GraphLoadException ex)
             {
                 envelope = BuildLlmJsonApiInfrastructureError(
-                    toolName,
                     ex.Code,
-                    ex.Message,
                     BuildGraphLoadDetails(ex));
             }
             catch (SequenceCounterException ex)
             {
                 envelope = BuildLlmJsonApiInfrastructureError(
-                    toolName,
                     ex.Code,
-                    ex.Message,
                     BuildFileDetails(ex.FilePath));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 envelope = BuildLlmJsonApiInfrastructureError(
-                    toolName,
                     "internal_error",
-                    ex.Message,
                     null);
             }
         }
@@ -446,37 +430,70 @@ internal sealed class RpcDispatcher
         return request;
     }
 
-    private static string ReadTxMode(JsonElement args)
+    private static JsonObject BuildRollbackEnvelope(string docsRoot, string graphName, JsonElement args)
     {
-        if (!TryGetString(args, "mode", out var mode) || string.IsNullOrWhiteSpace(mode))
-            return "apply_if_safe";
-        return mode.Trim();
-    }
-
-    private static bool IsKnownTxMode(string mode) =>
-        mode is "preview" or "apply_if_safe" or "apply";
-
-    private static JsonObject BuildInvalidTxModeError(string mode) =>
-        BuildLlmJsonApiInfrastructureError(
-            "tx",
-            "invalid_mode",
-            "tx.mode must be one of: preview, apply_if_safe, apply.",
-            new JsonObject
+        ValidateToolMethod(args, "rollback");
+        if (!TryGetString(args, "tx_id", out var txId) || string.IsNullOrWhiteSpace(txId))
+        {
+            return new JsonObject
             {
-                ["mode"] = mode,
-                ["allowed"] = JsonStringArray("preview", "apply_if_safe", "apply"),
-            });
+                ["code"] = "missing_required_field",
+                ["details"] = new JsonObject
+                {
+                    ["path"] = "$.tx_id",
+                },
+            };
+        }
 
-    private static JsonObject RewriteTxPreviewEnvelope(JsonObject envelope, string mode)
-    {
-        var result = envelope.DeepClone().AsObject();
-        result["method"] = "tx";
-        result["mode"] = mode;
-        result["validated_by"] = "hit";
-        return result;
+        return TxJournal.Rollback(docsRoot, graphName, txId.Trim());
     }
 
-    private static JsonObject? BuildTxGuardError(JsonElement args, string mode, long baseRevision)
+    private static void ValidateToolMethod(JsonElement args, string toolName)
+    {
+        if (!args.TryGetProperty("method", out var method))
+            return;
+
+        if (method.ValueKind != JsonValueKind.String ||
+            !string.Equals(method.GetString(), toolName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("arguments.method must match tool name");
+        }
+    }
+
+    private static bool ContainsWriteOperation(JsonElement args)
+    {
+        if (!args.TryGetProperty("ops", out var ops) || ops.ValueKind != JsonValueKind.Array)
+            return false;
+
+        foreach (var opNode in ops.EnumerateArray())
+        {
+            if (opNode.ValueKind != JsonValueKind.Object ||
+                !opNode.TryGetProperty("op", out var op) ||
+                op.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            if (!string.Equals(op.GetString(), "select", StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void AttachTxId(JsonObject envelope, string txId)
+    {
+        if (!envelope.TryGetPropertyValue("result", out var result))
+            return;
+
+        envelope["result"] = new JsonObject
+        {
+            ["tx_id"] = txId,
+            ["changes"] = result?.DeepClone(),
+        };
+    }
+
+    private static JsonObject? BuildTxGuardError(JsonElement args)
     {
         var blockers = new JsonArray();
 
@@ -488,30 +505,20 @@ internal sealed class RpcDispatcher
 
         return new JsonObject
         {
-            ["ok"] = false,
-            ["method"] = "tx",
             ["code"] = "tx_guard_failed",
-            ["message"] = "tx guard blocked write.",
             ["details"] = new JsonObject
             {
-                ["mode"] = mode,
-                ["base_revision"] = baseRevision,
                 ["blockers"] = blockers,
             },
         };
     }
 
     private static JsonObject BuildLlmJsonApiInfrastructureError(
-        string method,
         string code,
-        string message,
         JsonObject? details) =>
         new()
         {
-            ["ok"] = false,
-            ["method"] = method,
             ["code"] = code,
-            ["message"] = message,
             ["details"] = details ?? new JsonObject(),
         };
 
@@ -533,14 +540,7 @@ internal sealed class RpcDispatcher
 
     private static bool IsLlmJsonApiError(JsonObject envelope)
     {
-        if (!envelope.TryGetPropertyValue("ok", out var node) ||
-            node is not JsonValue value ||
-            !value.TryGetValue<bool>(out var ok))
-        {
-            return true;
-        }
-
-        return !ok;
+        return !envelope.TryGetPropertyValue("result", out _);
     }
 
     private static JsonRpcResponse MakeToolTextResponse(JsonElement? id, string text, bool isError)
@@ -569,14 +569,6 @@ internal sealed class RpcDispatcher
             return false;
         value = prop.GetString() ?? string.Empty;
         return true;
-    }
-
-    private static JsonArray JsonStringArray(params string[] values)
-    {
-        var array = new JsonArray();
-        foreach (var value in values)
-            array.Add((JsonNode?)JsonValue.Create(value));
-        return array;
     }
 
     private JsonRpcResponse HandleShutdown(JsonRpcRequest request)

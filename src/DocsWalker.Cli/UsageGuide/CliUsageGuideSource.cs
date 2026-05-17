@@ -119,20 +119,25 @@ internal sealed class CliUsageGuideSource : IUsageGuideSource
         new[]
         {
             LlmTool(
-                "hit",
-                "read",
-                "LLM-facing JSON API: безопасная проверка selector-ов и будущих write-ops без записи. Принимает defaults и ops[].",
-                "tools/call name=hit arguments={\"ops\":[{\"op\":\"select\",\"select\":{\"path\":\"DocsWalker-LLM JSON API\"}}]}"),
-            LlmTool(
                 "query",
                 "read",
-                "LLM-facing JSON API: чтение данных по select- и grep-операциям.",
-                "tools/call name=query arguments={\"ops\":[{\"op\":\"grep\",\"pattern\":\"validation_failed\",\"limit\":20}]}"),
+                "LLM-facing JSON API: чтение данных по select-операциям.",
+                "tools/call name=query arguments={\"ops\":[{\"op\":\"select\",\"select\":{\"path\":\"DocsWalker-LLM JSON API/**\",\"match\":{\"regex\":\"validation_failed\"}}}]}"),
             LlmTool(
                 "tx",
                 "write",
-                "LLM-facing JSON API: атомарное внесение изменений. По умолчанию mode=apply_if_safe: kernel сначала запускает preview через hit, затем применяет tx.",
-                "tools/call name=tx arguments={\"intent\":\"обновить прочитанный узел\",\"mode\":\"apply_if_safe\",\"ops\":[{\"op\":\"update\",\"id\":42,\"set\":{\"text\":\"...\"}}]}"),
+                "LLM-facing JSON API: атомарное внесение изменений с intent, expected_count и server-side validation.",
+                "tools/call name=tx arguments={\"intent\":\"обновить прочитанный узел\",\"ops\":[{\"op\":\"update\",\"ids\":[42],\"expected_count\":1,\"set\":{\"text\":\"...\"}}]}"),
+            LlmTool(
+                "rollback",
+                "write",
+                "LLM-facing JSON API: откат транзакции по tx_id.",
+                "tools/call name=rollback arguments={\"tx_id\":\"tx_...\"}"),
+            LlmTool(
+                "scheme",
+                "read",
+                "LLM-facing JSON API: чтение контракта Схемы через JSON ops get, describe_type и describe_tree.",
+                "tools/call name=scheme arguments={\"ops\":[{\"op\":\"describe_type\",\"name\":\"statement\"}]}"),
         };
 
     private static UsageGuideCommand LlmTool(
@@ -141,19 +146,36 @@ internal sealed class CliUsageGuideSource : IUsageGuideSource
         string description,
         string example)
     {
-        var parameters = new List<UsageGuideParameter>
+        var parameters = new List<UsageGuideParameter>();
+        if (name == "rollback")
         {
-            new(
+            parameters.Add(new UsageGuideParameter(
+                "tx_id",
+                "string",
+                Required: true,
+                "Непрозрачный tx_id, который вернул успешный tx."));
+            return new UsageGuideCommand(
+                Name: name,
+                Kind: kind,
+                Description: description,
+                Parameters: parameters,
+                Examples: new[] { example });
+        }
+
+        if (name != "scheme")
+        {
+            parameters.Add(new UsageGuideParameter(
                 "defaults",
                 "json",
                 Required: false,
-                "Опциональные defaults LLM JSON API: path_parent и coordinates."),
-            new(
-                "ops",
-                "json_array",
-                Required: true,
-                "Массив операций LLM JSON API. Метод задается именем tool."),
-        };
+                "Опциональные defaults LLM JSON API: path_parent и coordinates."));
+        }
+
+        parameters.Add(new UsageGuideParameter(
+            "ops",
+            "json_array",
+            Required: true,
+            "Массив операций LLM JSON API. Метод задается именем tool."));
 
         if (name == "tx")
         {
@@ -161,12 +183,7 @@ internal sealed class CliUsageGuideSource : IUsageGuideSource
                 "intent",
                 "string",
                 Required: false,
-                "Зачем нужна запись; обязательно для mode=apply_if_safe/apply."));
-            parameters.Add(new UsageGuideParameter(
-                "mode",
-                "string",
-                Required: false,
-                "preview | apply_if_safe | apply. По умолчанию apply_if_safe."));
+                "Зачем нужна запись; обязательно для tx."));
         }
 
         return new UsageGuideCommand(

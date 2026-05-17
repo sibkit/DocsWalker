@@ -240,8 +240,9 @@ kernel-режимы»):
 }
 ```
 
-Возвращает объект с полем `meta` (полное содержимое meta-schema) и
-`read_id`. `scope` запроса для этой формы не важен — meta-schema живёт
-вне scope-ов.
+Возвращает объект с полем `meta` (полное содержимое meta-schema).
+`scope` запроса для этой формы не важен — meta-schema живёт вне
+scope-ов. Поле `version` для meta-schema не возвращается: meta-schema
+kernel-owned, версионируется с релизом DocsWalker.
 
 Hist-schema — раздел meta-schema; отдельной точки чтения нет.

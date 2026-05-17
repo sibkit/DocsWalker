@@ -32,8 +32,8 @@ sections:
         - csharp_structure: [437]
   - "(#66) Нативная компиляция":
     - rules:
-      - "(#89) AOT для CLI":
-        - text: CLI-хост (DocsWalker.Cli) публикуется через Native AOT (PublishAot=true в csproj).
+      - "(#89) AOT для executable":
+        - text: Нативные executable публикуются через Native AOT с PublishAot=true в csproj.
         - examples: [261]
         - subject: [425]
         - subsystem: [433]
@@ -55,7 +55,7 @@ sections:
         - csharp_structure: [437]
     - examples:
       - "(#261) PublishAot":
-        - text: В DocsWalker.Cli.csproj — <PublishAot>true</PublishAot>.
+        - text: В проектах, публикуемых как native executable, включается PublishAot=true.
         - subject: [425]
         - subsystem: [433]
         - audience: [436]

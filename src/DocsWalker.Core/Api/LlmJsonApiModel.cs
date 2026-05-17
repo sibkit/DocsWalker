@@ -20,21 +20,23 @@ public sealed class LlmJsonApiParseException : Exception
 
 public enum LlmJsonApiMethod
 {
-    Hit,
     Query,
     Tx,
+    Scheme,
 }
 
 public enum LlmOperationKind
 {
     Select,
-    Grep,
     Create,
     Update,
     Delete,
     Move,
     Link,
     Unlink,
+    SchemeGet,
+    SchemeDescribeType,
+    SchemeDescribeTree,
 }
 
 public enum LlmRelationPatchMode
@@ -70,7 +72,13 @@ public sealed record LlmCoordinates(IReadOnlyDictionary<string, string> Values)
 public sealed record LlmSelector(
     string? Path,
     LlmCoordinates Coordinates,
+    LlmSelectorMatch? Match,
     JsonNode? Expect);
+
+public sealed record LlmSelectorMatch(
+    string Regex,
+    IReadOnlyList<string> Fields,
+    bool CaseSensitive);
 
 public sealed record LlmTarget(
     int? Id,
@@ -115,17 +123,6 @@ public sealed record LlmSelectOperation(
     string? SelectAlias = null)
     : LlmOperation(LlmOperationKind.Select, "select", SelectAlias);
 
-public sealed record LlmGrepOperation(
-    string Pattern,
-    LlmSelector? Scope,
-    string In,
-    bool Regex,
-    bool CaseSensitive,
-    int? Limit,
-    int? ContextChars,
-    int? MaxTokens)
-    : LlmOperation(LlmOperationKind.Grep, "grep", null);
-
 public sealed record LlmCreateOperation(
     string? Path,
     LlmNodeSet Set,
@@ -160,21 +157,27 @@ public sealed record LlmUnlinkOperation(
     LlmTarget To)
     : LlmOperation(LlmOperationKind.Unlink, "unlink", null);
 
-public abstract record LlmResponseEnvelope(bool Ok, LlmJsonApiMethod Method);
+public sealed record LlmSchemeGetOperation(
+    IReadOnlyList<string> Include,
+    IReadOnlyList<string> TypeNames,
+    IReadOnlyList<string> TreeNames)
+    : LlmOperation(LlmOperationKind.SchemeGet, "get", null);
 
-public sealed record LlmSuccessEnvelope(
-    LlmJsonApiMethod Method,
-    long BaseRevision,
-    string Summary,
-    IReadOnlyList<LlmOperationResult> Results)
-    : LlmResponseEnvelope(true, Method);
+public sealed record LlmSchemeDescribeTypeOperation(string Name)
+    : LlmOperation(LlmOperationKind.SchemeDescribeType, "describe_type", null);
+
+public sealed record LlmSchemeDescribeTreeOperation(string Name)
+    : LlmOperation(LlmOperationKind.SchemeDescribeTree, "describe_tree", null);
+
+public abstract record LlmResponseEnvelope;
+
+public sealed record LlmSuccessEnvelope(JsonNode Result)
+    : LlmResponseEnvelope;
 
 public sealed record LlmErrorEnvelope(
-    LlmJsonApiMethod Method,
     string Code,
-    string Message,
     JsonObject? Details)
-    : LlmResponseEnvelope(false, Method);
+    : LlmResponseEnvelope;
 
 public sealed record LlmOperationResult(
     int Index,
@@ -244,13 +247,15 @@ public static class LlmJsonApiParser
         return op switch
         {
             "select" => ParseSelectOperation(obj, path),
-            "grep" => ParseGrepOperation(obj, path),
             "create" => ParseCreateOperation(obj, path),
             "update" => ParseUpdateOperation(obj, path),
             "delete" => ParseDeleteOperation(obj, path),
             "move" => ParseMoveOperation(obj, path),
             "link" => ParseLinkOperation(obj, path),
             "unlink" => ParseUnlinkOperation(obj, path),
+            "get" => ParseSchemeGetOperation(obj, path),
+            "describe_type" => ParseSchemeDescribeTypeOperation(obj, path),
+            "describe_tree" => ParseSchemeDescribeTreeOperation(obj, path),
             _ => throw Error("unknown_op", $"{path}.op", $"Неизвестное имя операции '{op}'."),
         };
     }
@@ -262,21 +267,6 @@ public static class LlmJsonApiParser
         var maxTokens = ReadOptionalInt(obj, "max_tokens", $"{path}.max_tokens");
         var alias = ReadOptionalString(obj, "as", $"{path}.as");
         return new LlmSelectOperation(select, include, maxTokens, alias);
-    }
-
-    private static LlmGrepOperation ParseGrepOperation(JsonObject obj, string path)
-    {
-        var pattern = ReadRequiredString(obj, "pattern", $"{path}.pattern");
-        var scope = ReadOptionalObject(obj, "scope", $"{path}.scope") is { } scopeObj
-            ? ParseSelector(scopeObj, $"{path}.scope")
-            : null;
-        var searchIn = ReadOptionalString(obj, "in", $"{path}.in") ?? "both";
-        var regex = ReadOptionalBool(obj, "regex", $"{path}.regex") ?? false;
-        var caseSensitive = ReadOptionalBool(obj, "case_sensitive", $"{path}.case_sensitive") ?? false;
-        var limit = ReadOptionalInt(obj, "limit", $"{path}.limit");
-        var contextChars = ReadOptionalInt(obj, "context_chars", $"{path}.context_chars");
-        var maxTokens = ReadOptionalInt(obj, "max_tokens", $"{path}.max_tokens");
-        return new LlmGrepOperation(pattern, scope, searchIn, regex, caseSensitive, limit, contextChars, maxTokens);
     }
 
     private static LlmCreateOperation ParseCreateOperation(JsonObject obj, string path)
@@ -325,6 +315,26 @@ public static class LlmJsonApiParser
         return new LlmUnlinkOperation(from, name, to);
     }
 
+    private static LlmSchemeGetOperation ParseSchemeGetOperation(JsonObject obj, string path)
+    {
+        var include = ReadOptionalStringArray(obj, "include", $"{path}.include");
+        var typeNames = ReadOptionalStringArray(obj, "type_names", $"{path}.type_names");
+        var treeNames = ReadOptionalStringArray(obj, "tree_names", $"{path}.tree_names");
+        return new LlmSchemeGetOperation(include, typeNames, treeNames);
+    }
+
+    private static LlmSchemeDescribeTypeOperation ParseSchemeDescribeTypeOperation(JsonObject obj, string path)
+    {
+        var name = ReadRequiredString(obj, "name", $"{path}.name");
+        return new LlmSchemeDescribeTypeOperation(name);
+    }
+
+    private static LlmSchemeDescribeTreeOperation ParseSchemeDescribeTreeOperation(JsonObject obj, string path)
+    {
+        var name = ReadRequiredString(obj, "name", $"{path}.name");
+        return new LlmSchemeDescribeTreeOperation(name);
+    }
+
     private static string ReadRelationName(JsonObject obj, string path)
     {
         var name = ReadOptionalString(obj, "name", $"{path}.name");
@@ -335,13 +345,27 @@ public static class LlmJsonApiParser
 
     private static LlmSelector ParseSelector(JsonObject obj, string path)
     {
-        EnsureOnlyFields(obj, path, "path", "coordinates", "expect");
+        EnsureOnlyFields(obj, path, "path", "coordinates", "match", "expect");
         var selectorPath = ReadOptionalString(obj, "path", $"{path}.path");
         var coordinates = ParseCoordinates(
             ReadOptionalObject(obj, "coordinates", $"{path}.coordinates"),
             $"{path}.coordinates");
+        var match = ReadOptionalObject(obj, "match", $"{path}.match") is { } matchObj
+            ? ParseSelectorMatch(matchObj, $"{path}.match")
+            : null;
         var expect = ReadOptionalNode(obj, "expect");
-        return new LlmSelector(selectorPath, coordinates, expect);
+        return new LlmSelector(selectorPath, coordinates, match, expect);
+    }
+
+    private static LlmSelectorMatch ParseSelectorMatch(JsonObject obj, string path)
+    {
+        EnsureOnlyFields(obj, path, "regex", "fields", "case_sensitive");
+        var regex = ReadRequiredString(obj, "regex", $"{path}.regex");
+        var fields = ReadOptionalStringArray(obj, "fields", $"{path}.fields");
+        if (fields.Count == 0)
+            fields = new[] { "title", "text" };
+        var caseSensitive = ReadOptionalBool(obj, "case_sensitive", $"{path}.case_sensitive") ?? false;
+        return new LlmSelectorMatch(regex, fields, caseSensitive);
     }
 
     private static LlmNodeSet ParseSet(JsonObject obj, string path)
@@ -500,9 +524,9 @@ public static class LlmJsonApiParser
     private static LlmJsonApiMethod ParseMethod(string value, string path) =>
         value switch
         {
-            "hit" => LlmJsonApiMethod.Hit,
             "query" => LlmJsonApiMethod.Query,
             "tx" => LlmJsonApiMethod.Tx,
+            "scheme" => LlmJsonApiMethod.Scheme,
             _ => throw Error("unknown_method", path, $"Неизвестный method '{value}'."),
         };
 

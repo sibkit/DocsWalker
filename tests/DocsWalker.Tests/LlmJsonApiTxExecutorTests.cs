@@ -52,11 +52,14 @@ public class LlmJsonApiTxExecutorTests
         Assert.Equal(new[] { 40 }, op.Refs["examples"]);
 
         var data = result.Single().Data;
-        Assert.True(data["validation"]!["ok"]!.GetValue<bool>());
-        Assert.True(data["applied"]!.GetValue<bool>());
+        Assert.False(data.ContainsKey("validation"));
+        Assert.False(data.ContainsKey("applied"));
+        Assert.False(data.ContainsKey("write_results"));
+        Assert.False(data.ContainsKey("write_result"));
         Assert.Equal(50, data["node"]!["id"]!.GetValue<int>());
         Assert.Equal("TestDoc/Selectors/New_rule", data["node"]!["path"]!.GetValue<string>());
-        Assert.Equal("New_rule", data["resolved"]!["title"]!.GetValue<string>());
+        Assert.Equal("rule", data["node"]!["type"]!.GetValue<string>());
+        Assert.False(data["resolved"]!.AsObject().ContainsKey("title"));
     }
 
     [Fact]
@@ -274,8 +277,8 @@ public class LlmJsonApiTxExecutorTests
 
         var result = executor.Execute(request);
 
-        Assert.True(result.Single().Data["validation"]!["ok"]!.GetValue<bool>());
-        Assert.True(result.Single().Data["applied"]!.GetValue<bool>());
+        Assert.False(result.Single().Data.ContainsKey("validation"));
+        Assert.False(result.Single().Data.ContainsKey("applied"));
         Assert.Collection(
             capture.Ops,
             op =>
@@ -423,7 +426,7 @@ public class LlmJsonApiTxExecutorTests
 
         var result = executor.Execute(request);
 
-        Assert.True(result.Single().Data["validation"]!["ok"]!.GetValue<bool>());
+        Assert.False(result.Single().Data.ContainsKey("validation"));
         var op = Assert.IsType<DeleteNodesOp>(Assert.Single(capture.Ops));
         Assert.Equal(new[] { 41 }, op.Ids);
     }
@@ -449,7 +452,7 @@ public class LlmJsonApiTxExecutorTests
 
         var result = executor.Execute(request);
 
-        Assert.True(result.Single().Data["validation"]!["ok"]!.GetValue<bool>());
+        Assert.False(result.Single().Data.ContainsKey("validation"));
         Assert.True(result.Single().Data["resolved"]!["moved"]!.GetValue<bool>());
         Assert.False(result.Single().Data["resolved"]!["renamed"]!.GetValue<bool>());
         var op = Assert.IsType<MoveNodeOp>(Assert.Single(capture.Ops));
@@ -479,7 +482,7 @@ public class LlmJsonApiTxExecutorTests
 
         var result = executor.Execute(request);
 
-        Assert.True(result.Single().Data["validation"]!["ok"]!.GetValue<bool>());
+        Assert.False(result.Single().Data.ContainsKey("validation"));
         Assert.False(result.Single().Data["resolved"]!["moved"]!.GetValue<bool>());
         Assert.True(result.Single().Data["resolved"]!["renamed"]!.GetValue<bool>());
         var op = Assert.IsType<UpdateNodeOp>(Assert.Single(capture.Ops));
@@ -509,7 +512,7 @@ public class LlmJsonApiTxExecutorTests
 
         var result = executor.Execute(request);
 
-        Assert.True(result.Single().Data["validation"]!["ok"]!.GetValue<bool>());
+        Assert.False(result.Single().Data.ContainsKey("validation"));
         Assert.Collection(
             capture.Ops,
             op =>
@@ -653,8 +656,8 @@ public class LlmJsonApiTxExecutorTests
 
         var result = executor.Execute(request);
 
-        Assert.True(result.Single().Data["validation"]!["ok"]!.GetValue<bool>());
-        Assert.True(result.Single().Data["applied"]!.GetValue<bool>());
+        Assert.False(result.Single().Data.ContainsKey("validation"));
+        Assert.False(result.Single().Data.ContainsKey("applied"));
         var op = Assert.IsType<CreateRefOp>(Assert.Single(capture.Ops));
         Assert.Equal(30, op.FromId);
         Assert.Equal("examples", op.Name);
@@ -685,7 +688,7 @@ public class LlmJsonApiTxExecutorTests
 
         var result = executor.Execute(request);
 
-        Assert.True(result.Single().Data["validation"]!["ok"]!.GetValue<bool>());
+        Assert.False(result.Single().Data.ContainsKey("validation"));
         var op = Assert.IsType<DeleteRefOp>(Assert.Single(capture.Ops));
         Assert.Equal(30, op.FromId);
         Assert.Equal("examples", op.Name);

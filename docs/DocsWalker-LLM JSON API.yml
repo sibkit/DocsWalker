@@ -1,5 +1,5 @@
 id: 438
-text: 'Спецификация LLM-facing JSON API DocsWalker v1: методы hit, query и tx, формат запросов, ответы, правила выбора узлов и ограничения записи.'
+text: 'Спецификация LLM-facing JSON API DocsWalker v1: методы hit, query, tx и scheme, формат запросов, ответы, правила выбора узлов, чтение Схемы и ограничения записи.'
 sections:
   - "(#439) Назначение":
     - statements:
@@ -75,7 +75,7 @@ sections:
         - audience: [435]
         - csharp_structure: [437]
       - "(#490) Allowed ops":
-        - text: Допустимые ops зависят от method. hit принимает select и write-ops для проверки без записи. query принимает select и grep. tx принимает select для объявления alias и write-ops create, update, delete, move, link, unlink. Операции с суффиксом _many в v1 не вводятся.
+        - text: Допустимые ops зависят от method. hit принимает select и write-ops для проверки без записи. query принимает select и grep. tx принимает select для объявления alias и write-ops create, update, delete, move, link, unlink. scheme принимает read-only операции get, describe_type и describe_tree для чтения контракта Схемы. Операции с суффиксом _many в v1 не вводятся.
         - subject: [419]
         - subsystem: [427]
         - audience: [435]
@@ -98,9 +98,15 @@ sections:
         - subsystem: [427]
         - audience: [435]
         - csharp_structure: [437]
+      - "(#527) Метод scheme":
+        - text: scheme является read-only методом LLM JSON API для чтения и точечного описания Схемы DocsWalker через JSON ops[]. Он не читает узлы графа и не меняет docs-граф; результат нужен LLM перед созданием или обновлением узлов, когда требуется уточнить типы, tree-классификаторы и допустимые relations.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
     - definitions:
       - "(#457) request envelope":
-        - text: Каждый wire JSON-запрос v1 имеет форму {"method":"hit|query|tx","defaults":{...},"ops":[...]}. Поле method обязательно. Поле ops обязательно и всегда является массивом, даже если операция одна. Поле defaults опционально. При вызове одноименных MCP tools hit, query и tx method выводится из имени tool; если поле method передано явно, оно должно совпадать с именем tool.
+        - text: Каждый wire JSON-запрос v1 имеет форму {"method":"hit|query|tx|scheme","defaults":{...},"ops":[...]}. Поле method обязательно. Поле ops обязательно и всегда является массивом, даже если операция одна. Поле defaults опционально и применяется только к node-методам hit, query и tx; method=scheme работает со Схемой и defaults не использует. При вызове одноименных MCP tools hit, query, tx и scheme method выводится из имени tool; если поле method передано явно, оно должно совпадать с именем tool.
         - subject: [419]
         - subsystem: [427]
         - audience: [435]
@@ -113,6 +119,12 @@ sections:
         - csharp_structure: [437]
       - "(#499) grep operation":
         - text: grep operation - read-only операция method=query с op=grep. Обязательное поле pattern задает строку или regex. Поле scope ограничивает поиск selector object с path и coordinates. Поле in принимает title, text или both. Ответ возвращает matches со snippet-ами, а не полный text узлов. При limit/max_tokens ответ может вернуть truncated=true, stopped_at и omitted_count.
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#528) scheme operation":
+        - text: 'scheme operation - операция method=scheme. op=get возвращает описание Схемы; include опционально принимает description, trees, types и по умолчанию возвращает все три секции. type_names и tree_names опционально ограничивают выдачу. op=describe_type требует поле name и возвращает name, description, text_required и out_refs с name, tree, cardinality, required, target_types, description. op=describe_tree требует поле name и возвращает name, description и referenced_by: список type/ref, которые используют это tree.'
         - subject: [419]
         - subsystem: [427]
         - audience: [435]
@@ -138,6 +150,12 @@ sections:
         - csharp_structure: [437]
       - "(#500) query grep":
         - text: '{"method":"query","ops":[{"op":"grep","pattern":"validation_failed","scope":{"path":"DocsWalker-LLM JSON API/**"},"in":"both","regex":false,"case_sensitive":false,"limit":20,"context_chars":80,"max_tokens":2000}]}'
+        - subject: [419]
+        - subsystem: [427]
+        - audience: [435]
+        - csharp_structure: [437]
+      - "(#529) scheme get":
+        - text: '{"method":"scheme","ops":[{"op":"get","include":["trees","types"],"type_names":["statement","definition"],"tree_names":["subject","subsystem"]},{"op":"describe_type","name":"statement"},{"op":"describe_tree","name":"subject"}]}'
         - subject: [419]
         - subsystem: [427]
         - audience: [435]
@@ -264,7 +282,7 @@ sections:
   - "(#444) Ответы":
     - statements:
       - "(#479) Единый envelope":
-        - text: 'Все методы hit, query и tx возвращают единый envelope. Успех: {"ok":true,"method":"...","base_revision":N,"summary":"...","results":[...]}. Ошибка: {"ok":false,"method":"...","code":"...","message":"...","details":{...}}. Validation-ошибки внутри hit/query/tx поднимаются в этот общий envelope, а не прячутся только внутри results[].data.validation.'
+        - text: 'Все методы hit, query, tx и scheme возвращают единый envelope. Успех: {"ok":true,"method":"...","base_revision":N,"summary":"...","results":[...]}. Ошибка: {"ok":false,"method":"...","code":"...","message":"...","details":{...}}. Validation-ошибки внутри hit/query/tx/scheme поднимаются в этот общий envelope, а не прячутся только внутри results[].data.validation.'
         - subject: [419]
         - subsystem: [427]
         - audience: [435]

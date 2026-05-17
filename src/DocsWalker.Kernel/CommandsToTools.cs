@@ -31,14 +31,17 @@ internal static class CommandsToTools
         var list = new List<McpToolDescriptor>
         {
             BuildLlmJsonApiTool(
-                "hit",
-                "LLM-facing JSON API: безопасная проверка selector-ов и будущих write-ops без записи. Принимает defaults и ops[]."),
-            BuildLlmJsonApiTool(
                 "query",
-                "LLM-facing JSON API: чтение данных по select- и grep-операциям."),
+                "LLM-facing JSON API: чтение данных по select-операциям."),
             BuildLlmJsonApiTool(
                 "tx",
-                "LLM-facing JSON API: атомарное внесение изменений. По умолчанию mode=apply_if_safe: kernel сначала запускает preview через hit, затем применяет tx."),
+                "LLM-facing JSON API: атомарное внесение изменений с intent, expected_count и server-side validation."),
+            BuildLlmJsonApiTool(
+                "rollback",
+                "LLM-facing JSON API: откат транзакции по tx_id."),
+            BuildLlmJsonApiTool(
+                "scheme",
+                "LLM-facing JSON API: чтение контракта Схемы через JSON ops get, describe_type и describe_tree."),
         };
         foreach (var spec in Commands.All)
         {
@@ -83,20 +86,35 @@ internal static class CommandsToTools
 
     private static McpToolDescriptor BuildLlmJsonApiTool(string name, string description)
     {
-        var parameters = new List<McpToolParam>
+        var parameters = new List<McpToolParam>();
+        if (name == "rollback")
         {
-            new(
+            parameters.Add(new McpToolParam(
+                Name: "tx_id",
+                JsonType: "string",
+                Required: true,
+                Description: "Непрозрачный tx_id, который вернул успешный tx."));
+            return new(
+                Name: name,
+                Description: description,
+                Params: parameters);
+        }
+
+        if (name != "scheme")
+        {
+            parameters.Add(new McpToolParam(
                 Name: "defaults",
                 JsonType: "object",
                 Required: false,
-                Description: "Опциональные defaults LLM JSON API: path_parent и coordinates."),
-            new(
-                Name: "ops",
-                JsonType: "array",
-                Required: true,
-                Description: "Массив операций LLM JSON API. Метод задается именем MCP tool.",
-                ItemsJsonType: "object"),
-        };
+                Description: "Опциональные defaults LLM JSON API: path_parent и coordinates."));
+        }
+
+        parameters.Add(new McpToolParam(
+            Name: "ops",
+            JsonType: "array",
+            Required: true,
+            Description: "Массив операций LLM JSON API. Метод задается именем MCP tool.",
+            ItemsJsonType: "object"));
 
         if (name == "tx")
         {
@@ -104,12 +122,7 @@ internal static class CommandsToTools
                 Name: "intent",
                 JsonType: "string",
                 Required: false,
-                Description: "Зачем нужна запись. Обязательно для mode=apply_if_safe/apply."));
-            parameters.Add(new McpToolParam(
-                Name: "mode",
-                JsonType: "string",
-                Required: false,
-                Description: "preview | apply_if_safe | apply. По умолчанию apply_if_safe."));
+                Description: "Зачем нужна запись. Обязательно для tx."));
         }
 
         return new(

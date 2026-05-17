@@ -88,9 +88,10 @@ public class UsageGuideTests
             .Select(c => c.GetProperty("name").GetString())
             .ToHashSet();
 
-        Assert.Contains("hit", names);
         Assert.Contains("query", names);
         Assert.Contains("tx", names);
+        Assert.Contains("rollback", names);
+        Assert.Contains("scheme", names);
         Assert.Contains("get-overview", names);
         Assert.Contains("get-usage-guide", names);
         Assert.Contains("describe-type", names);
@@ -135,6 +136,34 @@ public class UsageGuideTests
         Assert.Equal("tx", commands[0].GetProperty("name").GetString());
         Assert.Equal("write", commands[0].GetProperty("kind").GetString());
         Assert.Contains("LLM-facing JSON API", commands[0].GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public void Filter_Scheme_ReturnsReadOnlyLlmJsonApiTool()
+    {
+        using var doc = CaptureGuide("scheme");
+        var commands = doc.RootElement.GetProperty("commands").EnumerateArray().ToList();
+
+        Assert.Single(commands);
+        Assert.Equal("scheme", commands[0].GetProperty("name").GetString());
+        Assert.Equal("read", commands[0].GetProperty("kind").GetString());
+        Assert.DoesNotContain(commands[0].GetProperty("parameters").EnumerateArray(),
+            p => p.GetProperty("name").GetString() == "defaults");
+    }
+
+    [Fact]
+    public void Filter_Rollback_ReturnsTxIdOnlyLlmJsonApiTool()
+    {
+        using var doc = CaptureGuide("rollback");
+        var commands = doc.RootElement.GetProperty("commands").EnumerateArray().ToList();
+
+        Assert.Single(commands);
+        Assert.Equal("rollback", commands[0].GetProperty("name").GetString());
+        Assert.Equal("write", commands[0].GetProperty("kind").GetString());
+        var parameters = commands[0].GetProperty("parameters").EnumerateArray().ToList();
+        Assert.Contains(parameters, p => p.GetProperty("name").GetString() == "tx_id");
+        Assert.DoesNotContain(parameters, p => p.GetProperty("name").GetString() == "ops");
+        Assert.DoesNotContain(parameters, p => p.GetProperty("name").GetString() == "defaults");
     }
 
     [Fact]

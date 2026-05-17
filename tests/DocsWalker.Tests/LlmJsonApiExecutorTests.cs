@@ -27,16 +27,14 @@ public class LlmJsonApiExecutorTests
             }
             """);
 
-        Assert.True(response["ok"]!.GetValue<bool>());
-        Assert.Equal("query", response["method"]!.GetValue<string>());
-        Assert.Equal(123, response["base_revision"]!.GetValue<long>());
-        Assert.Contains("query", response["summary"]!.GetValue<string>());
-
-        var result = Assert.Single(response["results"]!.AsArray())!.AsObject();
-        Assert.Equal(0, result["index"]!.GetValue<int>());
-        Assert.Equal("select", result["op"]!.GetValue<string>());
-        Assert.Equal(1, result["data"]!["count"]!.GetValue<int>());
-        Assert.Equal(30, result["data"]!["nodes"]!.AsArray()[0]!["id"]!.GetValue<int>());
+        var result = response["result"]!.AsObject();
+        Assert.Equal(1, result["count"]!.GetValue<int>());
+        Assert.Equal(30, result["nodes"]!.AsArray()[0]!["id"]!.GetValue<int>());
+        Assert.False(response.ContainsKey("ok"));
+        Assert.False(response.ContainsKey("method"));
+        Assert.False(response.ContainsKey("base_revision"));
+        Assert.False(response.ContainsKey("summary"));
+        Assert.False(response.ContainsKey("results"));
     }
 
     [Fact]
@@ -46,10 +44,9 @@ public class LlmJsonApiExecutorTests
 
         var response = executor.Execute("{ not json");
 
-        Assert.False(response["ok"]!.GetValue<bool>());
-        Assert.Null(response["method"]);
         Assert.Equal("invalid_json", response["code"]!.GetValue<string>());
-        Assert.False(response.ContainsKey("results"));
+        Assert.False(response.ContainsKey("message"));
+        Assert.False(response.ContainsKey("result"));
     }
 
     [Fact]
@@ -64,11 +61,10 @@ public class LlmJsonApiExecutorTests
             }
             """);
 
-        Assert.False(response["ok"]!.GetValue<bool>());
-        Assert.Equal("query", response["method"]!.GetValue<string>());
         Assert.Equal("missing_required_field", response["code"]!.GetValue<string>());
         Assert.Equal("$.ops", response["details"]!["path"]!.GetValue<string>());
-        Assert.False(response.ContainsKey("results"));
+        Assert.False(response.ContainsKey("message"));
+        Assert.False(response.ContainsKey("result"));
     }
 
     [Fact]
@@ -89,41 +85,11 @@ public class LlmJsonApiExecutorTests
             }
             """);
 
-        Assert.False(response["ok"]!.GetValue<bool>());
-        Assert.Equal("query", response["method"]!.GetValue<string>());
         Assert.Equal("invalid_op", response["code"]!.GetValue<string>());
         Assert.Equal(0, response["details"]!["operation_index"]!.GetValue<int>());
         Assert.Equal("$.ops[0].op", response["details"]!["path"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public void Execute_HitValidationFailure_ReturnsTopLevelError()
-    {
-        var executor = BuildExecutor(out _);
-
-        var response = executor.Execute(
-            """
-            {
-              "method": "hit",
-              "ops": [
-                {
-                  "op": "update",
-                  "select": {
-                    "path": "TestDoc/Selectors/*",
-                    "coordinates": { "type": "rule" }
-                  },
-                  "expected_count": 3,
-                  "set": { "text": "updated" }
-                }
-              ]
-            }
-            """);
-
-        Assert.False(response["ok"]!.GetValue<bool>());
-        Assert.Equal("hit", response["method"]!.GetValue<string>());
-        Assert.Equal("count_mismatch", response["code"]!.GetValue<string>());
-        Assert.Equal(0, response["details"]!["operation_index"]!.GetValue<int>());
-        Assert.Equal("update", response["details"]!["op"]!.GetValue<string>());
+        Assert.False(response.ContainsKey("message"));
+        Assert.False(response.ContainsKey("result"));
     }
 
     [Fact]
@@ -153,12 +119,11 @@ public class LlmJsonApiExecutorTests
             """);
 
         Assert.Equal(0, capture.Calls);
-        Assert.False(response["ok"]!.GetValue<bool>());
-        Assert.Equal("tx", response["method"]!.GetValue<string>());
         Assert.Equal("already_exists", response["code"]!.GetValue<string>());
         Assert.Equal(0, response["details"]!["operation_index"]!.GetValue<int>());
         Assert.Equal("$.ops[0].path", response["details"]!["path"]!.GetValue<string>());
-        Assert.False(response.ContainsKey("results"));
+        Assert.False(response.ContainsKey("message"));
+        Assert.False(response.ContainsKey("result"));
     }
 
     [Fact]
@@ -183,7 +148,8 @@ public class LlmJsonApiExecutorTests
               "ops": [
                 {
                   "op": "update",
-                  "id": 30,
+                  "ids": [30],
+                  "expected_count": 1,
                   "set": { "text": "updated" }
                 }
               ]
@@ -191,8 +157,6 @@ public class LlmJsonApiExecutorTests
             """);
 
         Assert.Equal(1, capture.Calls);
-        Assert.False(response["ok"]!.GetValue<bool>());
-        Assert.Equal("tx", response["method"]!.GetValue<string>());
         Assert.Equal("validation_failed", response["code"]!.GetValue<string>());
 
         var error = Assert.Single(response["details"]!["details"]!["errors"]!.AsArray())!.AsObject();
@@ -200,7 +164,9 @@ public class LlmJsonApiExecutorTests
         Assert.Equal(30, error["node_id"]!.GetValue<int>());
         Assert.Equal("TestDoc/Selectors/A_rule", error["path"]!.GetValue<string>());
         Assert.Equal("examples", error["ref"]!.GetValue<string>());
-        Assert.False(response.ContainsKey("results"));
+        Assert.False(error.ContainsKey("message"));
+        Assert.False(response.ContainsKey("message"));
+        Assert.False(response.ContainsKey("result"));
     }
 
     [Fact]
@@ -217,7 +183,8 @@ public class LlmJsonApiExecutorTests
               "ops": [
                 {
                   "op": "update",
-                  "id": 30,
+                  "ids": [30],
+                  "expected_count": 1,
                   "set": { "text": "updated" }
                 }
               ]
@@ -225,11 +192,92 @@ public class LlmJsonApiExecutorTests
             """);
 
         Assert.Equal(1, capture.Calls);
-        Assert.False(response["ok"]!.GetValue<bool>());
-        Assert.Equal("tx", response["method"]!.GetValue<string>());
         Assert.Equal("write_failed", response["code"]!.GetValue<string>());
         Assert.Equal(0, response["details"]!["operation_index"]!.GetValue<int>());
         Assert.Equal("examples", response["details"]!["details"]!["ref"]!.GetValue<string>());
+        Assert.False(response.ContainsKey("message"));
+        Assert.False(response.ContainsKey("result"));
+    }
+
+    [Fact]
+    public void Execute_SchemeGet_ReturnsFilteredSchemaContract()
+    {
+        var executor = BuildExecutor(out var capture);
+
+        var response = executor.Execute(
+            """
+            {
+              "method": "scheme",
+              "ops": [
+                {
+                  "op": "get",
+                  "include": ["trees", "types"],
+                  "type_names": ["rule"],
+                  "tree_names": ["subject"]
+                }
+              ]
+            }
+            """);
+
+        Assert.Equal(0, capture.Calls);
+        var result = response["result"]!.AsObject();
+        Assert.Equal(1, result["counts"]!["types_returned"]!.GetValue<int>());
+        Assert.Equal(1, result["counts"]!["trees_returned"]!.GetValue<int>());
+        Assert.False(result.ContainsKey("description"));
+
+        var type = Assert.Single(result["types"]!.AsArray())!.AsObject();
+        Assert.Equal("rule", type["name"]!.GetValue<string>());
+        Assert.True(type["text_required"]!.GetValue<bool>());
+        Assert.Contains(type["out_refs"]!.AsArray(), item =>
+            item!["name"]!.GetValue<string>() == "examples" &&
+            item["cardinality"]!.GetValue<string>() == "many");
+
+        var tree = Assert.Single(result["trees"]!.AsArray())!.AsObject();
+        Assert.Equal("subject", tree["name"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Execute_SchemeDescribeTree_ReturnsReferencedBy()
+    {
+        var executor = BuildExecutor(out _);
+
+        var response = executor.Execute(
+            """
+            {
+              "method": "scheme",
+              "ops": [
+                { "op": "describe_tree", "name": "subject" }
+              ]
+            }
+            """);
+
+        var result = response["result"]!.AsObject();
+        var refs = result["referenced_by"]!.AsArray();
+        Assert.Contains(refs, item =>
+            item!["type"]!.GetValue<string>() == "rule" &&
+            item["ref"]!.GetValue<string>() == "subject");
+    }
+
+    [Fact]
+    public void Execute_SchemeUnknownType_ReturnsTopLevelError()
+    {
+        var executor = BuildExecutor(out _);
+
+        var response = executor.Execute(
+            """
+            {
+              "method": "scheme",
+              "ops": [
+                { "op": "describe_type", "name": "missing" }
+              ]
+            }
+            """);
+
+        Assert.Equal("unknown_type", response["code"]!.GetValue<string>());
+        Assert.Equal(0, response["details"]!["operation_index"]!.GetValue<int>());
+        Assert.Equal("$.ops[0].name", response["details"]!["path"]!.GetValue<string>());
+        Assert.False(response.ContainsKey("message"));
+        Assert.False(response.ContainsKey("result"));
     }
 
     private static LlmJsonApiExecutor BuildExecutor(
@@ -239,7 +287,7 @@ public class LlmJsonApiExecutorTests
         var schema = BuildSchema();
         var graph = BuildGraph(schema);
         capture = new CapturingWrite(applyException);
-        return new LlmJsonApiExecutor(graph, schema, capture.Apply, () => 123);
+        return new LlmJsonApiExecutor(graph, schema, capture.Apply);
     }
 
     private static SchemaDocument BuildSchema()

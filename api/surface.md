@@ -45,12 +45,12 @@ scope.
 {
   "title": "selectors-update",
   "description": "Обновил раздел selectors — добавил пример match.regex.",
-  "read_ids": [],
   "defaults": {},
   "ops": [
     {
       "update": {
         "id": "2a",
+        "expected_version": 7,
         "set": {
           "title": "selectors",
           "content": "..."
@@ -66,8 +66,6 @@ scope.
   токенов. Уходит в `title` создаваемого hist-узла.
 - `description` — опциональный. Длинный текст с подробностями (если
   100 токенов на title мало). Без жёсткого лимита.
-- `read_ids` — опциональный массив opaque-receipts, см.
-  [read-gates.md](read-gates.md).
 - `defaults` — опциональный.
 - `ops[]` — обязательный массив. Каждый элемент с одним ключом из:
   `create`, `update`, `move`, `delete`, `link`, `unlink`, `rollback`.

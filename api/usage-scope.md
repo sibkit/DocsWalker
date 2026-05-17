@@ -13,8 +13,7 @@ map и link из схемы. LLM редактирует usage через `tx sco
 - составления `title` и `description` транзакции;
 - отката tx через `rollback`;
 - обработки `rollback_conflict`;
-- работы с селекторами, aliases, `expected_count`;
-- подбора state и content `read_id` для `tx.read_ids`;
+- работы с селекторами, aliases, `expected_count`, `expected_version`;
 - понимания полей узла (`title`, `content`, `map_bindings`) и
   envelope-форматов;
 - понимания кодов ошибок.
@@ -90,7 +89,6 @@ main-узлов и операций, к которым rule относится.
         }
       }
     },
-    "requires_project_content_read": false,
     "instruction": "Перед изменением узлов под DocsWalker/api/** ... "
   }
 }
@@ -98,15 +96,13 @@ main-узлов и операций, к которым rule относится.
 
 - `applies_to` — обычный селектор по main-полям (см.
   [selectors.md](selectors.md)). Если `tx scope=main` затрагивает
-  узлы под этот селектор, LLM читает rule через `read scope=usage` и
-  передаёт его content `read_id` в `tx.read_ids`.
-- `requires_project_content_read` — опциональный, default `false`. При
-  `true` rule дополнительно требует full read main-узлов под
-  `applies_to`, попадающих в tx (см. [read-gates.md](read-gates.md)).
+  узлы под этот селектор, LLM **по дисциплине** читает rule через
+  `read scope=usage` перед составлением `tx` и следует его
+  `instruction`. Серверного gate-механизма kernel не накладывает.
 - `instruction` — текст инструкции.
 
-`applies_to` — pattern, который kernel вычисляет при подготовке tx;
-link на main-узлы из rule не создаётся.
+`applies_to` — pattern, который LLM использует при отборе применимых
+rules; link на main-узлы из rule не создаётся.
 
 ## Узел `usage/map`
 
@@ -133,8 +129,10 @@ link на main-узлы из rule не создаётся.
 ```
 
 При создании или изменении узла с `map_bindings.<map>=<branch>` LLM
-предварительно делает full-read этого usage-узла и передаёт его
-content `read_id` в `tx.read_ids` (см. [read-gates.md](read-gates.md)).
+**по дисциплине** предварительно читает соответствующий `usage/map`,
+чтобы выбрать правильную ветку. Серверного gate-механизма kernel не
+накладывает; ошибки выбора всплывут при `validation_failed` /
+`unknown_map`.
 
 ## Узел `usage/link`
 
@@ -157,8 +155,10 @@ content `read_id` в `tx.read_ids` (см. [read-gates.md](read-gates.md)).
 }
 ```
 
-Перед `link` в `tx` LLM делает full-read этого узла и передаёт content
-`read_id` в `tx.read_ids`.
+Перед `link` в `tx` LLM **по дисциплине** читает соответствующий
+`usage/link`, чтобы выбрать подходящее имя и направление. Серверного
+gate-механизма kernel не накладывает; ошибки выбора всплывут при
+`validation_failed` / `unknown_link` / `cross_scope_not_allowed`.
 
 ## Узел `usage/example`
 
@@ -188,14 +188,13 @@ descriptions не включаются — LLM явно читает их чер
 
 ## Cross-scope links `usage → main`
 
-Усage-узел ссылается link-ом на main-узел. Канонический кейс —
+Usage-узел ссылается link-ом на main-узел. Канонический кейс —
 `usage/example → main/method-node`:
 
 ```json
 {
   "scope": "usage",
   "title": "example-link-describes-method",
-  "read_ids": ["..."],
   "ops": [
     {
       "link": {
@@ -216,9 +215,12 @@ descriptions не включаются — LLM явно читает их чер
 `delete_blocked_by_cross_scope_link`. LLM переключает link на другой
 main-узел или удаляет сам usage-узел.
 
-## Read gates при `tx scope=usage`
+## Concurrency при `tx scope=usage`
 
-Read gates в usage scope сводятся к state preconditions: для
-изменения существующих usage-узлов нужен их state `read_id`. Rule /
-map / link gates действуют только при `tx scope=main`. Подробности —
-[read-gates.md](read-gates.md).
+Защита от lost update для `update` usage-узлов работает так же, как
+для main: LLM передаёт `expected_version` в `tx.update`, при
+расхождении kernel возвращает `version_mismatch` (см. [tx.md](tx.md),
+раздел `update` и [errors.md](errors.md), раздел
+`version_mismatch`). Для `move`, `delete`, `link`, `unlink`
+concurrency-precondition отдельным полем не передаётся — конфликты
+ловятся через `expected_count` для bulk-операций.

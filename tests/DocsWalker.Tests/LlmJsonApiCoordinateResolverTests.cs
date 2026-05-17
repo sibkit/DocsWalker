@@ -77,7 +77,7 @@ public class LlmJsonApiCoordinateResolverTests
         var (pathResolver, coordinateResolver) = BuildResolvers();
 
         var result = coordinateResolver.ResolveSelector(
-            new LlmSelector(null, Coordinates(("type", "statement"), ("subject", "api/read")), null),
+            new LlmSelector(null, Coordinates(("type", "statement"), ("subject", "api/read")), null, null),
             LlmRequestDefaults.Empty,
             pathResolver,
             "$.ops[0].select");

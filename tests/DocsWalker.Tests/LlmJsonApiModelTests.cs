@@ -54,7 +54,7 @@ public class LlmJsonApiModelTests
     }
 
     [Fact]
-    public void Parse_QueryGrep_ReadsScopeAndLimits()
+    public void Parse_QuerySelect_ReadsMatch()
     {
         var request = LlmJsonApiParser.Parse(JsonNode.Parse(
             """
@@ -62,35 +62,31 @@ public class LlmJsonApiModelTests
               "method": "query",
               "ops": [
                 {
-                  "op": "grep",
-                  "pattern": "validation_failed",
-                  "scope": {
+                  "op": "select",
+                  "select": {
                     "path": "DocsWalker-LLM JSON API/**",
                     "coordinates": {
                       "type": "definition"
+                    },
+                    "match": {
+                      "regex": "validation_failed",
+                      "fields": ["title", "text"],
+                      "case_sensitive": true
                     }
                   },
-                  "in": "both",
-                  "regex": true,
-                  "case_sensitive": true,
-                  "limit": 10,
-                  "context_chars": 40,
                   "max_tokens": 1000
                 }
               ]
             }
             """));
 
-        var grep = Assert.IsType<LlmGrepOperation>(request.Ops.Single());
-        Assert.Equal("validation_failed", grep.Pattern);
-        Assert.Equal("DocsWalker-LLM JSON API/**", grep.Scope?.Path);
-        Assert.Equal("definition", grep.Scope?.Coordinates.Type);
-        Assert.Equal("both", grep.In);
-        Assert.True(grep.Regex);
-        Assert.True(grep.CaseSensitive);
-        Assert.Equal(10, grep.Limit);
-        Assert.Equal(40, grep.ContextChars);
-        Assert.Equal(1000, grep.MaxTokens);
+        var select = Assert.IsType<LlmSelectOperation>(request.Ops.Single());
+        Assert.Equal("DocsWalker-LLM JSON API/**", select.Select.Path);
+        Assert.Equal("definition", select.Select.Coordinates.Type);
+        Assert.Equal("validation_failed", select.Select.Match?.Regex);
+        Assert.Equal(new[] { "title", "text" }, select.Select.Match?.Fields);
+        Assert.True(select.Select.Match?.CaseSensitive);
+        Assert.Equal(1000, select.MaxTokens);
     }
 
     [Fact]
@@ -225,12 +221,12 @@ public class LlmJsonApiModelTests
     {
         var ex = Assert.Throws<LlmJsonApiParseException>(() =>
             LlmJsonApiParser.Parse(JsonNode.Parse(
-                """
-                {
-                  "method": "hit",
-                  "ops": {}
-                }
-                """)));
+            """
+            {
+              "method": "query",
+              "ops": {}
+            }
+            """)));
 
         Assert.Equal("invalid_request", ex.Code);
         Assert.Equal("$.ops", ex.Path);

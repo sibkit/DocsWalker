@@ -52,16 +52,18 @@
 
 - `"meta"` — содержимое meta-schema (контракт data-узла, event-узла,
   link, scheme-схемы и hist-предикатов). Доступно при любом `scope`
-  запроса. Возвращает один объект с полем `meta` и `read_id`:
+  запроса. Возвращает один объект с полем `meta`:
 
   ```json
   {
     "result": {
-      "meta": { /* содержимое meta-schema */ },
-      "read_id": "..."
+      "meta": { /* содержимое meta-schema */ }
     }
   }
   ```
+
+  Meta-schema kernel-owned, версионируется с релизом DocsWalker, не
+  подчиняется concurrency-полю `version`.
 
 Имя за пределами реестра возвращает `unknown_select_mode`. `selector`,
 `include`, `max_tokens`, `as` в форме-строке не применимы — присутствие
@@ -82,18 +84,19 @@ compact-форме:
     "category": "documents/spec"
   },
   "tokens": 320,
-  "read_id": "31bf"
+  "version": 7
 }
 ```
 
 Поле `scope` сериализуется в ответе только для узлов вне main
 (`scope=usage`, `scope=scheme`); для main опускается.
 
-`tokens` — оценка стоимости полного `content` узла. `read_id` в
-compact-форме — **state** read_id.
+`tokens` — оценка стоимости полного `content` узла. `version` — текущая
+ревизия узла; LLM передаёт её в `tx.update.expected_version` для
+защиты от lost update (см. [tx.md](tx.md)).
 
 При `include` с `"content"`, если content целиком влез в `max_tokens`, узел
-возвращается с полем `content` и **content** read_id:
+возвращается с полем `content`:
 
 ```json
 {
@@ -105,7 +108,7 @@ compact-форме — **state** read_id.
   },
   "content": "...",
   "tokens": 320,
-  "read_id": "4c8f"
+  "version": 7
 }
 ```
 
@@ -151,20 +154,17 @@ compact-форме — **state** read_id.
     "changed": { "nodes": 1 },
     "deleted": { "nodes": 1, "links": 1 }
   },
-  "tokens": 1200,
-  "read_id": "31bf"
+  "tokens": 1200
 }
 ```
 
 - `counts.<section>.<kind>` — число элементов в подсекции. Подсекции с
   нулём опускаются.
 - `tokens` — оценка стоимости полной формы (со всеми loadable полями).
-- `read_id` — state read_id event-узла.
 
 При `include` с одной или несколькими секциями event-узел возвращается
-с этими секциями раскрытыми. Если все запрошенные секции уложились в
-`max_tokens` — возвращается **content** read_id (по аналогии с data-узлом
-для полного content). Если часть секций обрезана — state read_id.
+с этими секциями раскрытыми. Event-узлы `version` не имеют (hist
+append-only), в ответе это поле для них не возвращается.
 
 ## Truncation
 
@@ -190,54 +190,31 @@ compact-форме — **state** read_id.
 - `omitted_count` — сколько узлов осталось за пределами выдачи.
 - `items` — массив возвращённых узлов.
 
-Truncated узел с запрошенным `content` / секцией, который не помещён,
-получает только state read_id; content read_id выдаётся только для
-полностью прочитанного content (или для полностью раскрытых секций
-event-узла). Чтобы получить content read_id, LLM повторяет `read` с более
-узким селектором или с увеличенным `max_tokens`.
+Truncated data-узел возвращается с тем же `version`, что и непрерванный
+— `version` отражает ревизию узла, а не полноту переданного `content`.
+Если LLM нужен полный `content` (например, для семантического анализа
+перед изменением), она повторяет `read` с более узким селектором или
+с увеличенным `max_tokens`.
 
-## `read_id`
+## `version`
 
-`read_id` — opaque hex-строка, которую kernel выдаёт при `read`.
-Привязана к scope, id узла, версии состояния и scope-у чтения. LLM не
-собирает и не модифицирует `read_id`.
+`version` — целочисленный счётчик ревизии data-узла. Стартует с `1`
+при `create`, инкрементируется при каждом изменении состояния узла
+(см. [model.md](model.md), раздел «Служебные поля ответа `read`»).
+Возвращается в compact-форме и full-форме (с `include`) для всех
+data-узлов (`main`, `usage`, `scheme`). Event-узлы (`hist`) `version`
+не имеют — hist append-only.
 
-Scope-ы `read_id`:
+LLM использует `version` как координату состояния для optimistic
+concurrency: после чтения и подготовки правки она передаёт ту же
+ревизию обратно в `tx.update.expected_version`. Если узел изменился
+между чтением и записью (например, конкурентным `tx`), kernel
+возвращает `version_mismatch` с актуальным `current` — LLM перечитывает
+узел и решает, как поступить с новой версией.
 
-- **state** — подтверждает актуальную версию состояния узла. Для
-  data-узла это `path`, `title`, `map_bindings` и incident links на
-  момент чтения. Для event-узла это сам факт существования узла с этим
-  `id` (event-узлы immutable — после записи kernel не правит их).
-  State `read_id` используется как write precondition: если узел
-  изменился после чтения, его актуальный state `read_id` другой и `tx`
-  отклоняется.
-- **content** — подтверждает, что смысл узла прочитан целиком, без
-  truncation: для data-узла — `content`; для event-узла — все секции,
-  заявленные в `include`. Content `read_id` одновременно удовлетворяет
-  state precondition того же узла той же версии.
-
-Compact read возвращает state `read_id`. Full read
-(`include=["content"]` для data-узла / `include=["created","changed","deleted"]`
-для event-узла, без truncation) возвращает content `read_id`. Truncated
-full read возвращает state `read_id`.
-
-При успешном изменении data-узла kernel выпускает для него новый state
-и content `read_id`. Старые перестают соответствовать актуальной версии.
-Создание или удаление link обновляет state `read_id` его source и
-target узлов. Event-узлы не меняются после записи, их `read_id`-ы не
-устаревают (кроме случая перестройки всей hist-схемы, что эквивалентно
-смене версии kernel).
-
-`read_id` передаётся LLM в `tx.read_ids` (см.
-[read-gates.md](read-gates.md)). Применимость:
-
-- state precondition для изменяемых project-узлов принимает state или
-  content `read_id` той же версии.
-- usage rule / map / link gate требует content `read_id`
-  соответствующего usage-узла.
-- project content gate (для `tx scope=main`) требует content `read_id`
-  main-узла, если применимый rule содержит
-  `requires_project_content_read=true`.
+Поле `version` не привязано к полноте чтения `content`: truncated full
+read возвращает ту же `version`, что и compact read той же ревизии.
+`expected_version` достаточно по самому факту совпадения числа.
 
 ## Примеры
 
@@ -258,8 +235,8 @@ target узлов. Event-узлы не меняются после записи,
 }
 ```
 
-Возвращает main-узлы под `DocsWalker/api/` в compact-форме, с state
-`read_id` каждого.
+Возвращает main-узлы под `DocsWalker/api/` в compact-форме, с `version`
+каждого.
 
 ### Full read одного узла под изменение
 
@@ -279,8 +256,8 @@ target узлов. Event-узлы не меняются после записи,
 }
 ```
 
-Возвращает узел `"2a"` целиком с content `read_id`. Этот `read_id` LLM
-передаёт в `tx.read_ids` при `update` / `delete` / `move` этого узла.
+Возвращает узел `"2a"` целиком с `version`. Эту ревизию LLM передаёт
+в `tx.update.expected_version` при последующем изменении узла.
 
 ### Чтение usage rule перед tx scope=main
 
@@ -301,9 +278,10 @@ target узлов. Event-узлы не меняются после записи,
 }
 ```
 
-Возвращает rule-узел с content `read_id`. Этот `read_id` LLM передаёт в
-`tx.read_ids` при затрагивающем main-узлы tx (см.
-[read-gates.md](read-gates.md)).
+Возвращает rule-узел с `content` и `links`. Чтение rules перед
+`tx scope=main` — дисциплина LLM (см. [usage-scope.md](usage-scope.md),
+раздел «Узел `usage/rule`»), серверного gate-механизма kernel не
+накладывает.
 
 ### Чтение истории узла
 
@@ -325,3 +303,37 @@ target узлов. Event-узлы не меняются после записи,
 Возвращает все event-узлы `hist/transaction`, в секциях которых
 фигурирует узел `"2a"` (в любой роли — создан, изменён или удалён),
 во всех editable scope.
+
+### Time-travel read
+
+```json
+{
+  "scope": "main",
+  "at": "a3f1c2",
+  "ops": [
+    {
+      "select": {
+        "selector": { "path": "DocsWalker/api/**" }
+      }
+    }
+  ]
+}
+```
+
+Возвращает main-узлы под `DocsWalker/api/` в состоянии после
+применения tx `a3f1c2`. Состояние перед применением:
+
+```json
+{
+  "scope": "main",
+  "at": { "before": "a3f1c2" },
+  "ops": [
+    { "select": { "selector": { "path": "DocsWalker/api/**" } } }
+  ]
+}
+```
+
+Поле `version` в обоих ответах отсутствует — tx над прошлым моментом
+не поддерживается, и concurrency-precondition в `at`-ответах смысла
+не имеет. Подробности — [model.md](model.md), раздел «Темпоральные
+чтения (`at`)».

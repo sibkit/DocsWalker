@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using DocsWalker.Core.Graph;
 using DocsWalker.Core.Schema;
 using GraphModel = DocsWalker.Core.Graph.Graph;
@@ -31,6 +32,7 @@ public sealed record LlmResolvedCoordinates(
 public sealed class LlmJsonApiCoordinateResolver
 {
     private static readonly char[] CoordinateSeparators = { '/' };
+    private static readonly TimeSpan MatchRegexTimeout = TimeSpan.FromMilliseconds(100);
 
     private readonly GraphModel _graph;
     private readonly Dictionary<string, TypeDefinition> _typesByName;
@@ -133,22 +135,84 @@ public sealed class LlmJsonApiCoordinateResolver
         var hasCoordinates =
             defaults.Coordinates.Values.Count > 0 ||
             selector.Coordinates.Values.Count > 0;
+        var hasMatch = selector.Match is not null;
         var candidates = selector.Path is not null
             ? pathResolver.ResolvePath(selector.Path, defaults, $"{jsonPath}.path")
-            : hasCoordinates
+            : hasCoordinates || hasMatch
                 ? pathResolver.AllNodes
                 : throw new LlmJsonApiResolveException(
                     "not_found",
                     jsonPath,
-                    "Selector должен содержать path или coordinates.");
+                    "Selector должен содержать path, coordinates или match.");
 
         var result = FilterNodes(candidates, selector.Coordinates, defaults, $"{jsonPath}.coordinates");
+        result = FilterByMatch(result, selector.Match, $"{jsonPath}.match");
         if (result.Count == 0)
             throw new LlmJsonApiResolveException(
                 "not_found",
                 jsonPath,
-                "Selector не нашел узлов после применения coordinates.");
+                "Selector не нашел узлов после применения filters.");
         return result;
+    }
+
+    private static IReadOnlyList<LlmResolvedNode> FilterByMatch(
+        IReadOnlyList<LlmResolvedNode> nodes,
+        LlmSelectorMatch? match,
+        string jsonPath)
+    {
+        if (match is null)
+            return nodes;
+
+        if (string.IsNullOrWhiteSpace(match.Regex))
+        {
+            throw new LlmJsonApiResolveException(
+                "invalid_match_regex",
+                $"{jsonPath}.regex",
+                "select.match.regex должен быть непустой строкой.");
+        }
+
+        var fields = MatchFields.Parse(match.Fields, $"{jsonPath}.fields");
+        var regex = BuildMatchRegex(match, $"{jsonPath}.regex");
+        try
+        {
+            return nodes
+                .Where(node =>
+                    (fields.Title && regex.IsMatch(node.Node.Title)) ||
+                    (fields.Text && regex.IsMatch(node.Node.Text)))
+                .ToArray();
+        }
+        catch (RegexMatchTimeoutException ex)
+        {
+            throw new LlmJsonApiResolveException(
+                "match_timeout",
+                $"{jsonPath}.regex",
+                ex.Message,
+                new JsonObject
+                {
+                    ["regex"] = match.Regex,
+                    ["timeout_ms"] = (int)MatchRegexTimeout.TotalMilliseconds,
+                });
+        }
+    }
+
+    private static Regex BuildMatchRegex(LlmSelectorMatch match, string jsonPath)
+    {
+        var options = RegexOptions.CultureInvariant;
+        if (!match.CaseSensitive)
+            options |= RegexOptions.IgnoreCase;
+
+        try
+        {
+            return new Regex(match.Regex, options, MatchRegexTimeout);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new LlmJsonApiResolveException(
+                "invalid_match_regex",
+                jsonPath,
+                ex.Message,
+                new JsonObject { ["regex"] = match.Regex });
+        }
     }
 
     private LlmResolvedCoordinate ResolveClassifierCoordinate(
@@ -248,6 +312,30 @@ public sealed class LlmJsonApiCoordinateResolver
                 ["coordinate"] = name,
                 ["value"] = value,
             });
+
+    private sealed record MatchFields(bool Title, bool Text)
+    {
+        public static MatchFields Parse(IReadOnlyList<string> values, string jsonPath)
+        {
+            var set = values.Count == 0
+                ? new HashSet<string>(new[] { "title", "text" }, StringComparer.Ordinal)
+                : values.ToHashSet(StringComparer.Ordinal);
+
+            foreach (var value in set)
+            {
+                if (value is not ("title" or "text"))
+                {
+                    throw new LlmJsonApiResolveException(
+                        "invalid_match_fields",
+                        jsonPath,
+                        $"select.match.fields содержит неизвестное значение '{value}'.",
+                        new JsonObject { ["field"] = value });
+                }
+            }
+
+            return new MatchFields(set.Contains("title"), set.Contains("text"));
+        }
+    }
 
     private sealed record CoordinateValue(string Name, string Value, string JsonPath);
 }
