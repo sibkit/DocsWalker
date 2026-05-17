@@ -121,8 +121,7 @@ Parent для `create` или `move.to.parent_path` отсутствует в г
 `create`, `update.set.title` или `move.to.parent_path` дают `path`,
 который уже занят существующим sibling, либо `title`, lower-case форма
 которого совпадает с существующим sibling. Для `link` — попытка
-создать link с уже существующим tuple `(name, source.id, target.id,
-target.scope)`.
+создать link с уже существующим tuple `(name, from.id, to.id)`.
 
 ### `unknown_map`
 

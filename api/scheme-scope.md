@@ -62,13 +62,13 @@ Link node:
     "link_name": "depends_on"
   },
   "value": {
-    "description": "Source-узел зависит от target-узла.",
-    "source": {
+    "description": "From-узел зависит от to-узла.",
+    "from": {
       "map_bindings": {
         "content": "documents/**"
       }
     },
-    "target": {
+    "to": {
       "map_bindings": {
         "content": "documents/**"
       }
@@ -79,8 +79,8 @@ Link node:
 }
 ```
 
-`required_for` — массив `[]`, `["source"]`, `["target"]` или
-`["source", "target"]`.
+`required_for` — массив `[]`, `["from"]`, `["to"]` или
+`["from", "to"]`.
 
 ## Schema scope-а
 
@@ -200,7 +200,7 @@ Meta-schema — kernel-owned JSON-файл `docs/.docswalker/meta-schema.json`.
 Описывает:
 
 - структуру узла (`id`, `path`, `title`, `value`, `map_bindings`);
-- структуру link (`name`, `source.id`, `target.id`, `target.scope`);
+- структуру link (`name`, `from.id`, `to.id`);
 - внутреннюю schema scheme scope (kind / owner_scope / map_name /
   link_name);
 - структуру hist-узлов (`hist/transaction`, `hist/change`, target поля).

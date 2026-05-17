@@ -16,8 +16,8 @@ DocsWalker хранит граф знаний в одном каталоге `do
 изменений editable scope, пишется kernel-ом). У каждого scope своя
 schema, общая meta-schema (`docs/.docswalker/meta-schema.json`) задаёт
 базовые поля узла (`id`, `path`, `title`, `value`, `map_bindings`) и
-link (`name`, `source.id`, `target.id`, `target.scope`). Id-пространство
-глобальное на весь каталог. Все id — opaque hex-строки lower-case. Все данные
+link (`name`, `from.id`, `to.id`). Id-пространство глобальное на весь
+каталог. Все id — opaque hex-строки lower-case. Все данные
 хранятся как JSON.
 
 Внешняя поверхность v1 состоит из двух методов:

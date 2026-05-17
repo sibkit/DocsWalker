@@ -188,16 +188,16 @@ descriptions не включаются — LLM явно читает их чер
       "link": {
         "name": "describes",
         "from": { "id": "c8" },
-        "to": {
-          "id": "2a",
-          "scope": "main"
-        },
+        "to": { "id": "2a" },
         "expected_count": 1
       }
     }
   ]
 }
 ```
+
+Поскольку id узла глобально уникален, scope target однозначно
+выводится из `to.id` — отдельно `to.scope` указывать не нужно.
 
 Удаление main-узла `"2a"` при наличии этого link возвращает
 `delete_blocked_by_cross_scope_link`. LLM переключает link на другой

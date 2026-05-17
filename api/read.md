@@ -70,17 +70,26 @@ compact-форме — **state** read_id.
 }
 ```
 
-При `include` с `"links"` к узлу добавляется список incident links:
+При `include` с `"links"` к узлу добавляется список incident links.
+Каждый элемент содержит либо `to` (исходящий link от текущего узла),
+либо `from` (входящий link к текущему узлу); противоположный endpoint
+— сам текущий узел и в записи не дублируется.
 
 ```json
 {
   "links": [
     {
       "name": "depends_on",
-      "direction": "out",
-      "target": {
+      "to": {
         "id": "63",
         "path": "DocsWalker/api/selectors"
+      }
+    },
+    {
+      "name": "described_by",
+      "from": {
+        "id": "c8",
+        "path": "examples/depends-on"
       }
     }
   ]

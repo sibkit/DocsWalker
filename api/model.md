@@ -64,12 +64,12 @@ Meta-schema (`.docswalker/meta-schema.json`) задаёт обязательны
 ### Поля link
 
 - `name` — имя link, объявленное в schema scope.
-- `source.id` — id узла-источника.
-- `target.id` — id узла-цели.
-- `target.scope` — опциональное. Default — scope узла-источника.
+- `from.id` — id узла-источника.
+- `to.id` — id узла-цели.
 
-Identity link — tuple `(name, source.id, target.id, target.scope)`.
-Tuple уникален в пределах scope.
+Identity link — tuple `(name, from.id, to.id)`. Tuple уникален
+глобально (id узлов сквозные на весь каталог, поэтому пара
+`(from, to)` однозначно определяет endpoints без указания scope).
 
 ## Глобальный id
 
@@ -78,7 +78,7 @@ scheme-узел, hist-change-узел — все получают id из одн
 Это упрощает ссылочную идентификацию (особенно в hist).
 
 Все id — opaque hex-строки lower-case переменной длины: `id` узла,
-`source.id` / `target.id` у link, `tx_id`, `read_id`. Префиксы и
+`from.id` / `to.id` у link, `tx_id`, `read_id`. Префиксы и
 суффиксы внутри id не используются — kernel выдаёт компактные hex.
 
 `(scope, id)` имеет смысл в селекторах, когда нужно ограничить выборку
@@ -88,16 +88,19 @@ scheme-узел, hist-change-узел — все получают id из одн
 
 Разрешённые направления link:
 
-| source scope | target scope |
-|--------------|--------------|
-| `main`       | `main`       |
-| `usage`      | `usage`      |
-| `usage`      | `main`       |
+| from scope | to scope |
+|------------|----------|
+| `main`     | `main`   |
+| `usage`    | `usage`  |
+| `usage`    | `main`   |
 
 Иное направление возвращает `cross_scope_not_allowed` при `link` и при
 `create.set.links[]`. Удаление main-узла, на который ссылается
 incoming `usage → main` link, возвращает
 `delete_blocked_by_cross_scope_link` со списком блокирующих usage-узлов.
+
+Scope endpoint-узла определяется kernel-ом по `id` — отдельное поле в
+link identity не требуется.
 
 ## Defaults
 

@@ -24,20 +24,18 @@ JSON-объект в поле `selector` операции `select` (для `read
 
 Идентификационные поля link (используются в hist-change селекторах,
 см. ниже; в обычных селекторах link не выбираются — они индуцируются
-cross-product source × target):
+cross-product from × to):
 
 - `name` — строка.
-- `source.id` — hex-строка.
-- `target.id` — hex-строка.
-- `target.scope` — строка (`"main"` / `"usage"` / `"scheme"`).
+- `from.id` — hex-строка.
+- `to.id` — hex-строка.
 
 Поля hist-change (см. [hist-scope.md](hist-scope.md)):
 
 - `target.node.id` — hex-строка. Узел, которого касается change.
-- `target.link.name` / `target.link.source.id` / `target.link.target.id`
-  / `target.link.target.scope` — для link-events. Двухуровневая
-  структура `target.{node|link}` — дискриминатор subject-а события,
-  не префикс полей.
+- `target.link.name` / `target.link.from.id` / `target.link.to.id` —
+  для link-events. Двухуровневая структура `target.{node|link}` —
+  дискриминатор subject-а события, не префикс полей.
 
 ## Пример простого селектора
 
