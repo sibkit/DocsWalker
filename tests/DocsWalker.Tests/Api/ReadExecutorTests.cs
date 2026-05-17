@@ -235,13 +235,213 @@ public sealed class ReadExecutorTests
     }
 
     [Fact]
-    public void At_TemporalRead_Throws_NotSupported()
+    public void At_UnknownTxId_ThrowsNotFound()
     {
         using var conn = NewSeededGraph();
         var rx = new ReadExecutor(conn, Graph);
         var req = RequestParser.ParseRead("""{"at":"deadbeef","ops":[]}""");
 
-        Assert.Throws<NotSupportedException>(() => rx.Execute(req));
+        var ex = Assert.Throws<ApiException>(() => rx.Execute(req));
+        Assert.Equal(ApiErrorCodes.NotFound, ex.Code);
+        Assert.Equal("$.at", ex.Details.Path);
+    }
+
+    [Fact]
+    public void At_AfterCreate_ReturnsOriginalSnapshot()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        var tx1 = new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx("""
+                {"title":"c","ops":[{"create":{"path":"a","set":{"content":"V1"}}}]}
+                """));
+        new TxExecutor(conn, Graph, () => date.AddDays(1))
+            .Execute(RequestParser.ParseTx("""
+                {"title":"u","ops":[{"update":{"id":"1","expected_version":1,"set":{"content":"V2"}}}]}
+                """));
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"at":"<TX>","ops":[{"select":{"selector":{"id":"1"},"include":["content"]}}]}"""
+                .Replace("<TX>", tx1.Id)));
+
+        var op = (SelectNodesResponse)resp.Ops[0];
+        var node = Assert.Single(op.Items);
+        Assert.Equal("V1", node.Content);
+        Assert.Null(node.Version);
+    }
+
+    [Fact]
+    public void At_BeforeTx_ReturnsPriorState()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx("""
+                {"title":"c","ops":[{"create":{"path":"a","set":{"content":"V1"}}}]}
+                """));
+        var tx2 = new TxExecutor(conn, Graph, () => date.AddDays(1))
+            .Execute(RequestParser.ParseTx("""
+                {"title":"u","ops":[{"update":{"id":"1","expected_version":1,"set":{"content":"V2"}}}]}
+                """));
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"at":{"before":"<TX>"},"ops":[{"select":{"selector":{"id":"1"},"include":["content"]}}]}"""
+                .Replace("<TX>", tx2.Id)));
+
+        var op = (SelectNodesResponse)resp.Ops[0];
+        Assert.Equal("V1", Assert.Single(op.Items).Content);
+    }
+
+    [Fact]
+    public void At_BeforeCreate_EmptyResult()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        var tx1 = new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx("""
+                {"title":"c","ops":[{"create":{"path":"a"}}]}
+                """));
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"at":{"before":"<TX>"},"ops":[{"select":{"selector":{"id":"1"}}}]}"""
+                .Replace("<TX>", tx1.Id)));
+
+        var op = (SelectNodesResponse)resp.Ops[0];
+        Assert.Empty(op.Items);
+        Assert.Equal(0, op.Count);
+    }
+
+    [Fact]
+    public void At_AfterDelete_ExcludesDeletedNode()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx("""{"title":"c","ops":[{"create":{"path":"a"}}]}"""));
+        var tx2 = new TxExecutor(conn, Graph, () => date.AddDays(1))
+            .Execute(RequestParser.ParseTx("""
+                {"title":"d","ops":[{"delete":{"ids":["1"],"expected_count":1}}]}
+                """));
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"at":"<TX>","ops":[{"select":{"selector":{"id":"1"}}}]}"""
+                .Replace("<TX>", tx2.Id)));
+
+        Assert.Empty(((SelectNodesResponse)resp.Ops[0]).Items);
+    }
+
+    [Fact]
+    public void At_PathSelector_OnReplayedState()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        // Parent `docs` создаётся первым, далее три ребёнка под ним.
+        new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx("""{"title":"root","ops":[{"create":{"path":"docs"}}]}"""));
+        new TxExecutor(conn, Graph, () => date.AddDays(1))
+            .Execute(RequestParser.ParseTx("""{"title":"c1","ops":[{"create":{"path":"docs/a"}}]}"""));
+        var tx3 = new TxExecutor(conn, Graph, () => date.AddDays(2))
+            .Execute(RequestParser.ParseTx("""{"title":"c2","ops":[{"create":{"path":"docs/b"}}]}"""));
+        new TxExecutor(conn, Graph, () => date.AddDays(3))
+            .Execute(RequestParser.ParseTx("""{"title":"c3","ops":[{"create":{"path":"docs/c"}}]}"""));
+        var rx = new ReadExecutor(conn, Graph);
+
+        // at=tx3 включительно — docs/a и docs/b есть, docs/c ещё нет.
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"at":"<TX>","ops":[{"select":{"selector":{"path":"docs/**"}}}]}"""
+                .Replace("<TX>", tx3.Id)));
+
+        var op = (SelectNodesResponse)resp.Ops[0];
+        Assert.Equal(2, op.Count);
+        Assert.Equal(new[] { "docs/a", "docs/b" }, op.Items.Select(i => i.Path).Order().ToArray());
+    }
+
+    [Fact]
+    public void At_LinksSelector_FromReplayedState()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx("""{"title":"c1","ops":[{"create":{"path":"a"}}]}"""));
+        new TxExecutor(conn, Graph, () => date.AddDays(1))
+            .Execute(RequestParser.ParseTx("""{"title":"c2","ops":[{"create":{"path":"b"}}]}"""));
+        var tx3 = new TxExecutor(conn, Graph, () => date.AddDays(2))
+            .Execute(RequestParser.ParseTx("""
+                {"title":"l","ops":[{"link":{"name":"depends_on","from":"1","to":"3","expected_count":1}}]}
+                """));
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"at":"<TX>","ops":[{"select":{"selector":{"id":"1"},"include":["links"]}}]}"""
+                .Replace("<TX>", tx3.Id)));
+
+        var op = (SelectNodesResponse)resp.Ops[0];
+        var node = Assert.Single(op.Items);
+        Assert.NotNull(node.Links);
+        var outgoing = Assert.Single(node.Links!);
+        Assert.Equal("depends_on", outgoing.Name);
+        Assert.Equal("3", outgoing.To!.Id);
+        Assert.Equal("b", outgoing.To.Path);
+    }
+
+    [Fact]
+    public void At_VersionOmittedFromResult()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        var tx1 = new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx("""{"title":"c","ops":[{"create":{"path":"a"}}]}"""));
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"at":"<TX>","ops":[{"select":{"selector":{"id":"1"}}}]}"""
+                .Replace("<TX>", tx1.Id)));
+
+        var node = Assert.Single(((SelectNodesResponse)resp.Ops[0]).Items);
+        Assert.Null(node.Version);
+    }
+
+    [Fact]
+    public void At_RespectsRequestScope_FiltersOtherScopes()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        // Sequence (id=1..6): node "a", tx_event(a), node "rules", tx_event(rules),
+        // node "rules/x", tx_event(rules/x).
+        new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx("""{"title":"m","ops":[{"create":{"path":"a"}}]}"""));
+        new TxExecutor(conn, Graph, () => date.AddDays(1))
+            .Execute(RequestParser.ParseTx("""
+                {"scope":"usage","title":"r","ops":[{"create":{"path":"rules"}}]}
+                """));
+        var tx3 = new TxExecutor(conn, Graph, () => date.AddDays(2))
+            .Execute(RequestParser.ParseTx("""
+                {"scope":"usage","title":"u","ops":[{"create":{"path":"rules/x"}}]}
+                """));
+        var rx = new ReadExecutor(conn, Graph);
+
+        // Один и тот же id-набор, разные scope-запросы — at реплеит ВСЕ tx
+        // во временный state, фильтрация по запросу-scope срабатывает на
+        // выдаче. Узел "a"=id1 — main, "rules/x"=id5 — usage.
+        var mainOnly = rx.Execute(RequestParser.ParseRead(
+            """{"at":"<TX>","ops":[{"select":{"selector":{"id":["1","5"]}}}]}"""
+                .Replace("<TX>", tx3.Id)));
+        var usageOnly = rx.Execute(RequestParser.ParseRead(
+            """{"at":"<TX>","scope":"usage","ops":[{"select":{"selector":{"id":["1","5"]}}}]}"""
+                .Replace("<TX>", tx3.Id)));
+
+        var mainOp = (SelectNodesResponse)mainOnly.Ops[0];
+        var usageOp = (SelectNodesResponse)usageOnly.Ops[0];
+        var mainItem = Assert.Single(mainOp.Items);
+        Assert.Equal("1", mainItem.Id);
+        Assert.Null(mainItem.Scope);
+        var usageItem = Assert.Single(usageOp.Items);
+        Assert.Equal("5", usageItem.Id);
+        Assert.Equal("usage", usageItem.Scope);
     }
 
     [Fact]

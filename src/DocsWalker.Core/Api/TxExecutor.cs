@@ -12,16 +12,28 @@ namespace DocsWalker.Core.Api;
 /// Все DML внутри одной SQLite-write-транзакции <c>BEGIN IMMEDIATE</c>;
 /// любая ошибка → <c>ROLLBACK</c>, hist остаётся пустой.
 ///
+/// После применения ops (до записи hist) запускается
+/// <see cref="SchemeValidator"/>:
+/// <list type="bullet">
+/// <item>Для <c>tx scope=scheme</c> — breaking-change-check существующих
+/// main/usage узлов (per api/scheme-scope.md, раздел
+/// «Breaking-change-check») с кодом <c>schema_breaks_existing_data</c>.</item>
+/// <item>Для <c>tx scope=main</c> и <c>scope=usage</c> —
+/// data-against-scheme проверка (per api/errors.md, коды
+/// <c>unknown_map</c>, <c>unknown_link</c> через
+/// <c>validation_failed</c>) при наличии непустой схемы.</item>
+/// </list>
+///
 /// Текущие ограничения v2 (полная семантика — см. api/ + database-model/):
 /// <list type="bullet">
-/// <item>Schema-уровневые проверки (<c>unknown_map</c>,
-/// <c>unknown_link</c>, <c>validation_failed</c>,
-/// <c>schema_breaks_existing_data</c>) — deferred to step 7 (scheme scope).</item>
 /// <item>Лимит 100 токенов на <c>tx.title</c> — deferred (нет токенайзера).</item>
 /// <item>Path normalization с <c>defaults.path_parent</c> — применяется
 /// только к <c>create.path</c> и <c>move.to.parent_path</c>; вложенные
 /// <c>selector.path</c> в bulk-op-ах префиксом не дополняются (на v2
 /// LLM передаёт абсолютный path).</item>
+/// <item>В scheme-валидаторе не реализованы <c>cardinality</c> и
+/// <c>required_when</c>; есть только <c>branch</c>/<c>required</c> для
+/// maps и <c>from/to.map_bindings</c>/<c>required_for</c> для links.</item>
 /// </list>
 /// </summary>
 public sealed class TxExecutor
@@ -66,6 +78,29 @@ public sealed class TxExecutor
                     opResults.Add(ApplyOp(ctx, op));
                 }
             }
+            // Schema validation: до записи hist, чтобы schema_breaks /
+            // validation_failed откатывали tx без оседающего event-узла.
+            // Rollback-tx наследует scope исходной — используем txScopeOverride.
+            var effectiveScope = txScopeOverride is { } over
+                ? (over switch
+                {
+                    ScopeNames.Main => Scope.Main,
+                    ScopeNames.Usage => Scope.Usage,
+                    ScopeNames.Scheme => Scope.Scheme,
+                    _ => request.Scope,
+                })
+                : request.Scope;
+            if (effectiveScope == Scope.Scheme)
+            {
+                SchemeValidator.ValidateSchemeTx(_connection, tx, _graphName);
+            }
+            else
+            {
+                var touchedIds = CollectTouchedNodeIds(ctx);
+                SchemeValidator.ValidateDataTx(_connection, tx, _graphName, effectiveScope,
+                    touchedIds, ctx.CreatedLinks);
+            }
+
             var txId = ctx.WriteHist(request.Title, request.Description, txScopeOverride);
             tx.Commit();
             return new TxResponse(txId, opResults);
@@ -75,6 +110,14 @@ public sealed class TxExecutor
             try { tx.Rollback(); } catch { /* ignore */ }
             throw;
         }
+    }
+
+    private static HashSet<string> CollectTouchedNodeIds(TxContext ctx)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var c in ctx.CreatedNodes) set.Add(c.Id);
+        foreach (var k in ctx.ChangedNodes.Keys) set.Add(k);
+        return set;
     }
 
     private static TxOpResponse ApplyOp(TxContext ctx, TxOp op)

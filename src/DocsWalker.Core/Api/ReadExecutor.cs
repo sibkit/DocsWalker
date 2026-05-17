@@ -9,9 +9,14 @@ namespace DocsWalker.Core.Api;
 /// SQLite-read-транзакции (BEGIN DEFERRED), возвращает структурированный
 /// <see cref="ReadResponse"/>.
 ///
+/// Темпоральные чтения (<c>at</c> ≠ now) реализуются через
+/// <see cref="AtReplay"/> — полный replay <c>tx_event</c>-журнала до
+/// upper bound, селекторы применяются к in-memory state через
+/// <see cref="AtSelector"/>. Поле <c>version</c> в ответе при <c>at</c>
+/// ≠ now не выдаётся (per api/model.md, раздел «Темпоральные чтения»).
+///
 /// Текущие ограничения v2:
 /// <list type="bullet">
-/// <item><c>at</c> ≠ now не поддерживается (deferred → step 6).</item>
 /// <item><c>select.as</c> в read-запросе принимается, но alias-ссылки
 /// в последующих <c>links.to/from</c> ещё не реализованы.</item>
 /// <item><c>select: "meta"</c> возвращает пустую meta-stub —
@@ -34,16 +39,17 @@ public sealed class ReadExecutor
     public ReadResponse Execute(ReadRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.At is not null)
-        {
-            throw new NotSupportedException("Temporal read (at) deferred to step 6.");
-        }
         using var tx = _connection.BeginTransaction(IsolationLevel.Serializable, deferred: true);
         var aliasBag = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        AtState? atState = null;
+        if (request.At is { } atClause)
+        {
+            atState = new AtReplay(_connection, _graphName).BuildState(atClause, tx);
+        }
         var results = new List<ReadOpResponse>(request.Ops.Count);
         foreach (var op in request.Ops)
         {
-            results.Add(ExecuteOp(op, request, aliasBag, tx));
+            results.Add(ExecuteOp(op, request, aliasBag, atState, tx));
         }
         tx.Commit();
         return new ReadResponse(results);
@@ -53,15 +59,94 @@ public sealed class ReadExecutor
         ReadOp op,
         ReadRequest request,
         Dictionary<string, IReadOnlyList<string>> aliases,
+        AtState? atState,
         SqliteTransaction tx)
     {
         return op switch
         {
             SelectKernelModeOp k => ExecuteKernelMode(k),
             SelectByPredicateOp s when request.Scope == Scope.Hist => ExecuteHistSelect(s, tx),
+            SelectByPredicateOp s when atState is not null =>
+                ExecuteAtDataSelect(s, request.Scope, request.Defaults, atState),
             SelectByPredicateOp s => ExecuteDataSelect(s, request.Scope, request.Defaults, aliases, tx),
             _ => throw new InvalidOperationException($"Unsupported ReadOp: {op.GetType().Name}"),
         };
+    }
+
+    private SelectNodesResponse ExecuteAtDataSelect(
+        SelectByPredicateOp op, Scope scope, Defaults? defaults, AtState state)
+    {
+        if (op.Selector is not DataSelector raw)
+        {
+            throw new ApiException(ApiErrorCodes.InvalidRequest, extras: new Dictionary<string, object?>
+            {
+                ["reason"] = "data_scope_requires_data_selector",
+            });
+        }
+        var selector = ApplyDefaults(raw, defaults);
+        var matched = AtSelector.SelectNodes(state, scope, selector);
+
+        var include = op.Include ?? Array.Empty<string>();
+        var wantContent = include.Contains("content", StringComparer.Ordinal);
+        var wantLinks = include.Contains("links", StringComparer.Ordinal);
+
+        var items = new List<NodeView>();
+        var truncated = false;
+        var omitted = 0;
+        string? stoppedAt = null;
+        var tokensUsed = 0;
+
+        for (int i = 0; i < matched.Count; i++)
+        {
+            var snap = matched[i];
+            IReadOnlyDictionary<string, string> mb = snap.MapBindings.Count > 0
+                ? snap.MapBindings
+                : EmptyMapBindings;
+            IReadOnlyList<IncidentLinkView>? nodeLinks = wantLinks
+                ? BuildIncidentLinksFromState(state, snap.Id)
+                : null;
+            var tokens = Tokens.Estimate(snap.Content);
+            var weight = wantContent ? tokens : 0;
+            if (op.MaxTokens is { } limit && items.Count > 0 && tokensUsed + weight > limit)
+            {
+                truncated = true;
+                omitted = matched.Count - items.Count;
+                stoppedAt = items[^1].Path;
+                break;
+            }
+            tokensUsed += weight;
+            items.Add(new NodeView(
+                Id: snap.Id,
+                Scope: snap.Scope == ScopeNames.Main ? null : snap.Scope,
+                Path: snap.Path,
+                Title: snap.Title,
+                MapBindings: mb,
+                Content: wantContent ? snap.Content : null,
+                Links: nodeLinks,
+                Tokens: tokens,
+                Version: null));
+        }
+
+        return new SelectNodesResponse(matched.Count, truncated, omitted, stoppedAt, items);
+    }
+
+    private static IReadOnlyList<IncidentLinkView> BuildIncidentLinksFromState(AtState state, string ownerId)
+    {
+        var list = new List<IncidentLinkView>();
+        foreach (var l in state.Links)
+        {
+            if (string.Equals(l.From, ownerId, StringComparison.Ordinal))
+            {
+                var path = state.Nodes.TryGetValue(l.To, out var target) ? target.Path : string.Empty;
+                list.Add(new IncidentLinkView(l.Name, new LinkEndpointView(l.To, path), null));
+            }
+            else if (string.Equals(l.To, ownerId, StringComparison.Ordinal))
+            {
+                var path = state.Nodes.TryGetValue(l.From, out var source) ? source.Path : string.Empty;
+                list.Add(new IncidentLinkView(l.Name, null, new LinkEndpointView(l.From, path)));
+            }
+        }
+        return list;
     }
 
     private static SelectMetaResponse ExecuteKernelMode(SelectKernelModeOp op)
