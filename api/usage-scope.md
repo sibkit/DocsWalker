@@ -10,7 +10,7 @@ map и link из схемы. LLM редактирует usage через `tx sco
 - чтения hist через `read scope=hist`;
 - чтения scheme через `read scope=scheme`;
 - записи через `tx`;
-- составления `commit_message`;
+- составления `title` и `description` транзакции;
 - отката tx через `rollback`;
 - обработки `rollback_conflict`;
 - работы с селекторами, aliases, `expected_count`;
@@ -44,7 +44,7 @@ Map `content` обязательна. Дополнительные map в usage 
 - `field` — имя поля.
 - `error_code` — код ошибки.
 - `schema_name` — `main` / `usage`.
-- `map_name` — имя map (для `usage/map`).
+- `map` — имя map (для `usage/map`).
 - `link_name` — имя link (для `usage/link`).
 
 ## Узел `usage/rule`
@@ -106,7 +106,7 @@ link на main-узлы из rule не создаётся.
   "title": "content",
   "map_bindings": {
     "content": "usage/map",
-    "map_name": "content",
+    "map": "content",
     "schema_name": "main"
   },
   "value": {
@@ -163,11 +163,11 @@ descriptions не включаются — LLM явно читает их чер
   },
   "value": {
     "request": {
-      "commit_message": "...",
+      "title": "...",
       "ops": [{ "move": { "...": "..." } }]
     },
     "expected_response": {
-      "result": { "tx_id": "a3f1c2" }
+      "result": { "id": "a3f1c2" }
     }
   }
 }
@@ -181,14 +181,14 @@ descriptions не включаются — LLM явно читает их чер
 ```json
 {
   "scope": "usage",
-  "commit_message": "связать example с описанием метода в main",
+  "title": "example-link-describes-method",
   "read_ids": ["..."],
   "ops": [
     {
       "link": {
         "name": "describes",
-        "from": { "id": "c8" },
-        "to": { "id": "2a" },
+        "from": "c8",
+        "to": "2a",
         "expected_count": 1
       }
     }
@@ -197,7 +197,7 @@ descriptions не включаются — LLM явно читает их чер
 ```
 
 Поскольку id узла глобально уникален, scope target однозначно
-выводится из `to.id` — отдельно `to.scope` указывать не нужно.
+выводится из `to` — отдельно `to.scope` указывать не нужно.
 
 Удаление main-узла `"2a"` при наличии этого link возвращает
 `delete_blocked_by_cross_scope_link`. LLM переключает link на другой

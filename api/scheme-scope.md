@@ -24,7 +24,7 @@ Map node:
   "map_bindings": {
     "kind": "map",
     "owner_scope": "main",
-    "map_name": "content"
+    "map": "content"
   },
   "value": {
     "description": "Классифицирует назначение main-узла по типу содержимого.",
@@ -45,8 +45,8 @@ Map node:
 
 - `map_bindings.kind` ∈ {`map`, `link`}.
 - `map_bindings.owner_scope` ∈ {`main`, `usage`}.
-- `map_bindings.map_name` или `map_bindings.link_name` — имя
-  описываемого объекта.
+- `map_bindings.map` или `map_bindings.link_name` — имя описываемого
+  объекта.
 - `value` содержит структурированное описание (branches, required,
   source / target constraints, cardinality и т.д.).
 
@@ -108,7 +108,7 @@ map-узлов и link-узлов.
         "scope": "main",
         "id": "2a",
         "reason": "map_branch_unknown",
-        "map_name": "content",
+        "map": "content",
         "violating_value": "documents/legacy"
       }
     ]
@@ -165,7 +165,7 @@ map-узлов и link-узлов.
             "owner_scope": "main"
           }
         },
-        "include": ["value", "map_bindings"],
+        "include": ["value"],
         "max_tokens": 8000
       }
     }
@@ -187,7 +187,7 @@ map-узлов и link-узлов.
         "selector": {
           "path": "main/content"
         },
-        "include": ["value", "map_bindings"]
+        "include": ["value"]
       }
     }
   ]
@@ -197,38 +197,39 @@ map-узлов и link-узлов.
 ## Meta-schema
 
 Meta-schema — kernel-owned JSON-файл `docs/.docswalker/meta-schema.json`.
-Описывает:
+Описывает два класса узлов (см. [model.md](model.md)):
 
-- структуру узла (`id`, `path`, `title`, `value`, `map_bindings`);
-- структуру link (`name`, `from.id`, `to.id`);
-- внутреннюю schema scheme scope (kind / owner_scope / map_name /
-  link_name);
-- структуру hist-узлов (`hist/transaction`, `hist/change`, target поля).
+- **Data-узел** (main / usage / scheme): `id`, `path`, `title`, `value`,
+  `map_bindings`.
+- **Event-узел** (hist `hist/transaction`): `id`, `title`, `date`,
+  `description?`, `rollback_of?`, секции `created` / `changed` /
+  `deleted`.
+
+А также:
+
+- структуру link (`name`, `from.id`, `to.id`) для data-scope-ов;
+- внутреннюю schema scheme scope (kind / owner_scope / map / link_name);
+- hist-specific селекторные предикаты (`touches_node`, `touches_link`,
+  `tx_scope`, `rollback_of`).
 
 Meta-schema редактируется только kernel-ом, версионируется вместе с
 релизами DocsWalker. При несовместимом изменении meta-schema оператор
 мигрирует данные при старте kernel-а отдельным механизмом.
 
-LLM читает meta-schema через `read scope=scheme` со специальным
-маркером:
+LLM читает meta-schema через отдельную форму `select` (строка вместо
+объекта-селектора — см. [read.md](read.md), раздел «Форма-строка:
+kernel-режимы»):
 
 ```json
 {
-  "scope": "scheme",
   "ops": [
-    {
-      "select": {
-        "selector": {
-          "meta": true
-        },
-        "include": ["value"]
-      }
-    }
+    { "select": "meta" }
   ]
 }
 ```
 
-Селектор возвращает один узел с полным содержимым meta-schema
-(сериализованным в `value`).
+Возвращает объект с полем `meta` (полное содержимое meta-schema) и
+`read_id`. `scope` запроса для этой формы не важен — meta-schema живёт
+вне scope-ов.
 
 Hist-schema — раздел meta-schema; отдельной точки чтения нет.

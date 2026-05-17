@@ -54,10 +54,14 @@ scope (через `applies_to`-селектор в value rule, см.
 
 ## Usage map gate (tx scope=main)
 
-При operation, назначающей `map_bindings` (`create`, `move` с
-`to.map_bindings`), для каждой назначаемой map LLM передаёт value
-`read_id` соответствующего `usage/map`-узла (`map_bindings.content=
-usage/map`, `map_name=<map>`).
+При operation, назначающей ветку map (`create.set.map_bindings.<map>=<branch>`,
+либо `move.to.map_bindings.<map>=<branch>` с не-`null` значением), для
+каждой назначаемой map LLM передаёт value `read_id` соответствующего
+`usage/map`-узла (`map_bindings.content=usage/map` и
+`map_bindings.map=<map>`).
+
+Снятие привязки (`move.to.map_bindings.<map>=null`) gate не требует —
+никакой новой классификации не вводится.
 
 ## Usage link gate (tx scope=main)
 
@@ -97,8 +101,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
           "ops": [
             {
               "select": {
-                "selector": { "id": "2a" },
-                "include": ["map_bindings"]
+                "selector": { "id": "2a" }
               }
             }
           ]
@@ -118,7 +121,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
             {
               "select": {
                 "selector": { "path": "rules/api/write" },
-                "include": ["value", "links", "map_bindings"]
+                "include": ["value", "links"]
               }
             }
           ]
@@ -140,10 +143,10 @@ value `read_id` этого main-узла. Чтобы получить value `rea
                 "selector": {
                   "map_bindings": {
                     "content": "usage/map",
-                    "map_name": "content"
+                    "map": "content"
                   }
                 },
-                "include": ["value", "map_bindings"]
+                "include": ["value"]
               }
             }
           ]
@@ -155,7 +158,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
 ```
 
 - `required[]` — список missing reads, каждый с готовым `read`-вызовом.
-- `reason` ∈ {`state_precondition`, `value_gate`, `usage_rule`,
+- `reason` ∈ {`state_precondition`, `project_value`, `usage_rule`,
   `usage_map`, `usage_link`}.
 - `read_scope` ∈ {`state`, `value`}.
 - `name`, `arguments` — точная форма MCP-tool call для получения
@@ -191,7 +194,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
    {
      "ops": [
        { "select": { "selector": { "id": "2a" },
-         "include": ["value", "map_bindings"] } }
+         "include": ["value"] } }
      ]
    }
    ```
@@ -202,7 +205,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
      "scope": "usage",
      "ops": [
        { "select": { "selector": { "path": "rules/api/write" },
-         "include": ["value", "links", "map_bindings"] } }
+         "include": ["value", "links"] } }
      ]
    }
    ```
@@ -212,7 +215,7 @@ value `read_id` этого main-узла. Чтобы получить value `rea
 4. `tx`:
    ```json
    {
-     "commit_message": "...",
+     "title": "...",
      "read_ids": ["4c8f", "31bf", "7bc0"],
      "ops": [ { "update": { "id": "2a", "set": { "value": "..." } } } ]
    }

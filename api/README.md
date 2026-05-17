@@ -13,10 +13,13 @@ API, формат запроса, формат ответа, операция и
 DocsWalker хранит граф знаний в одном каталоге `docs/`. Каталог разделён
 на четыре scope: `main` (пользовательский контент), `usage` (инструкции
 для LLM), `scheme` (редактируемые контракты Схемы) и `hist` (журнал
-изменений editable scope, пишется kernel-ом). У каждого scope своя
-schema, общая meta-schema (`docs/.docswalker/meta-schema.json`) задаёт
-базовые поля узла (`id`, `path`, `title`, `value`, `map_bindings`) и
-link (`name`, `from.id`, `to.id`). Id-пространство глобальное на весь
+изменений editable scope, пишется kernel-ом). Meta-schema
+(`docs/.docswalker/meta-schema.json`) описывает два класса узлов:
+data-узел (main / usage / scheme) с полями `id`, `path`, `title`,
+`value`, `map_bindings` и link `(name, from.id, to.id)`; event-узел
+(hist) с полями `id`, `title`, `date`, опциональным `description`,
+опциональным `rollback_of` и тремя секциями
+`created` / `changed` / `deleted`. Id-пространство глобальное на весь
 каталог. Все id — opaque hex-строки lower-case. Все данные
 хранятся как JSON.
 
@@ -68,16 +71,18 @@ MCP tool descriptions содержат компактный quickstart. Подр
   meta-schema и schema scope, `selector.match.regex`, aliases и slots.
 - [read.md](read.md) — метод `read`, `include`, `max_tokens`, truncation,
   `read_id` (state vs value).
-- [tx.md](tx.md) — метод `tx`, шесть op-типов
-  (`create`/`update`/`move`/`delete`/`link`/`unlink`), `expected_count`,
-  rollback operation.
+- [tx.md](tx.md) — метод `tx`, семь op-типов
+  (`create`/`update`/`move`/`delete`/`link`/`unlink`/`rollback`),
+  `expected_count`.
 - [scheme-scope.md](scheme-scope.md) — scheme scope, breaking-change-check,
   add-then-remove migration workflow.
 - [usage-scope.md](usage-scope.md) — usage scope, node contracts (rule,
-  map, link, example, topic, method, field, error), cross-scope
+  map, link, example, topic, method, field, error, schema), cross-scope
   `usage → main` links.
-- [hist-scope.md](hist-scope.md) — hist event log, шесть event-типов,
-  target identity, replay restoration, rollback marker.
+- [hist-scope.md](hist-scope.md) — hist event log, плоский event-узел
+  `hist/transaction` с секциями `created`/`changed`/`deleted`,
+  селекторы `touches_node`/`touches_link`/`rollback_of`/`tx_scope`,
+  replay restoration, rollback.
 - [read-gates.md](read-gates.md) — state preconditions, usage rule / map
   / link gates, project value gates, `read_required` envelope.
 - [errors.md](errors.md) — полный реестр кодов ошибок с `details` и

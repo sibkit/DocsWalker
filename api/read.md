@@ -11,7 +11,7 @@
         "selector": {
           "id": ["2a", "11"]
         },
-        "include": ["value", "map_bindings"],
+        "include": ["value"],
         "max_tokens": 4000
       }
     }
@@ -21,17 +21,56 @@
 
 ## Операция `select`
 
-- `selector` — обязательный. Predicate по полям узла / link /
-  hist-change (см. [selectors.md](selectors.md)).
-- `include` — опциональный массив строк. Допустимые значения: `"value"`,
-  `"links"`, `"map_bindings"`. Пустой или отсутствующий = compact-форма.
+`select` принимает одну из двух форм:
+
+- **Объект** — обычное чтение узлов по predicate-селектору.
+- **Строка** — имя kernel-режима для чтения служебных данных
+  (см. «Kernel-режимы» ниже).
+
+Парсер различает формы по типу значения.
+
+### Форма-объект: чтение узлов
+
+- `selector` — обязательный. Predicate по полям узла (см.
+  [selectors.md](selectors.md)).
+- `include` — опциональный массив строк. Имена полей, которые kernel
+  дополнительно подгрузит сверх compact-формы. Допустимый набор для
+  каждого класса узла объявлен в meta-schema (`loadable` поля; см.
+  [model.md](model.md)). Имя за пределами этого набора возвращает
+  `invalid_request`. Пустой или отсутствующий — compact-форма.
 - `max_tokens` — опциональный, положительное целое. Лимит токенов на
   выдачу операции. 0 или отрицательное возвращает `invalid_max_tokens`.
 - `as` — опциональный alias (см. [selectors.md](selectors.md)).
 
-## Compact-форма и полные узлы
+### Форма-строка: kernel-режимы
 
-При пустом или отсутствующем `include` узлы возвращаются в
+```json
+{ "ops": [ { "select": "meta" } ] }
+```
+
+Строка — имя kernel-режима. Реестр режимов:
+
+- `"meta"` — содержимое meta-schema (контракт data-узла, event-узла,
+  link, scheme-схемы и hist-предикатов). Доступно при любом `scope`
+  запроса. Возвращает один объект с полем `meta` и `read_id`:
+
+  ```json
+  {
+    "result": {
+      "meta": { /* содержимое meta-schema */ },
+      "read_id": "..."
+    }
+  }
+  ```
+
+Имя за пределами реестра возвращает `unknown_select_mode`. `selector`,
+`include`, `max_tokens`, `as` в форме-строке не применимы — присутствие
+этих полей рядом невозможно (значение `select` — целая строка, не
+объект).
+
+## Compact-форма data-узла
+
+При пустом или отсутствующем `include` data-узел возвращается в
 compact-форме:
 
 ```json
@@ -48,7 +87,7 @@ compact-форме:
 ```
 
 Поле `scope` сериализуется в ответе только для узлов вне main
-(`scope=usage`, `scope=hist`, `scope=scheme`); для main опускается.
+(`scope=usage`, `scope=scheme`); для main опускается.
 
 `tokens` — оценка стоимости полного `value` узла. `read_id` в
 compact-форме — **state** read_id.
@@ -96,6 +135,37 @@ compact-форме — **state** read_id.
 }
 ```
 
+## Compact-форма event-узла (hist)
+
+При отсутствии `include` event-узел возвращается с top-level полями и
+счётчиками секций:
+
+```json
+{
+  "id": "f4",
+  "title": "selectors-section-add",
+  "date": "2026-05-14",
+  "rollback_of": "8b20",
+  "counts": {
+    "created": { "nodes": 1, "links": 1 },
+    "changed": { "nodes": 1 },
+    "deleted": { "nodes": 1, "links": 1 }
+  },
+  "tokens": 1200,
+  "read_id": "31bf"
+}
+```
+
+- `counts.<section>.<kind>` — число элементов в подсекции. Подсекции с
+  нулём опускаются.
+- `tokens` — оценка стоимости полной формы (со всеми loadable полями).
+- `read_id` — state read_id event-узла.
+
+При `include` с одной или несколькими секциями event-узел возвращается
+с этими секциями раскрытыми. Если все запрошенные секции уложились в
+`max_tokens` — возвращается **value** read_id (по аналогии с data-узлом
+для полного value). Если часть секций обрезана — state read_id.
+
 ## Truncation
 
 Если общий результат превышает `max_tokens`, выдача обрезается:
@@ -115,14 +185,16 @@ compact-форме — **state** read_id.
 - `count` — общее число узлов, удовлетворяющих селектору (включая
   отрезанные).
 - `truncated` — `true`, если что-то срезано.
-- `stopped_at` — `path` последнего возвращённого узла. Опционально.
+- `stopped_at` — `path` или `id` последнего возвращённого узла.
+  Опционально.
 - `omitted_count` — сколько узлов осталось за пределами выдачи.
 - `items` — массив возвращённых узлов.
 
-Truncated узел с запрошенным `value`, который не помещён, получает
-только state read_id; value read_id выдаётся только для полностью
-прочитанного value. Чтобы получить value read_id, LLM повторяет `read`
-с более узким селектором или с увеличенным `max_tokens`.
+Truncated узел с запрошенным `value` / секцией, который не помещён,
+получает только state read_id; value read_id выдаётся только для
+полностью прочитанного value (или для полностью раскрытых секций
+event-узла). Чтобы получить value read_id, LLM повторяет `read` с более
+узким селектором или с увеличенным `max_tokens`.
 
 ## `read_id`
 
@@ -132,24 +204,29 @@ Truncated узел с запрошенным `value`, который не пом
 
 Scope-ы `read_id`:
 
-- **state** — подтверждает актуальную версию состояния узла. Для node
-  это `path`, `title`, `map_bindings` и incident links на момент чтения.
+- **state** — подтверждает актуальную версию состояния узла. Для
+  data-узла это `path`, `title`, `map_bindings` и incident links на
+  момент чтения. Для event-узла это сам факт существования узла с этим
+  `id` (event-узлы immutable — после записи kernel не правит их).
   State `read_id` используется как write precondition: если узел
   изменился после чтения, его актуальный state `read_id` другой и `tx`
   отклоняется.
-- **value** — подтверждает, что `value` узла прочитан целиком, без
-  truncation, и фиксирует версию value на момент чтения. Value `read_id`
-  одновременно удовлетворяет state precondition того же узла той же
-  версии.
+- **value** — подтверждает, что содержимое узла прочитано целиком, без
+  truncation: для data-узла — `value`; для event-узла — все секции,
+  заявленные в `include`. Value `read_id` одновременно удовлетворяет
+  state precondition того же узла той же версии.
 
-Compact read возвращает state `read_id`. Full read (`include=["value"]`,
-без truncation) возвращает value `read_id`. Truncated full read
-возвращает state `read_id`.
+Compact read возвращает state `read_id`. Full read
+(`include=["value"]` для data-узла / `include=["created","changed","deleted"]`
+для event-узла, без truncation) возвращает value `read_id`. Truncated
+full read возвращает state `read_id`.
 
-При успешном изменении узла kernel выпускает для него новый state и
-value `read_id`. Старые перестают соответствовать актуальной версии.
-Создание или удаление link обновляет state `read_id` его source и target
-узлов.
+При успешном изменении data-узла kernel выпускает для него новый state
+и value `read_id`. Старые перестают соответствовать актуальной версии.
+Создание или удаление link обновляет state `read_id` его source и
+target узлов. Event-узлы не меняются после записи, их `read_id`-ы не
+устаревают (кроме случая перестройки всей hist-схемы, что эквивалентно
+смене версии kernel).
 
 `read_id` передаётся LLM в `tx.read_ids` (см.
 [read-gates.md](read-gates.md)). Применимость:
@@ -194,7 +271,7 @@ value `read_id`. Старые перестают соответствовать 
         "selector": {
           "id": "2a"
         },
-        "include": ["value", "links", "map_bindings"],
+        "include": ["value", "links"],
         "max_tokens": 4000
       }
     }
@@ -216,7 +293,7 @@ value `read_id`. Старые перестают соответствовать 
         "selector": {
           "path": "rules/api/write"
         },
-        "include": ["value", "links", "map_bindings"],
+        "include": ["value", "links"],
         "max_tokens": 4000
       }
     }
@@ -236,10 +313,8 @@ value `read_id`. Старые перестают соответствовать 
   "ops": [
     {
       "select": {
-        "selector": {
-          "target.node.id": "2a"
-        },
-        "include": ["value", "map_bindings"],
+        "selector": { "touches_node": "2a" },
+        "include": ["created", "changed", "deleted"],
         "max_tokens": 4000
       }
     }
@@ -247,5 +322,6 @@ value `read_id`. Старые перестают соответствовать 
 }
 ```
 
-Возвращает все hist-change-узлы, описывающие изменения узла `"2a"` во
-всех editable scope.
+Возвращает все event-узлы `hist/transaction`, в секциях которых
+фигурирует узел `"2a"` (в любой роли — создан, изменён или удалён),
+во всех editable scope.
