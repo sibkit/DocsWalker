@@ -14,6 +14,14 @@ DDL для SQLite-storage DocsWalker. Все DDL даны как `CREATE TABLE` 
 - FK c `ON DELETE RESTRICT` (default) — для `link` на `node`; инвариант
   поддерживается kernel-ом (incident links удаляются раньше узла).
 - Datetime — ISO-8601 UTC `TEXT`.
+- **`read` оборачивается в одну SQLite read-транзакцию** (`BEGIN
+  DEFERRED ... COMMIT`), чтобы все `ops[]` запроса видели единый
+  snapshot состояния. WAL обеспечивает это без блокировки параллельных
+  writer-ов.
+- **`tx` оборачивается в одну SQLite write-транзакцию** (`BEGIN
+  IMMEDIATE ... COMMIT`) — резолв, concurrency-check, DML на
+  `node`/`link`/`node_map_binding` и запись `tx_event` +
+  `tx_touches_*` происходят атомарно. Любая ошибка → `ROLLBACK`.
 
 ## `graph`
 
@@ -104,7 +112,9 @@ CREATE INDEX node_scope
 Индексы:
 - `node_path` (non-unique) — prefix-сканы для селектора `path:
   "DocsWalker/api/**"` через `LIKE 'DocsWalker/api/%'`.
-- `node_path_lower` (unique) — sibling-уникальность по lower-case.
+- `node_path_lower` (unique) — полная path-уникальность по lower-case
+  (per ../api/model.md, раздел «Поля data-узла», описание `title`):
+  `A/B/c` и `a/b/c` считаются одним адресом и не могут сосуществовать.
 - `node_scope` — селектор по scope без path.
 
 ## `node_map_binding`
@@ -195,6 +205,9 @@ CREATE INDEX tx_event_rollback_of
 
 CREATE INDEX tx_event_tx_scope
   ON tx_event (graph_name, tx_scope);
+
+CREATE UNIQUE INDEX tx_event_date_ordinal
+  ON tx_event (graph_name, date, ordinal);
 ```
 
 - `id` — opaque hex из того же sequence, что и data-узлы (per
@@ -216,6 +229,10 @@ CREATE INDEX tx_event_tx_scope
 - `tx_event_date` — `read scope=hist` с regex/exact по дате.
 - `tx_event_rollback_of` — селектор `rollback_of: "<id>"`.
 - `tx_event_tx_scope` — селектор `tx_scope: "main"`.
+- `tx_event_date_ordinal` (unique) — устойчивая хронология: для одной
+  даты ordinal'ы уникальны, повторная выдача того же `(date, ordinal)`
+  ловится как SQL-конфликт даже при гипотетической ошибке kernel-side
+  генерации.
 
 ## `tx_touches_node`
 

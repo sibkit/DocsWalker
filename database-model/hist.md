@@ -14,7 +14,13 @@ Kernel принимает `tx`-запрос, проверяет (resolve, `expec
 1. **Issue tx_id.** `UPDATE sequence SET next_id = next_id + 1
    RETURNING next_id - 1`, форматирование в hex.
 2. **Применяет ops** — DML на `node`, `node_map_binding`, `link`.
-   Каждое изменение `node.*` инкрементирует `node.version`.
+   Каждое изменение `node.*` инкрементирует `node.version`. При
+   `update.set.title` UPDATE затрагивает обе денормализованные
+   колонки одновременно: `node.title` (новое значение) и `node.path`
+   (новый полный адрес, последний сегмент которого = новый title).
+   Если фактический diff пустой (значения совпали с текущими), UPDATE
+   не выполняется — `version` не растёт, узел не пишется в
+   `changed.nodes` (per ../api/hist-scope.md, раздел «Секция changed»).
 3. **Строит секции `created` / `changed` / `deleted`** — собирает
    list-ы из применённых ops:
    - `created.nodes[]` — полный post-state каждого нового узла.

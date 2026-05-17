@@ -51,8 +51,10 @@ Map `category` обязательна. Дополнительные map в usage
 Поле `content` у data-узла — всегда строка на уровне API (см.
 [model.md](model.md)). У usage-узлов с структурным контрактом
 (`usage/rule`, `usage/map`, `usage/link`, `usage/example`) в `content`
-кладётся escaped-JSON соответствующего shape; kernel парсит строку для
-механизмов, которым нужен shape (rule applicability, gate computation).
+кладётся escaped-JSON соответствующего shape. Для kernel это opaque
+строка: kernel её хранит, отдаёт по `read` и не парсит в собственных
+механизмах. Shape интерпретирует сама LLM при чтении usage (применение
+rule по `applies_to`, выбор ветки map по `branch_usage_notes` и т.п.).
 
 Примеры ниже показывают `content` развёрнутым JSON-объектом для
 читаемости. На уровне API он сериализуется как строка с escaped-JSON

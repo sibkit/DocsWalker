@@ -97,13 +97,29 @@ cardinality, ...); kernel парсит строку при breaking-change-check
 ## Schema scope-а
 
 Сам scheme scope имеет минимальную внутреннюю schema, описанную в
-meta-schema. `tx scope=scheme` оперирует созданием / правкой / удалением
-map-узлов и link-узлов.
+meta-schema (kernel-owned, через `tx scope=scheme` не редактируется):
 
-`scope` для нового описания задаётся через `owner_scope`:
+- map `category` с ветками `map` / `link` — тип scheme-узла;
+- map `owner_scope` с ветками `main` / `usage` — к какому scope
+  относится описание;
+- map `map` — имя описываемой map (для `category=map`);
+- map `link_name` — имя описываемого link (для `category=link`).
+
+Эти четыре map одинаковы для всех развёрнутых DocsWalker и в hist не
+фигурируют.
+
+Через `tx scope=scheme` LLM создаёт, правит и удаляет map-узлы и
+link-узлы, описывающие контракты **main** и **usage** scope-ов.
+`owner_scope` указывает, к какому из них относится описание:
 
 - `owner_scope=main` — описание относится к контракту main scope.
 - `owner_scope=usage` — описание относится к контракту usage scope.
+
+`owner_scope=scheme` отсутствует: контракт scheme scope-а целиком
+лежит в meta-schema и через scheme не редактируется. Соответственно
+ветки map `category` в самой scheme-схеме — `documents/*` для main и
+`usage/*` для usage — не пересекаются с ветками `map` / `link`,
+которыми scheme-узлы помечают сами себя.
 
 ## Breaking-change-check
 
