@@ -3,19 +3,18 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>DocsWalker.Cli</RootNamespace>
+    <RootNamespace>DocsWalker.Mcp</RootNamespace>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DocsWalker.Core\DocsWalker.Core.csproj" />
+    <InternalsVisibleTo Include="DocsWalker.Tests" />
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="DocsWalker.Tests" />
-    <InternalsVisibleTo Include="DocsWalker.Kernel" />
-    <InternalsVisibleTo Include="DocsWalker.Mcp" />
+    <ProjectReference Include="..\DocsWalker.Core\DocsWalker.Core.csproj" />
+    <ProjectReference Include="..\DocsWalker.Cli\DocsWalker.Cli.csproj" />
   </ItemGroup>
 
 </Project>

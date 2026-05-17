@@ -1,17 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>DocsWalker.Kernel</RootNamespace>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\DocsWalker.Core\DocsWalker.Core.csproj" />
-    <ProjectReference Include="..\DocsWalker.Cli\DocsWalker.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>

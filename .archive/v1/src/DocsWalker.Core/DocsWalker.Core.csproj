@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DocsWalker.Core</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <!--
+      NU1903: Microsoft.ML.Tokenizers тащит транзитивный Microsoft.Bcl.Memory с открытым
+      advisory GHSA-73j8-2gch-69rq (Memory<T> Out-of-Bounds). Advisory не закрыт ни в одной
+      9.x.y; для нашего use-case (статический счёт токенов на UTF-8 строках) код-путь не
+      подвержен. Подавляем варнинг до выхода исправленной 9.x. Если Microsoft закроет
+      advisory или выпустит major 10.x — снять.
+    -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
+    <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="2.0.0" />
+    <PackageReference Include="SharpYaml" Version="3.7.1" />
+  </ItemGroup>
+
+</Project>
