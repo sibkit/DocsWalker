@@ -184,6 +184,7 @@ public static class SelectorSql
     /// из трёх вариантов:
     /// <list type="bullet">
     /// <item>exact (без wildcard) → <c>column = ?</c>.</item>
+    /// <item>bare <c>**</c> → no-op (любой path в scope).</item>
     /// <item><c>prefix/**</c> → <c>column LIKE 'prefix/%' ESCAPE '\\'</c>.</item>
     /// <item><c>prefix/*</c> → <c>LIKE 'prefix/%' ESCAPE '\\' AND instr(substr(column, len+1), '/') = 0</c>.</item>
     /// </list>
@@ -200,6 +201,13 @@ public static class SelectorSql
         if (starIdx < 0)
         {
             b.Append(columnSql).Append(" = ").Param(pattern);
+            return;
+        }
+        if (pattern == "**")
+        {
+            // «Любой path в текущем scope». Тавтологический предикат, чтобы
+            // не ломать AND-чейн в SqlBuilder.
+            b.Append("1=1");
             return;
         }
         if (pattern.EndsWith("/**", StringComparison.Ordinal) && pattern.IndexOf('*', 0, pattern.Length - 3) < 0)

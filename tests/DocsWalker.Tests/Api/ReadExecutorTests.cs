@@ -223,6 +223,22 @@ public sealed class ReadExecutorTests
     }
 
     [Fact]
+    public void PathPattern_BareDoubleStar_MatchesAll()
+    {
+        using var conn = NewSeededGraph();
+        InsertNode(conn, "1", "main", "a", "a");
+        InsertNode(conn, "2", "main", "a/b", "b");
+        InsertNode(conn, "3", "main", "other/x", "x");
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"ops":[{"select":{"selector":{"path":"**"}}}]}"""));
+
+        var op = (SelectNodesResponse)resp.Ops[0];
+        Assert.Equal(3, op.Count);
+    }
+
+    [Fact]
     public void MaxTokens_CompactFormTruncates()
     {
         using var conn = NewSeededGraph();
