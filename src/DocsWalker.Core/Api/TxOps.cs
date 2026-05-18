@@ -32,13 +32,13 @@ internal static class TxOps
     {
         var rawPath = ApplyPathParent(ctx, op.Path);
         var (parentPath, title) = SplitPath(rawPath);
-        ValidateTitle(title, "$.ops[].create.path");
+        ValidateTitle(title, ctx.OpPathPrefix + ".create.path");
         if (op.Set.Title is { } explicitTitle)
         {
-            ValidateTitle(explicitTitle, "$.ops[].create.set.title");
+            ValidateTitle(explicitTitle, ctx.OpPathPrefix + ".create.set.title");
             if (!string.Equals(explicitTitle, title, StringComparison.Ordinal))
             {
-                throw new ApiException(ApiErrorCodes.InvalidNodeTitle, "$.ops[].create.set.title",
+                throw new ApiException(ApiErrorCodes.InvalidNodeTitle, ctx.OpPathPrefix + ".create.set.title",
                     new Dictionary<string, object?> { ["reason"] = "set_title_must_equal_path_last_segment" });
             }
         }
@@ -48,7 +48,7 @@ internal static class TxOps
         {
             if (!PathExists(ctx, parentPath))
             {
-                throw new ApiException(ApiErrorCodes.PathParentNotFound, "$.ops[].create.path",
+                throw new ApiException(ApiErrorCodes.PathParentNotFound, ctx.OpPathPrefix + ".create.path",
                     new Dictionary<string, object?> { ["parent_path"] = parentPath });
             }
         }
@@ -71,8 +71,8 @@ internal static class TxOps
         }
         catch (SqliteException ex) when (IsUniqueViolation(ex))
         {
-            throw new ApiException(ApiErrorCodes.AlreadyExists, "$.ops[].create.path",
-                new Dictionary<string, object?> { ["path"] = rawPath });
+            throw new ApiException(ApiErrorCodes.AlreadyExists, ctx.OpPathPrefix + ".create.path",
+                new Dictionary<string, object?> { ["conflict_path"] = rawPath });
         }
 
         // Apply create.set.map_bindings (with defaults underlay).
@@ -141,16 +141,16 @@ internal static class TxOps
     public static TxOpResponse Update(TxContext ctx, UpdateOp op)
     {
         var node = ctx.GetNode(op.Id) ?? throw new ApiException(
-            ApiErrorCodes.NotFound, "$.ops[].update.id",
+            ApiErrorCodes.NotFound, ctx.OpPathPrefix + ".update.id",
             new Dictionary<string, object?> { ["id"] = op.Id });
         if (node.Scope != ScopeNames.ToWire(ctx.Scope))
         {
-            throw new ApiException(ApiErrorCodes.NotFound, "$.ops[].update.id",
+            throw new ApiException(ApiErrorCodes.NotFound, ctx.OpPathPrefix + ".update.id",
                 new Dictionary<string, object?> { ["id"] = op.Id, ["scope"] = node.Scope, ["expected_scope"] = ScopeNames.ToWire(ctx.Scope) });
         }
         if (node.Version != op.ExpectedVersion)
         {
-            throw new ApiException(ApiErrorCodes.VersionMismatch, "$.ops[].update",
+            throw new ApiException(ApiErrorCodes.VersionMismatch, ctx.OpPathPrefix + ".update",
                 new Dictionary<string, object?> { ["id"] = op.Id, ["expected"] = op.ExpectedVersion, ["current"] = node.Version });
         }
 
@@ -159,7 +159,7 @@ internal static class TxOps
         string? newContent = null;
         if (op.Set.Title is { } setTitle && !string.Equals(setTitle, node.Title, StringComparison.Ordinal))
         {
-            ValidateTitle(setTitle, "$.ops[].update.set.title");
+            ValidateTitle(setTitle, ctx.OpPathPrefix + ".update.set.title");
             newTitle = setTitle;
             var parent = ParentOf(node.Path);
             newPath = parent.Length == 0 ? setTitle : parent + "/" + setTitle;
@@ -202,8 +202,8 @@ internal static class TxOps
         }
         catch (SqliteException ex) when (IsUniqueViolation(ex))
         {
-            throw new ApiException(ApiErrorCodes.AlreadyExists, "$.ops[].update.set.title",
-                new Dictionary<string, object?> { ["path"] = newPath });
+            throw new ApiException(ApiErrorCodes.AlreadyExists, ctx.OpPathPrefix + ".update.set.title",
+                new Dictionary<string, object?> { ["conflict_path"] = newPath });
         }
 
         // Cascade descendants if path changed.
@@ -225,13 +225,13 @@ internal static class TxOps
         var selected = ctx.FindNodes(ctx.Scope, op.Selector);
         if (selected.Count != op.ExpectedCount)
         {
-            throw new ApiException(ApiErrorCodes.CountMismatch, "$.ops[].move",
+            throw new ApiException(ApiErrorCodes.CountMismatch, ctx.OpPathPrefix + ".move",
                 new Dictionary<string, object?> { ["expected_count"] = op.ExpectedCount, ["actual_count"] = (long)selected.Count });
         }
         var rawParent = op.To.ParentPath is { Length: > 0 } pp ? ApplyPathParent(ctx, pp) : null;
         if (rawParent is not null && !PathExists(ctx, rawParent))
         {
-            throw new ApiException(ApiErrorCodes.PathParentNotFound, "$.ops[].move.to.parent_path",
+            throw new ApiException(ApiErrorCodes.PathParentNotFound, ctx.OpPathPrefix + ".move.to.parent_path",
                 new Dictionary<string, object?> { ["parent_path"] = rawParent });
         }
 
@@ -307,8 +307,8 @@ internal static class TxOps
                 }
                 catch (SqliteException ex) when (IsUniqueViolation(ex))
                 {
-                    throw new ApiException(ApiErrorCodes.AlreadyExists, "$.ops[].move.to.parent_path",
-                        new Dictionary<string, object?> { ["path"] = newPath });
+                    throw new ApiException(ApiErrorCodes.AlreadyExists, ctx.OpPathPrefix + ".move.to.parent_path",
+                        new Dictionary<string, object?> { ["conflict_path"] = newPath });
                 }
                 CascadePathChange(ctx, node.Path, newPath);
             }
@@ -327,7 +327,7 @@ internal static class TxOps
         var ids = op.Ids is { } explicitIds ? new List<string>(explicitIds) : ctx.FindNodes(ctx.Scope, op.Selector!);
         if (ids.Count != op.ExpectedCount)
         {
-            throw new ApiException(ApiErrorCodes.CountMismatch, "$.ops[].delete",
+            throw new ApiException(ApiErrorCodes.CountMismatch, ctx.OpPathPrefix + ".delete",
                 new Dictionary<string, object?> { ["expected_count"] = op.ExpectedCount, ["actual_count"] = (long)ids.Count });
         }
         foreach (var id in ids)
@@ -335,12 +335,12 @@ internal static class TxOps
             var node = ctx.GetNode(id);
             if (node is null)
             {
-                throw new ApiException(ApiErrorCodes.NotFound, "$.ops[].delete",
+                throw new ApiException(ApiErrorCodes.NotFound, ctx.OpPathPrefix + ".delete",
                     new Dictionary<string, object?> { ["id"] = id });
             }
             if (node.Scope != ScopeNames.ToWire(ctx.Scope))
             {
-                throw new ApiException(ApiErrorCodes.NotFound, "$.ops[].delete",
+                throw new ApiException(ApiErrorCodes.NotFound, ctx.OpPathPrefix + ".delete",
                     new Dictionary<string, object?> { ["id"] = id, ["scope"] = node.Scope });
             }
 
@@ -359,7 +359,7 @@ internal static class TxOps
                 }
                 if (blockers.Count > 0)
                 {
-                    throw new ApiException(ApiErrorCodes.DeleteBlockedByCrossScopeLink, "$.ops[].delete",
+                    throw new ApiException(ApiErrorCodes.DeleteBlockedByCrossScopeLink, ctx.OpPathPrefix + ".delete",
                         new Dictionary<string, object?>
                         {
                             ["id"] = id,
@@ -421,7 +421,7 @@ internal static class TxOps
         var toIds = ctx.ResolveEndpoint(op.To, "to");
         if (fromIds.Count == 0 || toIds.Count == 0)
         {
-            throw new ApiException(ApiErrorCodes.NotFound, "$.ops[].link",
+            throw new ApiException(ApiErrorCodes.NotFound, ctx.OpPathPrefix + ".link",
                 new Dictionary<string, object?>
                 {
                     ["from_count"] = (long)fromIds.Count,
@@ -431,7 +431,7 @@ internal static class TxOps
         var product = fromIds.Count * toIds.Count;
         if (product != op.ExpectedCount)
         {
-            throw new ApiException(ApiErrorCodes.CountMismatch, "$.ops[].link",
+            throw new ApiException(ApiErrorCodes.CountMismatch, ctx.OpPathPrefix + ".link",
                 new Dictionary<string, object?> { ["expected_count"] = op.ExpectedCount, ["actual_count"] = (long)product });
         }
         foreach (var f in fromIds)
@@ -451,7 +451,7 @@ internal static class TxOps
         var product = fromIds.Count * toIds.Count;
         if (product != op.ExpectedCount)
         {
-            throw new ApiException(ApiErrorCodes.CountMismatch, "$.ops[].unlink",
+            throw new ApiException(ApiErrorCodes.CountMismatch, ctx.OpPathPrefix + ".unlink",
                 new Dictionary<string, object?> { ["expected_count"] = op.ExpectedCount, ["actual_count"] = (long)product });
         }
         foreach (var f in fromIds)
@@ -470,7 +470,7 @@ internal static class TxOps
                 }
                 if (rows == 0)
                 {
-                    throw new ApiException(ApiErrorCodes.NotFound, "$.ops[].unlink",
+                    throw new ApiException(ApiErrorCodes.NotFound, ctx.OpPathPrefix + ".unlink",
                         new Dictionary<string, object?> { ["name"] = op.Name, ["from"] = f, ["to"] = t });
                 }
                 ctx.RecordDeletedLink(new HistLink(op.Name, f, t));
@@ -486,14 +486,14 @@ internal static class TxOps
     internal static void CreateLinkRow(TxContext ctx, string name, string fromId, string toId)
     {
         var fromScope = ctx.GetNodeScope(fromId) ?? throw new ApiException(
-            ApiErrorCodes.NotFound, "$.ops[].link.from",
+            ApiErrorCodes.NotFound, ctx.OpPathPrefix + ".link.from",
             new Dictionary<string, object?> { ["id"] = fromId });
         var toScope = ctx.GetNodeScope(toId) ?? throw new ApiException(
-            ApiErrorCodes.NotFound, "$.ops[].link.to",
+            ApiErrorCodes.NotFound, ctx.OpPathPrefix + ".link.to",
             new Dictionary<string, object?> { ["id"] = toId });
         if (!IsAllowedCrossScope(fromScope, toScope))
         {
-            throw new ApiException(ApiErrorCodes.CrossScopeNotAllowed, "$.ops[].link",
+            throw new ApiException(ApiErrorCodes.CrossScopeNotAllowed, ctx.OpPathPrefix + ".link",
                 new Dictionary<string, object?>
                 {
                     ["from_scope"] = fromScope,
@@ -512,7 +512,7 @@ internal static class TxOps
         }
         catch (SqliteException ex) when (IsUniqueViolation(ex))
         {
-            throw new ApiException(ApiErrorCodes.AlreadyExists, "$.ops[].link",
+            throw new ApiException(ApiErrorCodes.AlreadyExists, ctx.OpPathPrefix + ".link",
                 new Dictionary<string, object?>
                 {
                     ["name"] = name,
@@ -617,8 +617,8 @@ internal static class TxOps
             }
             catch (SqliteException ex) when (IsUniqueViolation(ex))
             {
-                throw new ApiException(ApiErrorCodes.AlreadyExists, "$.ops[].cascade",
-                    new Dictionary<string, object?> { ["path"] = newChildPath });
+                throw new ApiException(ApiErrorCodes.AlreadyExists, ctx.OpPathPrefix + ".cascade",
+                    new Dictionary<string, object?> { ["conflict_path"] = newChildPath });
             }
             ctx.RecordChange(id, new ChangedSet(null, null, newChildPath, null));
         }

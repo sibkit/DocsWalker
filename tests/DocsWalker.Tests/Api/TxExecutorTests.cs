@@ -81,6 +81,22 @@ public sealed class TxExecutorTests
         var ex = Assert.Throws<ApiException>(() => tx.Execute(
             ParseTx("""{"title":"t","ops":[{"create":{"path":"x"}}]}""")));
         Assert.Equal(ApiErrorCodes.AlreadyExists, ex.Code);
+        Assert.Equal("$.ops[0].create.path", ex.Details.Path);
+        Assert.Equal("x", ex.Details.Extras!["conflict_path"]);
+    }
+
+    [Fact]
+    public void Create_DuplicatePath_InSecondOp_ReportsCorrectIndex()
+    {
+        using var conn = NewSeededGraph();
+        SeedRawNode(conn, "11", "main", "x", "x");
+        var tx = NewExecutor(conn);
+
+        // Первая op успешна (новый path), вторая дублирует "x".
+        var ex = Assert.Throws<ApiException>(() => tx.Execute(
+            ParseTx("""{"title":"t","ops":[{"create":{"path":"y"}},{"create":{"path":"x"}}]}""")));
+        Assert.Equal(ApiErrorCodes.AlreadyExists, ex.Code);
+        Assert.Equal("$.ops[1].create.path", ex.Details.Path);
     }
 
     [Fact]

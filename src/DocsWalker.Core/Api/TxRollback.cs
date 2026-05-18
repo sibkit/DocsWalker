@@ -33,7 +33,7 @@ internal static class TxRollback
         }
         if (sourceSectionsJson is null)
         {
-            throw new ApiException(ApiErrorCodes.RollbackNotFound, "$.ops[].rollback",
+            throw new ApiException(ApiErrorCodes.RollbackNotFound, ctx.OpPathPrefix + ".rollback",
                 new Dictionary<string, object?> { ["id"] = op.TxId });
         }
 
@@ -46,14 +46,14 @@ internal static class TxRollback
             var existing = cmd.ExecuteScalar();
             if (existing is not null)
             {
-                throw new ApiException(ApiErrorCodes.RollbackAlreadyDone, "$.ops[].rollback",
+                throw new ApiException(ApiErrorCodes.RollbackAlreadyDone, ctx.OpPathPrefix + ".rollback",
                     new Dictionary<string, object?> { ["id"] = op.TxId, ["rollback_tx_id"] = (string)existing });
             }
         }
 
         if (sourceScope != ScopeNames.ToWire(ctx.Scope))
         {
-            throw new ApiException(ApiErrorCodes.RollbackConflict, "$.ops[].rollback",
+            throw new ApiException(ApiErrorCodes.RollbackConflict, ctx.OpPathPrefix + ".rollback",
                 new Dictionary<string, object?>
                 {
                     ["reason"] = "scope_mismatch",
@@ -83,7 +83,7 @@ internal static class TxRollback
                 }
                 if (rows == 0)
                 {
-                    throw new ApiException(ApiErrorCodes.RollbackConflict, "$.ops[].rollback",
+                    throw new ApiException(ApiErrorCodes.RollbackConflict, ctx.OpPathPrefix + ".rollback",
                         new Dictionary<string, object?>
                         {
                             ["reason"] = "link_already_removed",
@@ -116,7 +116,7 @@ internal static class TxRollback
                     var rows = cmd.ExecuteNonQuery();
                     if (rows == 0)
                     {
-                        throw new ApiException(ApiErrorCodes.RollbackConflict, "$.ops[].rollback",
+                        throw new ApiException(ApiErrorCodes.RollbackConflict, ctx.OpPathPrefix + ".rollback",
                             new Dictionary<string, object?> { ["reason"] = "node_already_removed", ["id"] = n.Id });
                     }
                 }
@@ -219,7 +219,7 @@ internal static class TxRollback
                 var snap = recon.ReconstructFullNode(dn.Id);
                 if (snap is null)
                 {
-                    throw new ApiException(ApiErrorCodes.RollbackFailed, "$.ops[].rollback",
+                    throw new ApiException(ApiErrorCodes.RollbackFailed, ctx.OpPathPrefix + ".rollback",
                         new Dictionary<string, object?>
                         {
                             ["reason"] = "cannot_reconstruct_deleted_node",

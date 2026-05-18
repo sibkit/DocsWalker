@@ -13,6 +13,12 @@
 `path` (JSON-pointer-подобный путь к месту ошибки в запросе), либо
 тематические поля.
 
+В `tx` `details.path` всегда содержит фактический индекс op:
+`$.ops[2].create.path` (а не `$.ops[].create.path`). Это позволяет
+понять, какая именно op в batch упала. Тематические поля, конфликтующие
+с `path` (например, фактический string-path узла в `already_exists`),
+называются `conflict_path` — `path` остаётся за JSON-pointer'ом.
+
 Ниже — полный реестр кодов, сгруппированный по областям.
 
 ## Разбор запроса
@@ -151,6 +157,10 @@ Parent для `create` или `move.to.parent_path` отсутствует в г
 который уже занят существующим sibling, либо `title`, lower-case форма
 которого совпадает с существующим sibling. Для `link` — попытка
 создать link с уже существующим tuple `(name, from.id, to.id)`.
+
+`details.conflict_path` (или `details.title` для title-конфликта) —
+фактическое значение, которое не удалось установить. `details.path` —
+JSON-pointer к op в запросе.
 
 ### `unknown_map`
 

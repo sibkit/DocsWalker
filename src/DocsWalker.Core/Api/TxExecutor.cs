@@ -65,8 +65,10 @@ public sealed class TxExecutor
             var ctx = new TxContext(_connection, tx, _graphName, request.Scope, _utcNow().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), request.Defaults);
             var opResults = new List<TxOpResponse>(request.Ops.Count);
             string? txScopeOverride = null;
-            foreach (var op in request.Ops)
+            for (int i = 0; i < request.Ops.Count; i++)
             {
+                var op = request.Ops[i];
+                ctx.OpIndex = i;
                 if (op is RollbackOp rb)
                 {
                     var (rbResult, rbScope) = TxRollback.Apply(ctx, rb);

@@ -36,6 +36,17 @@ internal sealed class TxContext
     public string Date { get; }
     public Defaults? Defaults { get; }
 
+    /// <summary>
+    /// Индекс текущей выполняемой <c>op</c> внутри <c>ops[]</c>. Используется
+    /// при формировании <c>details.path</c> ошибок (<c>$.ops[N].op-name...</c>),
+    /// чтобы в batch-tx было видно, какая именно op упала. Устанавливается
+    /// <see cref="TxExecutor"/> перед каждым вызовом <c>Apply*</c>.
+    /// </summary>
+    public int OpIndex { get; set; }
+
+    /// <summary>JSON-pointer-подобный префикс текущей op, готовый к конкатенации.</summary>
+    public string OpPathPrefix => "$.ops[" + OpIndex + "]";
+
     /// <summary>alias → id единственного узла, выданного <c>create.as</c>.</summary>
     public Dictionary<string, string> Aliases { get; } = new(StringComparer.Ordinal);
 
