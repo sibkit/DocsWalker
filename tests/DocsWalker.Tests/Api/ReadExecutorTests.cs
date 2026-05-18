@@ -304,6 +304,24 @@ public sealed class ReadExecutorTests
     }
 
     [Fact]
+    public void HistCompact_IncludesDescription()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx(
+                """{"title":"t","description":"why-this-tx","ops":[{"create":{"path":"a"}}]}"""));
+
+        var rx = new ReadExecutor(conn, Graph);
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"scope":"hist","ops":[{"select":{"selector":{}}}]}"""));
+
+        var op = (SelectEventsResponse)resp.Ops[0];
+        Assert.Single(op.Items);
+        Assert.Equal("why-this-tx", op.Items[0].Description);
+    }
+
+    [Fact]
     public void SelectMeta_ReturnsContract()
     {
         using var conn = NewSeededGraph();

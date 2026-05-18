@@ -285,7 +285,8 @@ public sealed class ReadExecutor
         }
 
         var include = op.Include ?? Array.Empty<string>();
-        var wantDesc = include.Contains("description", StringComparer.Ordinal);
+        // description — compact-поле hist event-узла (per api/hist-scope.md,
+        // раздел «Compact-форма event-узла»). Включается без include.
         var wantCreated = include.Contains("created", StringComparer.Ordinal);
         var wantChanged = include.Contains("changed", StringComparer.Ordinal);
         var wantDeleted = include.Contains("deleted", StringComparer.Ordinal);
@@ -301,7 +302,7 @@ public sealed class ReadExecutor
             var sections = HistSectionsJson.Deserialize(r.SectionsJson);
             var fullTokens = Tokens.Estimate(r.SectionsJson) + Tokens.Estimate(r.Description);
             var weight = Tokens.EstimateCompactEventNode(r.Id, r.Title, r.Date, r.RollbackOf);
-            if (wantDesc && r.Description is not null) weight += Tokens.Estimate(r.Description);
+            if (r.Description is not null) weight += Tokens.Estimate(r.Description);
             if (wantCreated || wantChanged || wantDeleted)
             {
                 // Загружаемые секции стоят как полные sections-json; точное
@@ -321,7 +322,7 @@ public sealed class ReadExecutor
                 Title: r.Title,
                 Date: r.Date,
                 RollbackOf: r.RollbackOf,
-                Description: wantDesc ? r.Description : null,
+                Description: r.Description,
                 Counts: ComputeEventCounts(sections),
                 Created: wantCreated ? sections.Created : null,
                 Changed: wantChanged ? sections.Changed : null,

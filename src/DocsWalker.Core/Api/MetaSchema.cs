@@ -55,7 +55,7 @@ internal static class MetaSchema
                     ["rollback_of"]  = new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "string",  ["compact"] = true,  ["note"] = "present on kernel-generated rollback tx" },
                     ["counts"]       = new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "object",  ["compact"] = true },
                     ["tokens"]       = new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "integer", ["compact"] = true },
-                    ["description"]  = new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "string",  ["loadable"] = true },
+                    ["description"]  = new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "string",  ["compact"] = true },
                     ["created"]      = new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "object",  ["loadable"] = true },
                     ["changed"]      = new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "object",  ["loadable"] = true },
                     ["deleted"]      = new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "object",  ["loadable"] = true },

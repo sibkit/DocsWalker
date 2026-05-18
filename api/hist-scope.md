@@ -280,6 +280,7 @@ event-узла:
   "title": "...",
   "date": "2026-05-14",
   "rollback_of": "8b20",
+  "description": "Раздел selectors добавлен ради примера зависит-от.",
   "counts": {
     "created": { "nodes": 1, "links": 1 },
     "changed": { "nodes": 1 },
@@ -290,9 +291,12 @@ event-узла:
 ```
 
 `counts` — счётчики элементов в каждой подсекции. Подсекции с нулём
-опускаются. `tokens` — оценка стоимости полной формы (со всеми loadable
-полями). Loadable поля event-узла (`description`, `created`, `changed`,
-`deleted`) в compact-форму не входят и запрашиваются через `include`.
+опускаются. `description` — компактное commit-описание, выдаётся если
+задано; для триажа hist через `read` оно часто нужно, поэтому в
+compact-форме входит без `include`. `tokens` — оценка стоимости полной
+формы (со всеми loadable полями). Loadable поля event-узла (`created`,
+`changed`, `deleted`) в compact-форму не входят и запрашиваются через
+`include`.
 Event-узлы поля `version` не имеют — hist append-only, concurrency-
 precondition для них не нужен; `rollback` принимает id event-узла
 напрямую.
