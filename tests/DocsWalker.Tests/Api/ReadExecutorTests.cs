@@ -223,6 +223,55 @@ public sealed class ReadExecutorTests
     }
 
     [Fact]
+    public void MaxTokens_CompactFormTruncates()
+    {
+        using var conn = NewSeededGraph();
+        // Десять компактных узлов без content. Каждый ≈20 токенов compact-JSON,
+        // лимит 30 → второй уже превышает, выдаётся только первый.
+        for (int i = 1; i <= 10; i++)
+        {
+            InsertNode(conn, i.ToString(), "main", $"p{i}", $"p{i}", content: "x");
+        }
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"ops":[{"select":{"selector":{"id":["1","2","3","4","5","6","7","8","9","10"]},"max_tokens":30}}]}"""));
+
+        var op = (SelectNodesResponse)resp.Ops[0];
+        Assert.Equal(10, op.Count);
+        Assert.True(op.Truncated);
+        Assert.Single(op.Items);
+        Assert.Equal(9, op.OmittedCount);
+    }
+
+    [Fact]
+    public void MaxTokens_HistCompactDoesNotReserveFullBudget()
+    {
+        using var conn = NewSeededGraph();
+        var date = new DateTime(2026, 5, 18, 12, 0, 0, DateTimeKind.Utc);
+        // Один tx с большим content в созданном узле → у event sections_json
+        // огромный. Compact-форма должна влезть в маленький лимит.
+        var bigContent = new string('x', 4000);
+        new TxExecutor(conn, Graph, () => date)
+            .Execute(RequestParser.ParseTx(
+                "{\"title\":\"big\",\"ops\":[{\"create\":{\"path\":\"a\",\"set\":{\"content\":\""
+                + bigContent + "\"}}}]}"));
+        new TxExecutor(conn, Graph, () => date.AddDays(1))
+            .Execute(RequestParser.ParseTx(
+                """{"title":"second","ops":[{"create":{"path":"b"}}]}"""));
+
+        var rx = new ReadExecutor(conn, Graph);
+        // Compact hist-read с лимитом 100 — обе tx должны вернуться (по ~30
+        // токенов compact), хотя первая в full-форме весит >1000.
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"scope":"hist","ops":[{"select":{"selector":{},"max_tokens":100}}]}"""));
+
+        var op = (SelectEventsResponse)resp.Ops[0];
+        Assert.Equal(2, op.Items.Count);
+        Assert.False(op.Truncated);
+    }
+
+    [Fact]
     public void SelectMeta_ReturnsContract()
     {
         using var conn = NewSeededGraph();

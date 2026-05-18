@@ -104,7 +104,11 @@ public sealed class ReadExecutor
                 ? BuildIncidentLinksFromState(state, snap.Id)
                 : null;
             var tokens = Tokens.Estimate(snap.Content);
-            var weight = wantContent ? tokens : 0;
+            var weight = Tokens.EstimateCompactDataNode(
+                snap.Id, snap.Path, snap.Title, mb,
+                includeScope: snap.Scope != ScopeNames.Main);
+            if (wantContent) weight += tokens;
+            if (nodeLinks is { Count: > 0 }) weight += nodeLinks.Count * 8;
             if (op.MaxTokens is { } limit && items.Count > 0 && tokensUsed + weight > limit)
             {
                 truncated = true;
@@ -221,7 +225,11 @@ public sealed class ReadExecutor
                 ? (links!.GetValueOrDefault(r.Id) ?? (IReadOnlyList<IncidentLinkView>)Array.Empty<IncidentLinkView>())
                 : null;
             var tokens = Tokens.Estimate(r.Content);
-            var weight = wantContent ? tokens : 0;
+            var weight = Tokens.EstimateCompactDataNode(
+                r.Id, r.Path, r.Title, mb,
+                includeScope: r.Scope != ScopeNames.Main);
+            if (wantContent) weight += tokens;
+            if (nodeLinks is { Count: > 0 }) weight += nodeLinks.Count * 8;
             if (op.MaxTokens is { } limit && items.Count > 0 && tokensUsed + weight > limit)
             {
                 truncated = true;
@@ -291,15 +299,23 @@ public sealed class ReadExecutor
         foreach (var r in rows)
         {
             var sections = HistSectionsJson.Deserialize(r.SectionsJson);
-            var tokens = Tokens.Estimate(r.SectionsJson) + Tokens.Estimate(r.Description);
-            if (op.MaxTokens is { } limit && items.Count > 0 && tokensUsed + tokens > limit)
+            var fullTokens = Tokens.Estimate(r.SectionsJson) + Tokens.Estimate(r.Description);
+            var weight = Tokens.EstimateCompactEventNode(r.Id, r.Title, r.Date, r.RollbackOf);
+            if (wantDesc && r.Description is not null) weight += Tokens.Estimate(r.Description);
+            if (wantCreated || wantChanged || wantDeleted)
+            {
+                // Загружаемые секции стоят как полные sections-json; точное
+                // разделение по секциям не делаем — пессимистическая оценка.
+                weight += Tokens.Estimate(r.SectionsJson);
+            }
+            if (op.MaxTokens is { } limit && items.Count > 0 && tokensUsed + weight > limit)
             {
                 truncated = true;
                 omitted = rows.Count - items.Count;
                 stoppedAt = items[^1].Id;
                 break;
             }
-            tokensUsed += tokens;
+            tokensUsed += weight;
             items.Add(new EventView(
                 Id: r.Id,
                 Title: r.Title,
@@ -310,7 +326,7 @@ public sealed class ReadExecutor
                 Created: wantCreated ? sections.Created : null,
                 Changed: wantChanged ? sections.Changed : null,
                 Deleted: wantDeleted ? sections.Deleted : null,
-                Tokens: tokens));
+                Tokens: fullTokens));
         }
 
         return new SelectEventsResponse(rows.Count, truncated, omitted, stoppedAt, items);
