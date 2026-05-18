@@ -19,8 +19,6 @@ namespace DocsWalker.Core.Api;
 /// <list type="bullet">
 /// <item><c>select.as</c> в read-запросе принимается, но alias-ссылки
 /// в последующих <c>links.to/from</c> ещё не реализованы.</item>
-/// <item><c>select: "meta"</c> возвращает пустую meta-stub —
-/// meta-schema для v2 ещё не зафиксирована.</item>
 /// </list>
 /// </summary>
 public sealed class ReadExecutor
@@ -155,8 +153,7 @@ public sealed class ReadExecutor
         {
             throw new ApiException(ApiErrorCodes.UnknownSelectMode, extras: new Dictionary<string, object?> { ["mode"] = op.ModeName });
         }
-        // V2 meta-schema ещё не зафиксирована. Возвращаем пустую stub-структуру.
-        return new SelectMetaResponse(new Dictionary<string, object?>(StringComparer.Ordinal));
+        return new SelectMetaResponse(MetaSchema.Build());
     }
 
     private SelectNodesResponse ExecuteDataSelect(

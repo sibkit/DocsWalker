@@ -34,8 +34,9 @@ public sealed record SelectEventsResponse(
     IReadOnlyList<EventView> Items) : ReadOpResponse;
 
 /// <summary>
-/// Ответ на <c>select: "meta"</c>. На v2 meta-schema ещё не зафиксирована —
-/// возвращается пустой объект-заглушка.
+/// Ответ на <c>select: "meta"</c>. Содержит machine-readable
+/// meta-schema (per <see cref="MetaSchema"/>): scope-набор, контракты
+/// data/event-узлов, link-identity и направления, селекторы и tx-ops.
 /// </summary>
 public sealed record SelectMetaResponse(IReadOnlyDictionary<string, object?> Meta) : ReadOpResponse;
 

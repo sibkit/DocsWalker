@@ -51,17 +51,46 @@
 Строка — имя kernel-режима. Реестр режимов:
 
 - `"meta"` — содержимое meta-schema (контракт data-узла, event-узла,
-  link, scheme-схемы и hist-предикатов). Доступно при любом `scope`
-  запроса. Возвращает один объект с полем `meta`:
+  link и набор селекторов / tx-ops / kernel-режимов). Доступно при
+  любом `scope` запроса. Возвращает один объект с полем `meta`:
 
   ```json
   {
     "result": {
-      "meta": { /* содержимое meta-schema */ }
+      "meta": {
+        "version": "2",
+        "scopes": {
+          "main":   { "editable": true,  "default": true,  "temporal": true },
+          "usage":  { "editable": true,  "temporal": true },
+          "scheme": { "editable": true,  "temporal": true, "breaking_check": true },
+          "hist":   { "editable": false, "append_only": true }
+        },
+        "node_classes": {
+          "data":  { "scopes": ["main","usage","scheme"], "fields": { "<name>": { "kind": "...", "compact|loadable": true, ... } } },
+          "event": { "scopes": ["hist"],                  "fields": { "<name>": { ... } } }
+        },
+        "link": {
+          "identity": ["name","from.id","to.id"],
+          "allowed_directions": [
+            { "from": "main",  "to": "main"  },
+            { "from": "usage", "to": "usage" },
+            { "from": "usage", "to": "main"  }
+          ]
+        },
+        "data_selectors": ["id","path","title","map_bindings","links","match"],
+        "hist_selectors": ["id","title","date","description","rollback_of","tx_scope","touches_node","touches_link"],
+        "tx_ops":       ["create","update","move","delete","link","unlink","rollback"],
+        "read_ops":     ["select"],
+        "kernel_modes": ["meta"],
+        "at_forms":     ["<tx_id>", { "before": "<tx_id>" }]
+      }
     }
   }
   ```
 
+  Помета `compact` у поля означает, что оно всегда возвращается в
+  ответе `read` (включая compact-форму без `include`). Помета
+  `loadable` — поле возвращается только если запрошено через `include`.
   Meta-schema kernel-owned, версионируется с релизом DocsWalker, не
   подчиняется concurrency-полю `version`.
 

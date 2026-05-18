@@ -223,7 +223,7 @@ public sealed class ReadExecutorTests
     }
 
     [Fact]
-    public void SelectMeta_ReturnsStub()
+    public void SelectMeta_ReturnsContract()
     {
         using var conn = NewSeededGraph();
         var rx = new ReadExecutor(conn, Graph);
@@ -231,7 +231,15 @@ public sealed class ReadExecutorTests
         var resp = rx.Execute(RequestParser.ParseRead("""{"ops":[{"select":"meta"}]}"""));
 
         var meta = Assert.IsType<SelectMetaResponse>(resp.Ops[0]);
-        Assert.Empty(meta.Meta);
+        Assert.Equal("2", meta.Meta["version"]);
+        var scopes = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(meta.Meta["scopes"]);
+        Assert.Contains("main", scopes.Keys);
+        Assert.Contains("hist", scopes.Keys);
+        var nodeClasses = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(meta.Meta["node_classes"]);
+        Assert.Contains("data", nodeClasses.Keys);
+        Assert.Contains("event", nodeClasses.Keys);
+        var txOps = Assert.IsAssignableFrom<IEnumerable<object?>>(meta.Meta["tx_ops"]);
+        Assert.Contains("rollback", txOps);
     }
 
     [Fact]
