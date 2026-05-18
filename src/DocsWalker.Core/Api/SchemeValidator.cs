@@ -82,6 +82,17 @@ internal static class SchemeValidator
                     });
                 }
             }
+            foreach (var (mapName, def) in maps)
+            {
+                if (!def.Required) continue;
+                if (snap.MapBindings.ContainsKey(mapName)) continue;
+                errors.Add(new Dictionary<string, object?>
+                {
+                    ["code"] = ApiErrorCodes.MapRequiredMissing,
+                    ["id"] = id,
+                    ["map"] = mapName,
+                });
+            }
         }
 
         foreach (var l in touchedLinks)

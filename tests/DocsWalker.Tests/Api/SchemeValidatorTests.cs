@@ -205,6 +205,47 @@ public sealed class SchemeValidatorTests
     }
 
     [Fact]
+    public void DataTx_RequiredMapMissing_FailsValidationFailed()
+    {
+        using var conn = NewSeededGraph();
+        // scheme: одна map с required=true.
+        new TxExecutor(conn, Graph, () => FixedUtc)
+            .Execute(RequestParser.ParseTx("""
+                {"scope":"scheme","title":"m","ops":[{"create":{"path":"cat_main","set":{
+                    "content":"{\"branches\":{\"documents\":{\"spec\":{}}},\"required\":true}",
+                    "map_bindings":{"category":"map","owner_scope":"main","map":"category"}}}}]}
+                """));
+
+        var tx = new TxExecutor(conn, Graph, () => FixedUtc.AddDays(1));
+        var ex = Assert.Throws<ApiException>(() => tx.Execute(RequestParser.ParseTx("""
+            {"title":"a","ops":[{"create":{"path":"a"}}]}
+            """)));
+        Assert.Equal(ApiErrorCodes.ValidationFailed, ex.Code);
+        var errors = (List<Dictionary<string, object?>>)ex.Details.Extras!["errors"]!;
+        Assert.Contains(errors, e => (string?)e["code"] == ApiErrorCodes.MapRequiredMissing
+            && (string?)e["map"] == "category");
+    }
+
+    [Fact]
+    public void DataTx_RequiredMapPresent_Passes()
+    {
+        using var conn = NewSeededGraph();
+        new TxExecutor(conn, Graph, () => FixedUtc)
+            .Execute(RequestParser.ParseTx("""
+                {"scope":"scheme","title":"m","ops":[{"create":{"path":"cat_main","set":{
+                    "content":"{\"branches\":{\"documents\":{\"spec\":{}}},\"required\":true}",
+                    "map_bindings":{"category":"map","owner_scope":"main","map":"category"}}}}]}
+                """));
+
+        var resp = new TxExecutor(conn, Graph, () => FixedUtc.AddDays(1))
+            .Execute(RequestParser.ParseTx("""
+                {"title":"a","ops":[{"create":{"path":"a","set":{
+                    "map_bindings":{"category":"documents/spec"}}}}]}
+                """));
+        Assert.Single(resp.Ops);
+    }
+
+    [Fact]
     public void DataTx_UnknownLink_FailsValidationFailed()
     {
         using var conn = NewSeededGraph();

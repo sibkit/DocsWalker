@@ -35,6 +35,7 @@ public static class ApiErrorCodes
     public const string AlreadyExists = "already_exists";
     public const string UnknownMap = "unknown_map";
     public const string UnknownLink = "unknown_link";
+    public const string MapRequiredMissing = "map_required_missing";
 
     // Cross-scope
     public const string CrossScopeNotAllowed = "cross_scope_not_allowed";
