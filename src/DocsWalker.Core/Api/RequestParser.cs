@@ -898,13 +898,31 @@ public static class RequestParser
     {
         if (elem.ValueKind == JsonValueKind.String)
         {
-            return new LinkEndpointClause(elem.GetString()!, null);
+            return new LinkEndpointClause(elem.GetString()!, null, null);
         }
         if (elem.ValueKind != JsonValueKind.Object)
         {
             throw new ApiException(ApiErrorCodes.InvalidRequest, path);
         }
-        return new LinkEndpointClause(null, ParseDataSelector(elem, path));
+        // `{ "alias": "..." }` — ссылка на alias, объявленный в предыдущем
+        // select.as. Ровно один ключ `alias` со строковым значением.
+        if (elem.TryGetProperty("alias", out var aliasElem))
+        {
+            foreach (var prop in elem.EnumerateObject())
+            {
+                if (!string.Equals(prop.Name, "alias", StringComparison.Ordinal))
+                {
+                    throw new ApiException(ApiErrorCodes.InvalidRequest, JoinKey(path, prop.Name),
+                        new Dictionary<string, object?> { ["reason"] = "alias_endpoint_must_be_sole_key" });
+                }
+            }
+            if (aliasElem.ValueKind != JsonValueKind.String)
+            {
+                throw new ApiException(ApiErrorCodes.InvalidRequest, JoinKey(path, "alias"));
+            }
+            return new LinkEndpointClause(null, aliasElem.GetString()!, null);
+        }
+        return new LinkEndpointClause(null, null, ParseDataSelector(elem, path));
     }
 
     private static MatchClause ParseMatchClause(JsonElement elem, string path, bool isHist)

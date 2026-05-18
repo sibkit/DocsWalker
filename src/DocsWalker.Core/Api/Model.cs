@@ -62,12 +62,14 @@ public sealed record LinkClause(
     LinkEndpointClause? To);
 
 /// <summary>
-/// Эндпоинт в `selector.links.from/to`: либо id-строка, либо вложенный
-/// DataSelector (один уровень вложения). Из двух полей всегда заполнено
+/// Эндпоинт в `selector.links.from/to`: либо id-строка, либо ссылка на
+/// alias (объявленный в предыдущей <c>select.as</c>), либо вложенный
+/// DataSelector (один уровень вложения). Из трёх полей всегда заполнено
 /// ровно одно — гарантирует парсер.
 /// </summary>
 public sealed record LinkEndpointClause(
     string? Id,
+    string? Alias,
     DataSelector? Selector);
 
 /// <summary>

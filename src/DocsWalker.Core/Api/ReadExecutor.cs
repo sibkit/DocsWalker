@@ -65,14 +65,15 @@ public sealed class ReadExecutor
             SelectKernelModeOp k => ExecuteKernelMode(k),
             SelectByPredicateOp s when request.Scope == Scope.Hist => ExecuteHistSelect(s, tx),
             SelectByPredicateOp s when atState is not null =>
-                ExecuteAtDataSelect(s, request.Scope, request.Defaults, atState),
+                ExecuteAtDataSelect(s, request.Scope, request.Defaults, aliases, atState),
             SelectByPredicateOp s => ExecuteDataSelect(s, request.Scope, request.Defaults, aliases, tx),
             _ => throw new InvalidOperationException($"Unsupported ReadOp: {op.GetType().Name}"),
         };
     }
 
     private SelectNodesResponse ExecuteAtDataSelect(
-        SelectByPredicateOp op, Scope scope, Defaults? defaults, AtState state)
+        SelectByPredicateOp op, Scope scope, Defaults? defaults,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> aliases, AtState state)
     {
         if (op.Selector is not DataSelector raw)
         {
@@ -82,6 +83,7 @@ public sealed class ReadExecutor
             });
         }
         var selector = ApplyDefaults(raw, defaults);
+        selector = ResolveLinkAliases(selector, aliases);
         var matched = AtSelector.SelectNodes(state, scope, selector);
 
         var include = op.Include ?? Array.Empty<string>();
@@ -175,6 +177,7 @@ public sealed class ReadExecutor
             });
         }
         var selector = ApplyDefaults(raw, defaults);
+        selector = ResolveLinkAliases(selector, aliases);
 
         var b = new SqlBuilder();
         b.Append("SELECT n.id, n.scope, n.path, n.title, n.content, n.version FROM node n WHERE n.graph_name = ").Param(_graphName);
@@ -380,6 +383,40 @@ public sealed class ReadExecutor
         var combined = path.StartsWith('/') ? path[1..] : path;
         var newPath = parent.TrimEnd('/') + "/" + combined;
         return selector with { Path = newPath };
+    }
+
+    /// <summary>
+    /// Резолвит alias-endpoint'ы внутри <c>selector.links.from/to</c> в
+    /// явные <c>Ids</c>-фильтры на основе ранее объявленных
+    /// <c>select.as</c>. Alias-ссылка на несуществующее имя — <c>unknown_alias</c>.
+    /// </summary>
+    private static DataSelector ResolveLinkAliases(
+        DataSelector selector, IReadOnlyDictionary<string, IReadOnlyList<string>> aliases)
+    {
+        if (selector.Links is not { } links) return selector;
+        var newFrom = ResolveEndpoint(links.From, aliases);
+        var newTo = ResolveEndpoint(links.To, aliases);
+        if (ReferenceEquals(newFrom, links.From) && ReferenceEquals(newTo, links.To))
+        {
+            return selector;
+        }
+        return selector with { Links = new LinkClause(links.Name, newFrom, newTo) };
+    }
+
+    private static LinkEndpointClause? ResolveEndpoint(
+        LinkEndpointClause? clause, IReadOnlyDictionary<string, IReadOnlyList<string>> aliases)
+    {
+        if (clause is null) return null;
+        if (clause.Alias is not { Length: > 0 } alias) return clause;
+        if (!aliases.TryGetValue(alias, out var ids))
+        {
+            throw new ApiException(ApiErrorCodes.UnknownAlias, extras: new Dictionary<string, object?>
+            {
+                ["alias"] = alias,
+            });
+        }
+        var aliasSelector = new DataSelector(ids, null, null, null, null, null);
+        return new LinkEndpointClause(null, null, aliasSelector);
     }
 
     private Dictionary<string, IReadOnlyDictionary<string, string>> LoadMapBindings(

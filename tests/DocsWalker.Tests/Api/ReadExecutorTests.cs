@@ -304,6 +304,44 @@ public sealed class ReadExecutorTests
     }
 
     [Fact]
+    public void Selector_LinksAliasEndpoint_ResolvesFromPriorSelect()
+    {
+        using var conn = NewSeededGraph();
+        // a — target; b и c — источники, у обоих link "rel" на a.
+        InsertNode(conn, "1", "main", "a", "a");
+        InsertNode(conn, "2", "main", "b", "b");
+        InsertNode(conn, "3", "main", "c", "c");
+        InsertLink(conn, "rel", "2", "1");
+        InsertLink(conn, "rel", "3", "1");
+
+        var rx = new ReadExecutor(conn, Graph);
+        // Первая op биндит "targets" = {a}. Вторая ищет узлы со ссылкой
+        // rel на любой из targets — должны вернуться b и c.
+        var resp = rx.Execute(RequestParser.ParseRead(
+            "{\"ops\":["
+            + "{\"select\":{\"as\":\"targets\",\"selector\":{\"id\":\"1\"}}},"
+            + "{\"select\":{\"selector\":{\"links\":{\"name\":\"rel\",\"to\":{\"alias\":\"targets\"}}}}}"
+            + "]}"));
+
+        var op = (SelectNodesResponse)resp.Ops[1];
+        Assert.Equal(2, op.Count);
+        Assert.Contains(op.Items, n => n.Title == "b");
+        Assert.Contains(op.Items, n => n.Title == "c");
+    }
+
+    [Fact]
+    public void Selector_LinksAliasEndpoint_UnknownAlias_Throws()
+    {
+        using var conn = NewSeededGraph();
+        InsertNode(conn, "1", "main", "a", "a");
+        var rx = new ReadExecutor(conn, Graph);
+
+        var ex = Assert.Throws<ApiException>(() => rx.Execute(RequestParser.ParseRead(
+            """{"ops":[{"select":{"selector":{"links":{"name":"x","to":{"alias":"none"}}}}}]}""")));
+        Assert.Equal(ApiErrorCodes.UnknownAlias, ex.Code);
+    }
+
+    [Fact]
     public void HistCompact_IncludesDescription()
     {
         using var conn = NewSeededGraph();
