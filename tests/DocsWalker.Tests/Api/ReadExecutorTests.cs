@@ -143,6 +143,22 @@ public sealed class ReadExecutorTests
     }
 
     [Fact]
+    public void SelectMatch_ShortFormOnTitle()
+    {
+        using var conn = NewSeededGraph();
+        InsertNode(conn, "1", "main", "alpha", "alpha");
+        InsertNode(conn, "2", "main", "beta", "beta");
+        var rx = new ReadExecutor(conn, Graph);
+
+        var resp = rx.Execute(RequestParser.ParseRead(
+            """{"ops":[{"select":{"selector":{"title":{"match":{"regex":"^al"}}}}}]}"""));
+
+        var op = Assert.IsType<SelectNodesResponse>(resp.Ops[0]);
+        Assert.Equal(1, op.Count);
+        Assert.Equal("alpha", op.Items[0].Title);
+    }
+
+    [Fact]
     public void IncludeContent_PopulatesContent()
     {
         using var conn = NewSeededGraph();

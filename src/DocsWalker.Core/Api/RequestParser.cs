@@ -653,7 +653,15 @@ public static class RequestParser
             ids = ParseIdOrIdArray(idElem, JoinKey(path, "id"));
         }
         string? pathPattern = OptionalString(elem, "path", path);
-        string? title = OptionalString(elem, "title", path);
+        var (title, titleShort) = ParseExactOrShortFormMatch(elem, "title", path, "title", isHist: false);
+        var (contentExact, contentShort) = ParseExactOrShortFormMatch(elem, "content", path, "content", isHist: false);
+        // content по data-узлу не имеет exact-эквивалента (это длинный текст);
+        // допустим только shortcut-форма с match.
+        if (contentExact is not null)
+        {
+            throw new ApiException(ApiErrorCodes.InvalidRequest, JoinKey(path, "content"),
+                new Dictionary<string, object?> { ["reason"] = "exact_match_not_supported_for_content" });
+        }
 
         IReadOnlyDictionary<string, string>? mapBindings = null;
         if (TryGetField(elem, "map_bindings", out var mbElem))
@@ -666,6 +674,23 @@ public static class RequestParser
         {
             match = ParseMatchClause(matchElem, JoinKey(path, "match"), isHist: false);
         }
+        // shortcut match на отдельных полях склеивается с top-level match —
+        // если оба заданы, это конфликт.
+        MatchClause? shortcut = titleShort ?? contentShort;
+        if (titleShort is not null && contentShort is not null)
+        {
+            throw new ApiException(ApiErrorCodes.InvalidRequest, path,
+                new Dictionary<string, object?> { ["reason"] = "multiple_shortcut_match" });
+        }
+        if (shortcut is not null)
+        {
+            if (match is not null)
+            {
+                throw new ApiException(ApiErrorCodes.InvalidRequest, path,
+                    new Dictionary<string, object?> { ["reason"] = "conflicting_match_clauses" });
+            }
+            match = shortcut;
+        }
 
         LinkClause? links = null;
         if (TryGetField(elem, "links", out var linksElem))
@@ -675,7 +700,7 @@ public static class RequestParser
 
         foreach (var prop in elem.EnumerateObject())
         {
-            if (prop.Name is not ("id" or "path" or "title" or "map_bindings" or "match" or "links"))
+            if (prop.Name is not ("id" or "path" or "title" or "content" or "map_bindings" or "match" or "links"))
             {
                 throw new ApiException(ApiErrorCodes.InvalidRequest, JoinKey(path, prop.Name));
             }
