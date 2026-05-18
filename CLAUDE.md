@@ -2,6 +2,35 @@
 
 Мета-памятка ассистента.
 
+## Активная сессия
+
+> Снапшот перед рестартом Claude Code для подключения MCP server
+> `docswalker`. Удалить, когда smoke через `mcp__docswalker__*` пройдёт.
+
+**Активная задача.** Проверить, что после рестарта Claude Code MCP server
+`docswalker` подцепился из `.mcp.json` и инструменты
+`mcp__docswalker__read` / `mcp__docswalker__tx` работают.
+
+**Checkpoint.** Bootstrap V2 dogfood-config полностью завершён и
+запушен (commit `9a48bdc`). БД, scheme, kernel, MCP wrapper — все
+готовы. Осталось только smoke-test через MCP-инструменты.
+
+**Следующий шаг после рестарта:** позвать `mcp__docswalker__read` со
+`scope=scheme` (пустой селектор) — ожидается 28 узлов: 2 root + 14 maps
+(6 main + 8 usage) + 12 links (6 main + 6 usage).
+
+**Ключевые предположения:**
+
+- Kernel запущен в фоне на `127.0.0.1:18080`, pid 18844. Если процесс
+  выжил рестарт — `curl http://127.0.0.1:18080/health` отдаст `ok`.
+  Если упал — `bash scripts/start-kernel.sh`.
+- БД: `.dw/docswalker.sqlite`, graph `docswalker`. 417 узлов в main с
+  `категория=legacy/v1` + 28 в scheme.
+
+**Открытое (не блокирующее):** `статус` map оставлен `required=false`.
+Поднять можно после фактической пере-классификации legacy-узлов в их
+реальные категории (`документы/*`, `задачи/*`, `заметки/*`).
+
 > **Статус (2026-05-18): V2 dogfood-config запущен.** Core (Read/Tx
 > executors, hist replay, at time-travel, scheme validation), Kernel
 > (HTTP+MCP JSON-RPC), Mcp (stdio↔HTTP bridge), Cli (init / exec / repl /
