@@ -19,22 +19,22 @@ Map node:
 
 ```json
 {
-  "path": "main/category",
-  "title": "category",
+  "path": "main/категория",
+  "title": "категория",
   "map_bindings": {
     "category": "map",
     "owner_scope": "main",
-    "map": "category"
+    "map": "категория"
   },
   "content": {
     "description": "Классифицирует назначение main-узла по типу содержимого.",
     "branches": {
-      "documents": {
-        "project": {},
-        "spec": {}
+      "документы": {
+        "спека": {},
+        "решение": {}
       },
-      "examples": {
-        "csharp": {}
+      "задачи": {
+        "бэклог": {}
       }
     },
     "required": true,
@@ -54,23 +54,23 @@ Link node:
 
 ```json
 {
-  "path": "main/depends_on",
-  "title": "depends_on",
+  "path": "main/зависит-от",
+  "title": "зависит-от",
   "map_bindings": {
     "category": "link",
     "owner_scope": "main",
-    "link_name": "depends_on"
+    "link_name": "зависит-от"
   },
   "content": {
     "description": "From-узел зависит от to-узла.",
     "from": {
       "map_bindings": {
-        "category": "documents/**"
+        "категория": "документы/**"
       }
     },
     "to": {
       "map_bindings": {
-        "category": "documents/**"
+        "категория": "документы/**"
       }
     },
     "cardinality": "many_to_many",
@@ -117,8 +117,9 @@ link-узлы, описывающие контракты **main** и **usage** s
 
 `owner_scope=scheme` отсутствует: контракт scheme scope-а целиком
 лежит в meta-schema и через scheme не редактируется. Соответственно
-ветки map `category` в самой scheme-схеме — `documents/*` для main и
-`usage/*` для usage — не пересекаются с ветками `map` / `link`,
+ветки data-map `категория` (в main `документы/*`, `задачи/*`,
+`заметки/*`, `legacy/*`; в usage `usage/*`) не пересекаются с
+ветками service-map `category` scheme scope-а (`map` / `link`),
 которыми scheme-узлы помечают сами себя.
 
 ## Breaking-change-check
@@ -167,14 +168,14 @@ link-узлы, описывающие контракты **main** и **usage** s
    `tx scope=usage`.
 5. **Удалить старую структуру в схеме** через `tx scope=scheme`.
 
-Пример «переименовать map `subject` в `topic`»:
+Пример «переименовать map `жанр` в `вид`»:
 
 ```
-1. tx scope=scheme: создать map "topic" (с теми же branches, не required).
-2. tx scope=main: для каждого узла добавить map_bindings.topic = old subject value.
-3. tx scope=scheme: сделать "topic" required (если был required); сделать "subject" deprecated.
-4. tx scope=main: для каждого узла удалить map_bindings.subject.
-5. tx scope=scheme: удалить map "subject".
+1. tx scope=scheme: создать map "вид" (с теми же branches, не required).
+2. tx scope=main: для каждого узла добавить map_bindings.вид = old жанр value.
+3. tx scope=scheme: сделать "вид" required (если был required); сделать "жанр" deprecated.
+4. tx scope=main: для каждого узла удалить map_bindings.жанр.
+5. tx scope=scheme: удалить map "жанр".
 ```
 
 Каждый шаг — атомарная tx, каждый non-breaking сам по себе.
@@ -213,7 +214,7 @@ link-узлы, описывающие контракты **main** и **usage** s
     {
       "select": {
         "selector": {
-          "path": "main/category"
+          "path": "main/категория"
         },
         "include": ["content"]
       }

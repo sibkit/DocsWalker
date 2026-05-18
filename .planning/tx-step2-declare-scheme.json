@@ -1,0 +1,387 @@
+{
+  "scope": "scheme",
+  "title": "declare-maps-and-links",
+  "description": "Объявить полный контракт V2: 6 main-maps + 8 usage-maps + 6 main-links + 6 usage-links (4 within + 2 cross-scope). Категория main без required, usage категория required=true (usage scope изначально пуст).",
+  "ops": [
+    {
+      "create": {
+        "path": "main",
+        "set": {
+          "title": "main"
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage",
+        "set": {
+          "title": "usage"
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/категория",
+        "set": {
+          "title": "категория",
+          "content": "{\"description\": \"Классификация main-узлов по типу: документы, задачи, заметки или legacy V1.\", \"branches\": {\"документы\": {\"спека\": {}, \"решение\": {}, \"инвариант\": {}, \"гайд\": {}}, \"задачи\": {\"бэклог\": {}, \"запланирована\": {}, \"активна\": {}, \"заблокирована\": {}, \"отложена\": {}, \"сделана\": {}, \"отменена\": {}}, \"заметки\": {\"исследование\": {}, \"вопрос\": {}, \"чейнджлог\": {}, \"идея\": {}}, \"legacy\": {\"v1\": {}}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "main",
+            "map": "категория"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/подсистема",
+        "set": {
+          "title": "подсистема",
+          "content": "{\"description\": \"Принадлежность узла к подсистеме DocsWalker.\", \"branches\": {\"core\": {}, \"kernel\": {}, \"mcp\": {}, \"cli\": {}, \"tests\": {}, \"spec\": {}, \"tooling\": {}, \"infra\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "main",
+            "map": "подсистема"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/статус",
+        "set": {
+          "title": "статус",
+          "content": "{\"description\": \"Статус жизненного цикла узла.\", \"branches\": {\"черновик\": {}, \"действует\": {}, \"устарел\": {}, \"архив\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "main",
+            "map": "статус"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/адресат",
+        "set": {
+          "title": "адресат",
+          "content": "{\"description\": \"Целевая аудитория узла.\", \"branches\": {\"llm\": {}, \"человек\": {}, \"оба\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "main",
+            "map": "адресат"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/строгость",
+        "set": {
+          "title": "строгость",
+          "content": "{\"description\": \"Степень обязательности рекомендации (применяется к документам).\", \"branches\": {\"обязательно\": {}, \"рекомендуется\": {}, \"опционально\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "main",
+            "map": "строгость"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/приоритет",
+        "set": {
+          "title": "приоритет",
+          "content": "{\"description\": \"Приоритет задачи.\", \"branches\": {\"критичный\": {}, \"высокий\": {}, \"средний\": {}, \"низкий\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "main",
+            "map": "приоритет"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/категория",
+        "set": {
+          "title": "категория",
+          "content": "{\"description\": \"Тип usage-узла (rule, map, link, example, topic, method, field, error, schema).\", \"branches\": {\"usage\": {\"topic\": {}, \"method\": {}, \"field\": {}, \"error\": {}, \"schema\": {}, \"map\": {}, \"link\": {}, \"example\": {}, \"rule\": {}}}, \"required\": true, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "usage",
+            "map": "категория"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/тема",
+        "set": {
+          "title": "тема",
+          "content": "{\"description\": \"Тематический разрез usage-узла.\", \"branches\": {\"read\": {}, \"tx\": {}, \"selector\": {}, \"error\": {}, \"schema\": {}, \"workflow\": {}, \"scope\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "usage",
+            "map": "тема"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/метод",
+        "set": {
+          "title": "метод",
+          "content": "{\"description\": \"Имя метода JSON API.\", \"branches\": {\"read\": {}, \"tx\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "usage",
+            "map": "метод"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/поле",
+        "set": {
+          "title": "поле",
+          "content": "{\"description\": \"Имя поля request/response/селектора.\", \"branches\": {\"scope\": {}, \"ops\": {}, \"selector\": {}, \"include\": {}, \"max_tokens\": {}, \"at\": {}, \"title\": {}, \"description\": {}, \"defaults\": {}, \"content\": {}, \"map_bindings\": {}, \"expected_count\": {}, \"expected_version\": {}, \"as\": {}, \"set\": {}, \"path\": {}, \"id\": {}, \"ids\": {}, \"name\": {}, \"from\": {}, \"to\": {}, \"alias\": {}, \"links\": {}, \"match\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "usage",
+            "map": "поле"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/код-ошибки",
+        "set": {
+          "title": "код-ошибки",
+          "content": "{\"description\": \"Код ошибки JSON API.\", \"branches\": {\"invalid_json\": {}, \"invalid_request\": {}, \"missing_required_field\": {}, \"invalid_op\": {}, \"unknown_op\": {}, \"unknown_select_mode\": {}, \"invalid_scope\": {}, \"unknown_scope\": {}, \"at_not_applicable\": {}, \"hist_read_only\": {}, \"invalid_tx_title\": {}, \"invalid_max_tokens\": {}, \"invalid_match_regex\": {}, \"invalid_match_fields\": {}, \"match_timeout\": {}, \"unknown_alias\": {}, \"ambiguous_path_base\": {}, \"invalid_node_title\": {}, \"invalid_map_binding_value\": {}, \"not_found\": {}, \"ambiguous_selector\": {}, \"count_mismatch\": {}, \"path_parent_not_found\": {}, \"already_exists\": {}, \"unknown_map\": {}, \"unknown_link\": {}, \"cross_scope_not_allowed\": {}, \"delete_blocked_by_cross_scope_link\": {}, \"version_mismatch\": {}, \"validation_failed\": {}, \"schema_breaks_existing_data\": {}, \"rollback_not_found\": {}, \"rollback_conflict\": {}, \"rollback_failed\": {}, \"rollback_already_done\": {}, \"hist_write_failed\": {}, \"unknown_method\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "usage",
+            "map": "код-ошибки"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/имя-схемы",
+        "set": {
+          "title": "имя-схемы",
+          "content": "{\"description\": \"Имя data-scope (main или usage).\", \"branches\": {\"main\": {}, \"usage\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "usage",
+            "map": "имя-схемы"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/имя-map",
+        "set": {
+          "title": "имя-map",
+          "content": "{\"description\": \"Имя map, описываемой через usage/map.\", \"branches\": {\"категория\": {}, \"подсистема\": {}, \"статус\": {}, \"адресат\": {}, \"строгость\": {}, \"приоритет\": {}, \"тема\": {}, \"метод\": {}, \"поле\": {}, \"код-ошибки\": {}, \"имя-схемы\": {}, \"имя-map\": {}, \"имя-link\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "usage",
+            "map": "имя-map"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/имя-link",
+        "set": {
+          "title": "имя-link",
+          "content": "{\"description\": \"Имя link, описываемого через usage/link.\", \"branches\": {\"зависит-от\": {}, \"заменяет\": {}, \"опирается-на\": {}, \"реализует\": {}, \"связан-с\": {}, \"упоминается-в\": {}, \"использует-метод\": {}, \"использует-поле\": {}, \"возвращает-ошибку\": {}, \"см-также\": {}, \"описывает\": {}, \"ссылается-на\": {}}, \"required\": false, \"required_when\": null}",
+          "map_bindings": {
+            "category": "map",
+            "owner_scope": "usage",
+            "map": "имя-link"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/зависит-от",
+        "set": {
+          "title": "зависит-от",
+          "content": "{\"description\": \"From-узел смыслово зависит от to-узла.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "main",
+            "link_name": "зависит-от"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/заменяет",
+        "set": {
+          "title": "заменяет",
+          "content": "{\"description\": \"From-узел заменяет to-узел (новая версия → устаревшая).\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "main",
+            "link_name": "заменяет"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/опирается-на",
+        "set": {
+          "title": "опирается-на",
+          "content": "{\"description\": \"Задача опирается на документ как контекст.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "main",
+            "link_name": "опирается-на"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/реализует",
+        "set": {
+          "title": "реализует",
+          "content": "{\"description\": \"Задача реализует решение, инвариант или гайд.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "main",
+            "link_name": "реализует"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/связан-с",
+        "set": {
+          "title": "связан-с",
+          "content": "{\"description\": \"Мягкая ассоциация между двумя main-узлами.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "main",
+            "link_name": "связан-с"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "main/упоминается-в",
+        "set": {
+          "title": "упоминается-в",
+          "content": "{\"description\": \"Узел упоминается в обсуждении или заметке.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "main",
+            "link_name": "упоминается-в"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/использует-метод",
+        "set": {
+          "title": "использует-метод",
+          "content": "{\"description\": \"Usage-узел упоминает указанный метод JSON API.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "usage",
+            "link_name": "использует-метод"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/использует-поле",
+        "set": {
+          "title": "использует-поле",
+          "content": "{\"description\": \"Usage-узел упоминает указанное поле request/response.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "usage",
+            "link_name": "использует-поле"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/возвращает-ошибку",
+        "set": {
+          "title": "возвращает-ошибку",
+          "content": "{\"description\": \"Usage-узел описывает ситуацию, в которой kernel возвращает указанный код ошибки.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "usage",
+            "link_name": "возвращает-ошибку"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/см-также",
+        "set": {
+          "title": "см-также",
+          "content": "{\"description\": \"Мягкая ассоциация между двумя usage-узлами.\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "usage",
+            "link_name": "см-также"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/описывает",
+        "set": {
+          "title": "описывает",
+          "content": "{\"description\": \"Usage-узел описывает указанный main-узел (cross-scope usage → main).\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "usage",
+            "link_name": "описывает"
+          }
+        }
+      }
+    },
+    {
+      "create": {
+        "path": "usage/ссылается-на",
+        "set": {
+          "title": "ссылается-на",
+          "content": "{\"description\": \"Usage-узел ссылается на указанный main-узел как пример или трассировку (cross-scope usage → main).\", \"from\": {}, \"to\": {}, \"cardinality\": \"many_to_many\", \"required_for\": []}",
+          "map_bindings": {
+            "category": "link",
+            "owner_scope": "usage",
+            "link_name": "ссылается-на"
+          }
+        }
+      }
+    }
+  ]
+}

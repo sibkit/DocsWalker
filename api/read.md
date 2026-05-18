@@ -81,7 +81,7 @@ compact-форме:
   "path": "DocsWalker/api/write-ops",
   "title": "write-ops",
   "map_bindings": {
-    "category": "documents/spec"
+    "категория": "документы/спека"
   },
   "tokens": 320,
   "version": 7
@@ -104,7 +104,7 @@ compact-форме:
   "path": "DocsWalker/api/write-ops",
   "title": "write-ops",
   "map_bindings": {
-    "category": "documents/spec"
+    "категория": "документы/спека"
   },
   "content": "...",
   "tokens": 320,
@@ -121,17 +121,17 @@ compact-форме:
 {
   "links": [
     {
-      "name": "depends_on",
+      "name": "зависит-от",
       "to": {
         "id": "63",
         "path": "DocsWalker/api/selectors"
       }
     },
     {
-      "name": "described_by",
+      "name": "описывает",
       "from": {
         "id": "c8",
-        "path": "examples/depends-on"
+        "path": "examples/зависит-от"
       }
     }
   ]

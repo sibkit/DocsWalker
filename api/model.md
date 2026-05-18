@@ -194,7 +194,7 @@ link identity не требуется.
   "defaults": {
     "path_parent": "api/write-ops",
     "map_bindings": {
-      "category": "documents/spec"
+      "категория": "документы/спека"
     }
   }
 }

@@ -39,7 +39,7 @@ hist нет.
   "id": "f4",
   "title": "добавить раздел selectors и связать с write-ops",
   "date": "2026-05-14",
-  "description": "Раздел selectors появился как следствие правки api/. Связан с write-ops через depends_on.",
+  "description": "Раздел selectors появился как следствие правки api/. Связан с write-ops через зависит-от.",
   "rollback_of": "8b20",
   "created": {
     "nodes": [
@@ -49,12 +49,12 @@ hist нет.
         "title": "selectors",
         "content": "...",
         "map_bindings": {
-          "category": "documents/spec"
+          "категория": "документы/спека"
         }
       }
     ],
     "links": [
-      { "name": "depends_on", "from": "c8", "to": "11" }
+      { "name": "зависит-от", "from": "c8", "to": "11" }
     ]
   },
   "changed": {
@@ -65,7 +65,7 @@ hist нет.
   "deleted": {
     "nodes": [ { "id": "5a" } ],
     "links": [
-      { "name": "old_link", "from": "...", "to": "..." }
+      { "name": "связан-с", "from": "...", "to": "..." }
     ]
   }
 }
@@ -99,11 +99,11 @@ hist нет.
       "path": "DocsWalker/api/selectors",
       "title": "selectors",
       "content": "...",
-      "map_bindings": { "category": "documents/spec" }
+      "map_bindings": { "категория": "документы/спека" }
     }
   ],
   "links": [
-    { "name": "depends_on", "from": "c8", "to": "11" }
+    { "name": "зависит-от", "from": "c8", "to": "11" }
   ]
 }
 ```
@@ -158,7 +158,7 @@ Move-эффект на path-потомков: если транзакция пе
 "deleted": {
   "nodes": [ { "id": "5a" } ],
   "links": [
-    { "name": "old_link", "from": "...", "to": "..." }
+    { "name": "связан-с", "from": "...", "to": "..." }
   ]
 }
 ```
@@ -210,7 +210,7 @@ Move-эффект на path-потомков: если транзакция пе
 }
 ```
 
-«История link `(depends_on, 2a, 11)`»:
+«История link `(зависит-от, 2a, 11)`»:
 
 ```json
 {
@@ -220,7 +220,7 @@ Move-эффект на path-потомков: если транзакция пе
       "select": {
         "selector": {
           "touches_link": {
-            "name": "depends_on",
+            "name": "зависит-от",
             "from": "2a",
             "to": "11"
           }

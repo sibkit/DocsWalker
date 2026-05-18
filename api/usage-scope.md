@@ -20,7 +20,7 @@ map и link из схемы. LLM редактирует usage через `tx sco
 
 ## Node contracts
 
-В schema usage заведены типы узлов через `map_bindings.category` со
+В schema usage заведены типы узлов через `map_bindings.категория` со
 значениями `usage/*`:
 
 - `usage/topic` — общая тема или workflow.
@@ -35,16 +35,16 @@ map и link из схемы. LLM редактирует usage через `tx sco
 - `usage/rule` — обязательная инструкция, привязанная к подмножеству
   main-узлов через `applies_to`.
 
-Map `category` обязательна. Дополнительные map в usage schema:
+Map `категория` обязательна. Дополнительные map в usage schema:
 
-- `subject` — тема: `read`, `tx`, `selector`, `error`, `schema`,
+- `тема` — тема: `read`, `tx`, `selector`, `error`, `schema`,
   `workflow`, `scope`.
-- `method` — `read` / `tx`.
-- `field` — имя поля.
-- `error_code` — код ошибки.
-- `schema_name` — `main` / `usage`.
-- `map` — имя map (для `usage/map`).
-- `link_name` — имя link (для `usage/link`).
+- `метод` — `read` / `tx`.
+- `поле` — имя поля.
+- `код-ошибки` — код ошибки.
+- `имя-схемы` — `main` / `usage`.
+- `имя-map` — имя map (для `usage/map`).
+- `имя-link` — имя link (для `usage/link`).
 
 ## Формат `content` в usage
 
@@ -72,21 +72,21 @@ main-узлов и операций, к которым rule относится.
   "path": "rules/api/write",
   "title": "write",
   "map_bindings": {
-    "category": "usage/rule",
-    "subject": "tx",
-    "method": "tx"
+    "категория": "usage/rule",
+    "тема": "tx",
+    "метод": "tx"
   },
   "content": {
     "applies_to": {
       "path": "DocsWalker/api/**",
       "map_bindings": {
-        "audience": "llm-agent"
+        "адресат": "llm"
       },
       "links": {
-        "name": "depends_on",
+        "name": "зависит-от",
         "to": {
           "map_bindings": {
-            "category": "documents/**"
+            "категория": "документы/**"
           }
         }
       }
@@ -113,18 +113,18 @@ rules; link на main-узлы из rule не создаётся.
 
 ```json
 {
-  "path": "maps/category",
-  "title": "category",
+  "path": "maps/категория",
+  "title": "категория",
   "map_bindings": {
-    "category": "usage/map",
-    "map": "category",
-    "schema_name": "main"
+    "категория": "usage/map",
+    "имя-map": "категория",
+    "имя-схемы": "main"
   },
   "content": {
     "description": "...",
     "branch_usage_notes": {
-      "documents/spec": "...",
-      "documents/project": "..."
+      "документы/спека": "...",
+      "документы/решение": "..."
     }
   }
 }
@@ -142,12 +142,12 @@ rules; link на main-узлы из rule не создаётся.
 
 ```json
 {
-  "path": "links/depends_on",
-  "title": "depends_on",
+  "path": "links/зависит-от",
+  "title": "зависит-от",
   "map_bindings": {
-    "category": "usage/link",
-    "link_name": "depends_on",
-    "schema_name": "main"
+    "категория": "usage/link",
+    "имя-link": "зависит-от",
+    "имя-схемы": "main"
   },
   "content": {
     "description": "...",
@@ -172,9 +172,9 @@ descriptions не включаются — LLM явно читает их чер
   "path": "examples/tx/move-with-expected-count",
   "title": "move-with-expected-count",
   "map_bindings": {
-    "category": "usage/example",
-    "subject": "tx",
-    "method": "tx"
+    "категория": "usage/example",
+    "тема": "tx",
+    "метод": "tx"
   },
   "content": {
     "request": {
@@ -200,7 +200,7 @@ Usage-узел ссылается link-ом на main-узел. Канониче
   "ops": [
     {
       "link": {
-        "name": "describes",
+        "name": "описывает",
         "from": "c8",
         "to": "2a",
         "expected_count": 1

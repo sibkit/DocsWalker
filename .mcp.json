@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "docswalker": {
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "scripts\\docswalker-mcp.ps1"
+      ]
+    }
+  }
+}

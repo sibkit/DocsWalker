@@ -77,10 +77,10 @@ Op `select` в `tx` отсутствует. Чтобы сослаться вну
       "title": "new-section",
       "content": "...",
       "map_bindings": {
-        "category": "documents/spec"
+        "категория": "документы/спека"
       },
       "links": [
-        { "name": "depends_on", "to": "2a" }
+        { "name": "зависит-от", "to": "2a" }
       ]
     }
   }
@@ -174,7 +174,7 @@ Bulk-операция изменения позиционирования (paren
     "to": {
       "parent_path": "DocsWalker/api/new-section",
       "map_bindings": {
-        "audience": "llm-agent"
+        "адресат": "llm"
       }
     },
     "expected_count": 5
@@ -234,7 +234,7 @@ Bulk-удаление узлов.
   "delete": {
     "selector": {
       "map_bindings": {
-        "category": "documents/draft"
+        "статус": "черновик"
       }
     },
     "expected_count": 4
@@ -268,12 +268,12 @@ source × target × name.
 ```json
 {
   "link": {
-    "name": "depends_on",
+    "name": "зависит-от",
     "from": "2a",
     "to": {
       "selector": {
         "map_bindings": {
-          "category": "documents/spec"
+          "категория": "документы/спека"
         }
       }
     },
@@ -306,7 +306,7 @@ source × target × name.
 ```json
 {
   "unlink": {
-    "name": "depends_on",
+    "name": "зависит-от",
     "from": "2a",
     "to": {
       "selector": {
@@ -389,7 +389,7 @@ hist применяются вместе. При падении записи eve
 ```json
 {
   "title": "selectors-section-and-link",
-  "description": "Добавил раздел selectors и связал его с write-ops через depends_on.",
+  "description": "Добавил раздел selectors и связал его с write-ops через зависит-от.",
   "ops": [
     {
       "create": {
@@ -398,15 +398,15 @@ hist применяются вместе. При падении записи eve
         "set": {
           "content": "...",
           "map_bindings": {
-            "category": "documents/spec",
-            "audience": "llm-agent"
+            "категория": "документы/спека",
+            "адресат": "llm"
           }
         }
       }
     },
     {
       "link": {
-        "name": "depends_on",
+        "name": "зависит-от",
         "from": { "alias": "selectors" },
         "to": "11",
         "expected_count": 1
@@ -432,13 +432,13 @@ hist применяются вместе. При падении записи eve
 
 В hist появится event-узел `id=b5e02d` с секциями:
 - `created.nodes` — один элемент (полный snapshot узла `c8`);
-- `created.links` — один элемент `{ "name": "depends_on", "from": "c8", "to": "11" }`.
+- `created.links` — один элемент `{ "name": "зависит-от", "from": "c8", "to": "11" }`.
 
 ### Массовая переклассификация
 
 ```json
 {
-  "title": "selectors-audience-llm-agent",
+  "title": "selectors-адресат-llm",
   "ops": [
     {
       "move": {
@@ -447,7 +447,7 @@ hist применяются вместе. При падении записи eve
         },
         "to": {
           "map_bindings": {
-            "audience": "llm-agent"
+            "адресат": "llm"
           }
         },
         "expected_count": 3
@@ -462,7 +462,7 @@ hist применяются вместе. При падении записи eve
 ```json
 {
   "title": "rollback-selectors-fix",
-  "description": "Откат правки selectors — повредила пример depends_on.",
+  "description": "Откат правки selectors — повредил пример зависит-от.",
   "ops": [
     { "rollback": "a3f1c2" }
   ]
